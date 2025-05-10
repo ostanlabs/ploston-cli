@@ -54,10 +54,11 @@ class TestComposeGenerator:
             assert "native-tools" in content["services"]
             assert "redis" in content["services"]
 
-            # Check ploston volumes include workflows bind-mount
+            # Check ploston volumes include workflows and schemas bind-mounts
             ploston_volumes = content["services"]["ploston"]["volumes"]
             assert "./data/workflows:/app/workflows" in ploston_volumes
             assert "./data/ploston:/app/data" in ploston_volumes
+            assert "./data/schemas:/home/ploston/.ploston/schemas" in ploston_volumes
 
     def test_generate_without_observability_services(self):
         """Test that base compose does NOT include observability services.
@@ -202,6 +203,7 @@ class TestVolumeManager:
             assert (Path(tmpdir) / "data" / "redis").exists()
             assert (Path(tmpdir) / "data" / "ploston").exists()
             assert (Path(tmpdir) / "data" / "workflows").exists()
+            assert (Path(tmpdir) / "data" / "schemas").exists()
 
     def test_generate_seed_config(self):
         """Test generating seed configuration."""

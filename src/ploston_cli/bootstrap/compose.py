@@ -98,6 +98,7 @@ class ComposeGenerator:
                     "./ploston-config.yaml:/etc/ploston/config.yaml:ro",
                     "./data/ploston:/app/data",
                     "./data/workflows:/app/workflows",
+                    "./data/schemas:/home/ploston/.ploston/schemas",
                 ],
                 "depends_on": {
                     "redis": {"condition": "service_healthy"},
@@ -220,6 +221,7 @@ class VolumeManager:
             self.base_dir / "data" / "redis",
             self.base_dir / "data" / "ploston",
             self.base_dir / "data" / "workflows",
+            self.base_dir / "data" / "schemas",
         ]
 
         for directory in directories:
