@@ -11,10 +11,10 @@
   "panels": [
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
-      "description": "Total tokens saved by using Ploston workflows instead of raw MCP",
+      "description": "Total tokens saved by using Ploston workflows instead of raw MCP tool calls",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -56,9 +56,10 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_tokens_saved_total{workflow_name=~\"$workflow\"}[$__range]))",
-          "legendFormat": "Tokens Saved",
-          "refId": "A"
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT toUInt64((sum(CASE WHEN tc.source NOT IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END) - sum(CASE WHEN tc.source IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END)) / 4) AS value FROM ploston.tool_calls tc JOIN ploston.executions e ON tc.execution_id = e.execution_id WHERE e.workflow_id != '' AND match(e.workflow_id, '${workflow:regex}') AND $__timeFilter(tc.started_at)"
         }
       ],
       "title": "Tokens Saved",
@@ -66,10 +67,10 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
-      "description": "Estimated cost savings in USD from using Ploston workflows",
+      "description": "Estimated cost savings in USD (claude-sonnet pricing: $7.80/M tokens avg)",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -111,9 +112,10 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_cost_saved_cents_total{workflow_name=~\"$workflow\",model=~\"$model\"}[$__range])) / 100",
-          "legendFormat": "Cost Saved",
-          "refId": "A"
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT round(toUInt64((sum(CASE WHEN tc.source NOT IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END) - sum(CASE WHEN tc.source IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END)) / 4) * 7.80 / 1000000, 2) AS value FROM ploston.tool_calls tc JOIN ploston.executions e ON tc.execution_id = e.execution_id WHERE e.workflow_id != '' AND match(e.workflow_id, '${workflow:regex}') AND $__timeFilter(tc.started_at)"
         }
       ],
       "title": "Cost Saved",
@@ -121,8 +123,8 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
       "description": "Percentage of tokens saved compared to raw MCP execution",
       "fieldConfig": {
@@ -170,9 +172,10 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "100 * sum(increase(ploston_tokens_saved_total{workflow_name=~\"$workflow\"}[$__range])) / sum(increase(ploston_raw_mcp_estimate_total{workflow_name=~\"$workflow\"}[$__range]))",
-          "legendFormat": "Savings Rate",
-          "refId": "A"
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT if(raw_mcp > 0, round((1 - ploston / raw_mcp) * 100, 1), 0) AS value FROM (SELECT sum(CASE WHEN tc.source NOT IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END) AS raw_mcp, sum(CASE WHEN tc.source IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END) AS ploston FROM ploston.tool_calls tc JOIN ploston.executions e ON tc.execution_id = e.execution_id WHERE e.workflow_id != '' AND match(e.workflow_id, '${workflow:regex}') AND $__timeFilter(tc.started_at))"
         }
       ],
       "title": "Token Savings Rate",
@@ -180,97 +183,10 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
-      "description": "Token savings over time by workflow",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Tokens",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 0,
-        "y": 8
-      },
-      "id": 4,
-      "options": {
-        "legend": {
-          "calcs": ["lastNotNull"],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true,
-          "sortBy": "Last *",
-          "sortDesc": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "expr": "sum by (workflow_name) (increase(ploston_tokens_saved_total{workflow_name=~\"$workflow\"}[$__range]))",
-          "legendFormat": "{{workflow_name}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Token Savings by Workflow",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "description": "Cost savings over time by model",
+      "description": "Cost savings over time grouped by workflow",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -323,16 +239,18 @@
       "gridPos": {
         "h": 10,
         "w": 12,
-        "x": 12,
+        "x": 0,
         "y": 8
       },
-      "id": 5,
+      "id": 4,
       "options": {
         "legend": {
           "calcs": ["sum"],
           "displayMode": "table",
           "placement": "right",
-          "showLegend": true
+          "showLegend": true,
+          "sortBy": "Total",
+          "sortDesc": true
         },
         "tooltip": {
           "mode": "multi",
@@ -342,18 +260,80 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_cost_saved_cents_total{workflow_name=~\"$workflow\",model=~\"$model\"}[$__range])) by (model) / 100",
-          "legendFormat": "{{model}}",
-          "refId": "A"
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT $__timeInterval(tc.started_at) AS time, e.workflow_id, round(toUInt64((sum(CASE WHEN tc.source NOT IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END) - sum(CASE WHEN tc.source IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END)) / 4) * 7.80 / 1000000, 4) AS value FROM ploston.tool_calls tc JOIN ploston.executions e ON tc.execution_id = e.execution_id WHERE e.workflow_id != '' AND match(e.workflow_id, '${workflow:regex}') AND $__timeFilter(tc.started_at) GROUP BY time, e.workflow_id ORDER BY time"
         }
       ],
-      "title": "Cost Savings by Model",
+      "title": "Cost Savings Over Time",
       "type": "timeseries"
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
+      },
+      "description": "Per-workflow breakdown: runs, tokens saved, savings rate, and estimated cost saved",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "savings_pct" },
+            "properties": [{ "id": "unit", "value": "percent" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "cost_saved_usd" },
+            "properties": [{ "id": "unit", "value": "currencyUSD" }]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 5,
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "tokens_saved" }],
+        "footer": {
+          "show": true,
+          "reducer": ["sum"],
+          "fields": ["runs", "tokens_saved", "cost_saved_usd"]
+        }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT e.workflow_id, count(DISTINCT tc.execution_id) AS runs, toUInt64((sum(CASE WHEN tc.source NOT IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END) - sum(CASE WHEN tc.source IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END)) / 4) AS tokens_saved, if(sum(CASE WHEN tc.source NOT IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END) > 0, round((1 - sum(CASE WHEN tc.source IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END) / sum(CASE WHEN tc.source NOT IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END)) * 100, 1), 0) AS savings_pct, round(toUInt64((sum(CASE WHEN tc.source NOT IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END) - sum(CASE WHEN tc.source IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END)) / 4) * 7.80 / 1000000, 4) AS cost_saved_usd FROM ploston.tool_calls tc JOIN ploston.executions e ON tc.execution_id = e.execution_id WHERE e.workflow_id != '' AND match(e.workflow_id, '${workflow:regex}') AND $__timeFilter(tc.started_at) GROUP BY e.workflow_id ORDER BY tokens_saved DESC"
+        }
+      ],
+      "title": "Savings by Workflow",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
       "description": "Distribution of tokens saved per workflow execution",
       "fieldConfig": {
@@ -397,20 +377,27 @@
       "id": 6,
       "options": {
         "bucketOffset": 0,
+        "combine": false,
+        "fillOpacity": 80,
+        "gradientMode": "none",
         "legend": {
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
         }
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(ploston_tokens_saved_per_execution_bucket{workflow_name=~\"$workflow\"}[$__rate_interval])) by (le)",
-          "legendFormat": "{{le}}",
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
           "refId": "A",
-          "format": "heatmap"
+          "format": 1,
+          "rawSql": "SELECT e.workflow_id, toUInt64((sum(CASE WHEN tc.source NOT IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END) - sum(CASE WHEN tc.source IN ('direct','wrapper') THEN tc.response_bytes ELSE 0 END)) / 4) AS tokens_saved FROM ploston.tool_calls tc JOIN ploston.executions e ON tc.execution_id = e.execution_id WHERE e.workflow_id != '' AND match(e.workflow_id, '${workflow:regex}') AND $__timeFilter(tc.started_at) GROUP BY tc.execution_id, e.workflow_id ORDER BY tokens_saved DESC"
         }
       ],
       "title": "Tokens Saved Distribution",
@@ -424,31 +411,16 @@
   "templating": {
     "list": [
       {
+        "allValue": ".*",
         "current": { "selected": true, "text": "All", "value": "$__all" },
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(ploston_tokens_saved_total, workflow_name)",
+        "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+        "definition": "SELECT DISTINCT workflow_id FROM ploston.executions WHERE workflow_id != '' ORDER BY workflow_id",
         "hide": 0,
         "includeAll": true,
         "multi": true,
         "name": "workflow",
         "options": [],
-        "query": "label_values(ploston_tokens_saved_total, workflow_name)",
-        "refresh": 2,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
-      },
-      {
-        "current": { "selected": true, "text": "All", "value": "$__all" },
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(ploston_cost_saved_cents_total, model)",
-        "hide": 0,
-        "includeAll": true,
-        "multi": true,
-        "name": "model",
-        "options": [],
-        "query": "label_values(ploston_cost_saved_cents_total, model)",
+        "query": "SELECT DISTINCT workflow_id FROM ploston.executions WHERE workflow_id != '' ORDER BY workflow_id",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -458,7 +430,7 @@
     ]
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {},

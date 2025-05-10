@@ -11,8 +11,8 @@
   "panels": [
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
       "description": "Total tool invocations by bridge",
       "fieldConfig": {
@@ -43,8 +43,8 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
-          "values": false
+          "fields": "/^value$/",
+          "values": true
         },
         "tooltip": {
           "mode": "single",
@@ -54,9 +54,13 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum by (bridge_id) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[$__range]))",
-          "legendFormat": "{{bridge_id}}",
-          "refId": "A"
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT coalesce(bridge_id, 'local') AS bridge_id, count() AS value FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND match(tool_name, '${tool_name:regex}') AND match(coalesce(bridge_id, ''), '${bridge_id:regex}') AND match(coalesce(runner_id, ''), '${runner:regex}') AND $__timeFilter(started_at) GROUP BY bridge_id ORDER BY value DESC"
         }
       ],
       "title": "Tool Calls by Bridge",
@@ -64,8 +68,8 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
       "description": "Total tool invocations in the selected time range",
       "fieldConfig": {
@@ -111,9 +115,13 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[$__range]))",
-          "legendFormat": "Total",
-          "refId": "A"
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT count() AS value FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND match(tool_name, '${tool_name:regex}') AND match(coalesce(bridge_id, ''), '${bridge_id:regex}') AND match(coalesce(runner_id, ''), '${runner:regex}') AND $__timeFilter(started_at)"
         }
       ],
       "title": "Total Tool Calls",
@@ -121,8 +129,8 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
       "description": "Tool call success rate across all categories",
       "fieldConfig": {
@@ -176,9 +184,13 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "100 * sum(rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\", status=\"success\"}[$__range])) / sum(rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[$__range]))",
-          "legendFormat": "Success Rate",
-          "refId": "A"
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT if(count() > 0, round(countIf(error_code IS NULL OR error_code = '') * 100.0 / count(), 1), 100) AS value FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND match(tool_name, '${tool_name:regex}') AND match(coalesce(bridge_id, ''), '${bridge_id:regex}') AND match(coalesce(runner_id, ''), '${runner:regex}') AND $__timeFilter(started_at)"
         }
       ],
       "title": "Tool Success Rate",
@@ -186,10 +198,10 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
-      "description": "Success rate by tool category",
+      "description": "Success rate by source type (direct vs wrapped)",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -233,28 +245,32 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
-          "values": false
+          "fields": "/^value$/",
+          "values": true
         },
         "textMode": "auto"
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "100 * sum by (tool_source) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\", status=\"success\"}[$__range])) / sum by (tool_source) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[$__range]))",
-          "legendFormat": "{{tool_source}}",
-          "refId": "A"
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT source, if(count() > 0, round(countIf(error_code IS NULL OR error_code = '') * 100.0 / count(), 1), 100) AS value FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND match(tool_name, '${tool_name:regex}') AND match(coalesce(bridge_id, ''), '${bridge_id:regex}') AND match(coalesce(runner_id, ''), '${runner:regex}') AND $__timeFilter(started_at) GROUP BY source"
         }
       ],
-      "title": "Success Rate by Category",
+      "title": "Success Rate by Source",
       "type": "stat"
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
-      "description": "Tool invocation rate over time by source category",
+      "description": "Tool invocation count over time by bridge",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -328,9 +344,13 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum by (bridge_id) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[$__rate_interval]))",
-          "legendFormat": "{{bridge_id}}",
-          "refId": "A"
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT $__timeInterval(started_at) AS time, coalesce(bridge_id, 'local') AS bridge_id, count() AS value FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND match(tool_name, '${tool_name:regex}') AND match(coalesce(bridge_id, ''), '${bridge_id:regex}') AND match(coalesce(runner_id, ''), '${runner:regex}') AND $__timeFilter(started_at) GROUP BY time, bridge_id ORDER BY time"
         }
       ],
       "title": "Tool Calls Over Time by Bridge",
@@ -338,8 +358,8 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
       "description": "Top 10 most called tools in the selected time range",
       "fieldConfig": {
@@ -377,8 +397,8 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
-          "values": false
+          "fields": "/^value$/",
+          "values": true
         },
         "showUnfilled": true,
         "valueMode": "color"
@@ -386,35 +406,24 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "topk(10, sum by (tool_name) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range])))",
-          "legendFormat": "{{tool_name}}",
-          "instant": true,
-          "refId": "A"
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT tool_name, count() AS value FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND match(coalesce(bridge_id, ''), '${bridge_id:regex}') AND match(coalesce(runner_id, ''), '${runner:regex}') AND $__timeFilter(started_at) GROUP BY tool_name ORDER BY value DESC LIMIT 10"
         }
       ],
       "title": "Top 10 Tools",
-      "transformations": [
-        {
-          "id": "sortBy",
-          "options": {
-            "fields": {},
-            "sort": [
-              {
-                "field": "Value",
-                "desc": true
-              }
-            ]
-          }
-        }
-      ],
       "type": "bargauge"
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
-      "description": "Tool call latency percentiles (p50, p95, p99) filtered by tool and bridge",
+      "description": "Tool call latency percentiles (p50, p95, p99) over time",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -534,19 +543,13 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p50",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p95",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p99",
-          "refId": "C"
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT $__timeInterval(started_at) AS time, quantile(0.5)(duration_ms / 1000) AS p50, quantile(0.95)(duration_ms / 1000) AS p95, quantile(0.99)(duration_ms / 1000) AS p99 FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND duration_ms IS NOT NULL AND match(tool_name, '${tool_name:regex}') AND match(coalesce(bridge_id, ''), '${bridge_id:regex}') AND match(coalesce(runner_id, ''), '${runner:regex}') AND $__timeFilter(started_at) GROUP BY time ORDER BY time"
         }
       ],
       "title": "Aggregate Latency Percentiles (p50/p95/p99)",
@@ -554,10 +557,10 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
-      "description": "Tool call latency distribution heatmap",
+      "description": "Tool call latency distribution heatmap (raw durations, Grafana computes buckets)",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -586,7 +589,7 @@
       },
       "id": 9,
       "options": {
-        "calculate": false,
+        "calculate": true,
         "cellGap": 1,
         "color": {
           "exponent": 0.5,
@@ -596,9 +599,6 @@
           "scale": "exponential",
           "scheme": "Oranges",
           "steps": 64
-        },
-        "exemplars": {
-          "color": "rgba(255,0,255,0.7)"
         },
         "filterValues": {
           "le": 1e-09
@@ -622,10 +622,13 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__range])) by (le)",
-          "format": "heatmap",
-          "legendFormat": "{{le}}",
-          "refId": "A"
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT $__timeInterval(started_at) AS time, duration_ms / 1000 AS duration FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND duration_ms IS NOT NULL AND match(tool_name, '${tool_name:regex}') AND match(coalesce(bridge_id, ''), '${bridge_id:regex}') AND match(coalesce(runner_id, ''), '${runner:regex}') AND $__timeFilter(started_at) ORDER BY time"
         }
       ],
       "title": "Tool Call Latency Heatmap",
@@ -633,8 +636,8 @@
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
       "description": "Per-tool latency percentiles sorted by p95 descending",
       "fieldConfig": {
@@ -733,58 +736,24 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (tool_name, le) (rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__rate_interval])))",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum by (tool_name, le) (rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__rate_interval])))",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum by (tool_name, le) (rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__rate_interval])))",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "",
-          "refId": "C"
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT tool_name AS Tool, round(quantile(0.5)(duration_ms / 1000), 4) AS p50, round(quantile(0.95)(duration_ms / 1000), 4) AS p95, round(quantile(0.99)(duration_ms / 1000), 4) AS p99 FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND duration_ms IS NOT NULL AND match(tool_name, '${tool_name:regex}') AND match(coalesce(bridge_id, ''), '${bridge_id:regex}') AND match(coalesce(runner_id, ''), '${runner:regex}') AND $__timeFilter(started_at) GROUP BY tool_name ORDER BY p95 DESC"
         }
       ],
       "title": "Per-Tool Latency Percentiles",
-      "transformations": [
-        {
-          "id": "merge",
-          "options": {}
-        },
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "le": true
-            },
-            "indexByName": {},
-            "renameByName": {
-              "Value #A": "p50",
-              "Value #B": "p95",
-              "Value #C": "p99",
-              "tool_name": "Tool"
-            }
-          }
-        }
-      ],
       "type": "table"
     },
     {
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
-      "description": "Tool call count breakdown by category and tool name",
+      "description": "Tool call count breakdown by source and tool name",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -860,30 +829,16 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum by (tool_name, tool_source) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range])) > 0",
-          "format": "table",
-          "instant": true,
-          "legendFormat": "",
-          "refId": "A"
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT tool_name AS Tool, source AS Source, count() AS Calls, countIf(error_code IS NOT NULL AND error_code != '') AS Errors, round(avg(duration_ms) / 1000, 3) AS avg_latency_s FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND match(coalesce(bridge_id, ''), '${bridge_id:regex}') AND match(coalesce(runner_id, ''), '${runner:regex}') AND $__timeFilter(started_at) GROUP BY tool_name, source HAVING Calls > 0 ORDER BY Calls DESC"
         }
       ],
       "title": "Tool Calls Detail",
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true
-            },
-            "indexByName": {},
-            "renameByName": {
-              "Value": "Calls",
-              "tool_name": "Tool",
-              "tool_source": "Category"
-            }
-          }
-        }
-      ],
       "type": "table"
     },
     {
@@ -897,8 +852,8 @@
         "y": 0
       },
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
       },
       "description": "Raw success and error counts. If success rate looks low, check these counts first.",
       "fieldConfig": {
@@ -949,9 +904,13 @@
       },
       "targets": [
         {
-          "expr": "sum by (status) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[$__range]))",
-          "legendFormat": "{{status}}",
-          "refId": "A"
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT countIf(error_code IS NULL OR error_code = '') AS success, countIf(error_code IS NOT NULL AND error_code != '') AS error FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND match(tool_name, '${tool_name:regex}') AND match(coalesce(bridge_id, ''), '${bridge_id:regex}') AND match(coalesce(runner_id, ''), '${runner:regex}') AND $__timeFilter(started_at)"
         }
       ]
     }
@@ -972,21 +931,22 @@
           "value": "$__all"
         },
         "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
+          "type": "grafana-clickhouse-datasource",
+          "uid": "clickhouse"
         },
-        "definition": "label_values(ploston_tool_invocations_total, tool_name)",
+        "definition": "SELECT DISTINCT tool_name FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND started_at >= now() - INTERVAL 24 HOUR ORDER BY tool_name",
         "hide": 0,
         "includeAll": true,
         "multi": true,
         "name": "tool_name",
         "options": [],
-        "query": "label_values(ploston_tool_invocations_total, tool_name)",
+        "query": "SELECT DISTINCT tool_name FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND started_at >= now() - INTERVAL 24 HOUR ORDER BY tool_name",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
         "sort": 1,
-        "type": "query"
+        "type": "query",
+        "allValue": ".*"
       },
       {
         "current": {
@@ -995,31 +955,32 @@
           "value": "$__all"
         },
         "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
+          "type": "grafana-clickhouse-datasource",
+          "uid": "clickhouse"
         },
-        "definition": "label_values(ploston_tool_invocations_total, bridge_id)",
+        "definition": "SELECT DISTINCT coalesce(bridge_id, 'local') AS bridge_id FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND started_at >= now() - INTERVAL 24 HOUR ORDER BY bridge_id",
         "hide": 0,
         "includeAll": true,
         "multi": true,
         "name": "bridge_id",
         "options": [],
-        "query": "label_values(ploston_tool_invocations_total, bridge_id)",
+        "query": "SELECT DISTINCT coalesce(bridge_id, 'local') AS bridge_id FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND started_at >= now() - INTERVAL 24 HOUR ORDER BY bridge_id",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
         "sort": 1,
-        "type": "query"
+        "type": "query",
+        "allValue": ".*"
       },
       {
         "name": "runner",
         "type": "query",
         "datasource": {
-          "type": "prometheus",
-          "uid": "prometheus"
+          "type": "grafana-clickhouse-datasource",
+          "uid": "clickhouse"
         },
-        "definition": "label_values(ploston_tool_invocations_total, runner_id)",
-        "query": "label_values(ploston_tool_invocations_total, runner_id)",
+        "definition": "SELECT DISTINCT runner_id FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND runner_id IS NOT NULL AND runner_id != '' AND started_at >= now() - INTERVAL 24 HOUR ORDER BY runner_id",
+        "query": "SELECT DISTINCT runner_id FROM ploston.tool_calls WHERE source IN ('direct', 'wrapped') AND runner_id IS NOT NULL AND runner_id != '' AND started_at >= now() - INTERVAL 24 HOUR ORDER BY runner_id",
         "multi": true,
         "includeAll": true,
         "current": {
@@ -1031,7 +992,8 @@
         "refresh": 2,
         "sort": 1,
         "hide": 0,
-        "skipUrlSync": false
+        "skipUrlSync": false,
+        "allValue": ".*"
       }
     ]
   },
