@@ -78,7 +78,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 3,
         "x": 12,
         "y": 9
       },
@@ -112,8 +112,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 16,
+        "w": 3,
+        "x": 15,
         "y": 9
       },
       "fieldConfig": {
@@ -154,6 +154,45 @@
       ]
     },
     {
+      "id": 16,
+      "title": "Total Input (~tokens)",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 18,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT toUInt64(sum(params_bytes) / 4) FROM ploston.tool_calls WHERE session_id = '$session_id' AND source IN ('direct', 'wrapper') AND $__timeFilter(started_at)"
+        }
+      ]
+    },
+    {
       "id": 13,
       "title": "Total Response (~tokens)",
       "type": "stat",
@@ -163,8 +202,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 20,
+        "w": 3,
+        "x": 21,
         "y": 9
       },
       "fieldConfig": {

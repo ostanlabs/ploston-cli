@@ -39,6 +39,7 @@ def test_session_inspector_has_required_panels(dashboard: dict) -> None:
     assert "Recent Sessions" in titles
     assert "Tool Calls" in titles
     assert "Errors" in titles
+    assert "Total Input (~tokens)" in titles
     assert "Workflow Executions" in titles
     assert "Tool Call Timeline" in titles
     assert "Tool Usage Distribution" in titles
@@ -206,8 +207,8 @@ def test_aggregation_panels_have_correct_source_filters(dashboard: dict) -> None
     accounting rules:
 
     - Tool Calls count: direct + wrapped (wrapper is plumbing, not a tool)
-    - Tokens / Duration: direct + wrapper (wrapper carries the agent-facing
-      payload; wrapped is already included in the wrapper's response_bytes)
+    - Input/Response tokens / Duration: direct + wrapper (wrapper carries the
+      agent-facing payload; wrapped is already included in the wrapper's bytes)
     - Errors: all three (any source can error)
     - Unique Tools / Distribution: direct + wrapped
     - Recent Sessions: all three, with countIf to exclude wrappers from
@@ -215,6 +216,7 @@ def test_aggregation_panels_have_correct_source_filters(dashboard: dict) -> None
     """
     expected_filters: dict[str, str] = {
         "Tool Calls": "source IN ('direct', 'wrapped')",
+        "Total Input (~tokens)": "source IN ('direct', 'wrapper')",
         "Total Response (~tokens)": "source IN ('direct', 'wrapper')",
         "Total Duration": "source IN ('direct', 'wrapper')",
         "Unique Tools": "source IN ('direct', 'wrapped')",
