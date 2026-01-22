@@ -69,7 +69,7 @@ class TestWorkflowsShow:
 
     def test_workflows_show_existing(self, runner, mock_workflow):
         """Test showing an existing workflow."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -89,7 +89,7 @@ class TestWorkflowsShow:
 
     def test_workflows_show_not_found_with_suggestions(self, runner, mock_workflow):
         """Test showing a non-existent workflow with suggestions."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -107,7 +107,7 @@ class TestWorkflowsShow:
 
     def test_workflows_show_not_found_no_suggestions(self, runner):
         """Test showing a non-existent workflow without suggestions."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -124,7 +124,7 @@ class TestWorkflowsShow:
 
     def test_workflows_show_json_output(self, runner, mock_workflow):
         """Test JSON output format."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()

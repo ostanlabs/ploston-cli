@@ -7,7 +7,7 @@ from typing import Any
 
 import click
 
-from ael import __version__
+__version__ = "1.0.0"  # Defined here to avoid circular import
 
 from .application import AELApplication
 from .utils import parse_inputs

@@ -46,7 +46,7 @@ class TestToolsList:
 
     def test_tools_list_shows_all_tools(self, runner, mock_tool, mock_system_tool):
         """Test that tools list shows all tools."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -64,7 +64,7 @@ class TestToolsList:
 
     def test_tools_list_filter_by_source(self, runner, mock_tool):
         """Test filtering by source."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -83,7 +83,7 @@ class TestToolsList:
 
     def test_tools_list_filter_by_server(self, runner, mock_tool):
         """Test filtering by server name."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -102,7 +102,7 @@ class TestToolsList:
 
     def test_tools_list_filter_by_status(self, runner, mock_tool):
         """Test filtering by status."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -121,7 +121,7 @@ class TestToolsList:
 
     def test_tools_list_json_output(self, runner, mock_tool):
         """Test JSON output format."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -141,7 +141,7 @@ class TestToolsList:
 
     def test_tools_list_empty(self, runner):
         """Test empty tools list."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -160,7 +160,7 @@ class TestToolsShow:
 
     def test_tools_show_existing_tool(self, runner, mock_tool):
         """Test showing an existing tool."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -177,7 +177,7 @@ class TestToolsShow:
 
     def test_tools_show_not_found_with_suggestions(self, runner, mock_tool):
         """Test showing a non-existent tool with suggestions."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -195,7 +195,7 @@ class TestToolsShow:
 
     def test_tools_show_not_found_no_suggestions(self, runner):
         """Test showing a non-existent tool without suggestions."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -213,7 +213,7 @@ class TestToolsShow:
     def test_tools_show_json_output(self, runner, mock_tool):
         """Test JSON output format for tools show."""
         mock_tool.output_schema = {"type": "object"}
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -236,7 +236,7 @@ class TestToolsRefresh:
 
     def test_tools_refresh_all(self, runner):
         """Test refreshing all tools."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -261,7 +261,7 @@ class TestToolsRefresh:
 
     def test_tools_refresh_specific_server(self, runner):
         """Test refreshing a specific server."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -283,7 +283,7 @@ class TestToolsRefresh:
 
     def test_tools_refresh_with_errors(self, runner):
         """Test refresh with errors."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
@@ -306,7 +306,7 @@ class TestToolsRefresh:
 
     def test_tools_refresh_json_output(self, runner):
         """Test JSON output for refresh."""
-        with patch("ael.cli.main.AELApplication") as mock_app_class:
+        with patch("ploston_cli.main.AELApplication") as mock_app_class:
             mock_app = MagicMock()
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()

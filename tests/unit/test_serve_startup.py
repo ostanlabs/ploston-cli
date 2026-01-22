@@ -19,8 +19,8 @@ class TestServeStartup:
 
     def test_serve_auto_detect_running_mode(self, runner):
         """Test auto-detect running mode when config exists."""
-        with patch("ael.config.ConfigLoader") as mock_loader_class, \
-             patch("ael.cli.application.AELApplication") as mock_app_class:
+        with patch("ploston_core.config.ConfigLoader") as mock_loader_class, \
+             patch("ploston_cli.application.AELApplication") as mock_app_class:
             mock_loader = MagicMock()
             mock_config = MagicMock()
             mock_loader.load.return_value = mock_config
@@ -48,7 +48,7 @@ class TestServeStartup:
         """Test auto-detect configuration mode when no config exists."""
         from ploston_core.errors import AELError
 
-        with patch("ael.config.ConfigLoader") as mock_loader_class:
+        with patch("ploston_core.config.ConfigLoader") as mock_loader_class:
             mock_loader = MagicMock()
             mock_loader.load.side_effect = AELError(
                 code="CONFIG_NOT_FOUND",
@@ -57,9 +57,9 @@ class TestServeStartup:
             )
             mock_loader_class.return_value = mock_loader
 
-            with patch("ael.config.StagedConfig"):
-                with patch("ael.config.tools.ConfigToolRegistry"):
-                    with patch("ael.mcp_frontend.MCPFrontend") as mock_frontend_class:
+            with patch("ploston_core.config.StagedConfig"):
+                with patch("ploston_core.config.tools.ConfigToolRegistry"):
+                    with patch("ploston_core.mcp_frontend.MCPFrontend") as mock_frontend_class:
                         mock_frontend = MagicMock()
                         mock_frontend.start = AsyncMock(side_effect=KeyboardInterrupt)
                         mock_frontend_class.return_value = mock_frontend
@@ -73,13 +73,13 @@ class TestServeStartup:
 
     def test_serve_forced_config_mode(self, runner):
         """Test forced configuration mode via --mode flag."""
-        with patch("ael.config.ConfigLoader") as mock_loader_class:
+        with patch("ploston_core.config.ConfigLoader") as mock_loader_class:
             mock_loader = MagicMock()
             mock_loader_class.return_value = mock_loader
 
-            with patch("ael.config.StagedConfig"):
-                with patch("ael.config.tools.ConfigToolRegistry"):
-                    with patch("ael.mcp_frontend.MCPFrontend") as mock_frontend_class:
+            with patch("ploston_core.config.StagedConfig"):
+                with patch("ploston_core.config.tools.ConfigToolRegistry"):
+                    with patch("ploston_core.mcp_frontend.MCPFrontend") as mock_frontend_class:
                         mock_frontend = MagicMock()
                         mock_frontend.start = AsyncMock(side_effect=KeyboardInterrupt)
                         mock_frontend_class.return_value = mock_frontend
@@ -93,7 +93,7 @@ class TestServeStartup:
         """Test forced running mode fails when no config exists."""
         from ploston_core.errors import AELError
 
-        with patch("ael.config.ConfigLoader") as mock_loader_class:
+        with patch("ploston_core.config.ConfigLoader") as mock_loader_class:
             mock_loader = MagicMock()
             mock_loader.load.side_effect = AELError(
                 code="CONFIG_NOT_FOUND",
@@ -110,14 +110,14 @@ class TestServeStartup:
 
     def test_serve_forced_running_mode_with_config(self, runner):
         """Test forced running mode succeeds when config exists."""
-        with patch("ael.config.ConfigLoader") as mock_loader_class:
+        with patch("ploston_core.config.ConfigLoader") as mock_loader_class:
             mock_loader = MagicMock()
             mock_config = MagicMock()
             mock_loader.load.return_value = mock_config
             mock_loader._config_path = "/path/to/config.yaml"
             mock_loader_class.return_value = mock_loader
 
-            with patch("ael.cli.application.AELApplication") as mock_app_class:
+            with patch("ploston_cli.application.AELApplication") as mock_app_class:
                 mock_app = MagicMock()
                 mock_app.initialize = AsyncMock()
                 mock_app.shutdown = AsyncMock()

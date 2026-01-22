@@ -145,7 +145,7 @@ outputs:
             f.write(valid_workflow_yaml)
             f.flush()
 
-            with patch("ael.cli.main.AELApplication") as mock_app_class:
+            with patch("ploston_cli.main.AELApplication") as mock_app_class:
                 mock_app = MagicMock()
                 mock_app.initialize = AsyncMock()
                 mock_app.shutdown = AsyncMock()
