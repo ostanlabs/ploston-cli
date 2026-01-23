@@ -233,4 +233,3 @@ class PlostClient:
             Health status dict
         """
         return await self._request("GET", "/health")
-

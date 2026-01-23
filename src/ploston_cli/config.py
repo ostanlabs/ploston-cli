@@ -11,7 +11,6 @@ from typing import Any
 
 import yaml
 
-
 # Default values
 DEFAULT_SERVER = "http://localhost:8080"
 DEFAULT_TIMEOUT = 30
@@ -162,4 +161,3 @@ def unset_config(key: str) -> bool:
         yaml.dump(existing, f, default_flow_style=False)
 
     return True
-

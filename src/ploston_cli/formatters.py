@@ -68,7 +68,11 @@ def print_workflow_detail_dict(workflow: dict[str, Any]) -> None:
     if inputs:
         click.echo("Inputs:")
         for inp in inputs:
-            req = "required" if inp.get("required", False) else f"default: {inp.get('default', 'none')}"
+            req = (
+                "required"
+                if inp.get("required", False)
+                else f"default: {inp.get('default', 'none')}"
+            )
             desc = f": {inp.get('description', '')}" if inp.get("description") else ""
             click.echo(f"  - {inp.get('name', '?')} ({inp.get('type', 'any')}, {req}){desc}")
         click.echo()

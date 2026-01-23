@@ -43,7 +43,9 @@ def get_server_url(ctx: click.Context) -> str:
 @click.option("-q", "--quiet", is_flag=True, help="Suppress output")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.pass_context
-def cli(ctx: click.Context, server: str | None, verbose: int, quiet: bool, json_output: bool) -> None:
+def cli(
+    ctx: click.Context, server: str | None, verbose: int, quiet: bool, json_output: bool
+) -> None:
     """Ploston CLI - Command-line interface for Ploston servers.
 
     Connect to a Ploston server to manage workflows and tools.
@@ -257,7 +259,9 @@ def validate(ctx: click.Context, file: str, strict: bool, check_tools: bool) -> 
                     for i, step in enumerate(workflow_data.get("steps", [])):
                         tool_name = step.get("tool")
                         if tool_name and tool_name not in tool_names:
-                            tool_errors.append(f"steps[{i}]: Tool '{tool_name}' not found on server")
+                            tool_errors.append(
+                                f"steps[{i}]: Tool '{tool_name}' not found on server"
+                            )
                 except PlostClientError as e:
                     tool_errors.append(f"Cannot connect to server for tool check: {e.message}")
             return tool_errors
@@ -455,7 +459,7 @@ def config_set(key: str, value: str) -> None:
         try:
             value = int(value)  # type: ignore
         except ValueError:
-            click.echo(f"Error: timeout must be an integer", err=True)
+            click.echo("Error: timeout must be an integer", err=True)
             sys.exit(1)
 
     save_config(key, value)
