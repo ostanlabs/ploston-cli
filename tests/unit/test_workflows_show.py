@@ -21,7 +21,7 @@ def mock_workflow():
     workflow.name = "test-workflow"
     workflow.version = "1.0.0"
     workflow.description = "A test workflow"
-    
+
     # Mock inputs
     input1 = MagicMock()
     input1.name = "url"
@@ -29,38 +29,38 @@ def mock_workflow():
     input1.required = True
     input1.default = None
     input1.description = "URL to process"
-    
+
     input2 = MagicMock()
     input2.name = "timeout"
     input2.type = "integer"
     input2.required = False
     input2.default = 30
     input2.description = "Timeout in seconds"
-    
+
     workflow.inputs = [input1, input2]
-    
+
     # Mock steps
     step1 = MagicMock()
     step1.id = "fetch"
     step1.tool = "http_request"
     step1.code = None
-    
+
     step2 = MagicMock()
     step2.id = "transform"
     step2.tool = None
     step2.code = "return data"
-    
+
     workflow.steps = [step1, step2]
-    
+
     # Mock outputs
     output1 = MagicMock()
     output1.name = "result"
     output1.from_path = "steps.transform.output"
     output1.value = None
     output1.description = "The result"
-    
+
     workflow.outputs = [output1]
-    
+
     return workflow
 
 
@@ -136,6 +136,7 @@ class TestWorkflowsShow:
 
             assert result.exit_code == 0
             import json
+
             data = json.loads(result.output)
             assert data["name"] == "test-workflow"
             assert data["version"] == "1.0.0"

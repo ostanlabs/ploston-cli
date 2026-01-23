@@ -202,7 +202,9 @@ def serve(
             )
 
             # Create HTTP config if using HTTP transport
-            http_config = MCPHTTPConfig(host=host, port=port) if transport_enum == MCPTransport.HTTP else None
+            http_config = (
+                MCPHTTPConfig(host=host, port=port) if transport_enum == MCPTransport.HTTP else None
+            )
 
             # Create minimal MCP frontend for config mode
             frontend = MCPFrontend(
@@ -297,8 +299,7 @@ def validate(ctx: click.Context, file: str, strict: bool, check_tools: bool) -> 
     """Validate a workflow YAML file."""
     from pathlib import Path
 
-    from ploston.workflow import WorkflowValidator
-    from ploston.workflow.parser import parse_workflow_yaml
+    from ploston_core.workflow import WorkflowValidator, parse_workflow_yaml
 
     from .formatters import print_validation_result
 
@@ -482,8 +483,16 @@ def workflows_show(ctx: click.Context, name: str) -> None:
 
 # Valid config sections
 VALID_SECTIONS = [
-    "server", "mcp", "tools", "workflows", "execution",
-    "python_exec", "logging", "plugins", "security", "telemetry"
+    "server",
+    "mcp",
+    "tools",
+    "workflows",
+    "execution",
+    "python_exec",
+    "logging",
+    "plugins",
+    "security",
+    "telemetry",
 ]
 
 
@@ -550,7 +559,9 @@ def tools() -> None:
 @click.option("--server", help="Filter by MCP server name")
 @click.option("--status", type=click.Choice(["available", "unavailable"]), help="Filter by status")
 @click.pass_context
-def tools_list(ctx: click.Context, source: str | None, server: str | None, status: str | None) -> None:
+def tools_list(
+    ctx: click.Context, source: str | None, server: str | None, status: str | None
+) -> None:
     """List available tools."""
     from ploston_core.types import ToolSource, ToolStatus
 
@@ -709,7 +720,6 @@ def api(
 ) -> None:
     """Start AEL REST API server."""
     import uvicorn
-
     from ploston_core.api import RESTConfig, create_rest_app
 
     def print_stderr(msg: str) -> None:

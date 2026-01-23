@@ -1,7 +1,6 @@
 """Unit tests for ael validate command."""
 
 import tempfile
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -121,6 +120,7 @@ outputs:
 
             assert result.exit_code == 0
             import json
+
             data = json.loads(result.output)
             assert data["valid"] is True
             assert data["errors"] == []
@@ -135,6 +135,7 @@ outputs:
 
             assert result.exit_code == 1
             import json
+
             data = json.loads(result.output)
             assert data["valid"] is False
             assert len(data["errors"]) > 0
@@ -149,14 +150,14 @@ outputs:
                 mock_app = MagicMock()
                 mock_app.initialize = AsyncMock()
                 mock_app.shutdown = AsyncMock()
-                
+
                 # Mock workflow registry with validator
                 mock_validator = MagicMock()
                 mock_result = MagicMock()
                 mock_result.errors = []
                 mock_result.warnings = []
                 mock_validator.validate.return_value = mock_result
-                
+
                 mock_app.workflow_registry = MagicMock()
                 mock_app.workflow_registry._validator = mock_validator
                 mock_app_class.return_value = mock_app

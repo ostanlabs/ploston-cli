@@ -1,8 +1,6 @@
 """Unit tests for ael config show command."""
 
 import json
-import tempfile
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
@@ -38,7 +36,7 @@ execution:
     def test_config_show_full(self, runner, config_file):
         """Test showing full configuration."""
         result = runner.invoke(cli, ["-c", str(config_file), "config", "show"])
-        
+
         assert result.exit_code == 0
         assert "AEL Configuration" in result.output
         assert "server:" in result.output
@@ -46,8 +44,10 @@ execution:
 
     def test_config_show_section(self, runner, config_file):
         """Test showing specific section."""
-        result = runner.invoke(cli, ["-c", str(config_file), "config", "show", "--section", "server"])
-        
+        result = runner.invoke(
+            cli, ["-c", str(config_file), "config", "show", "--section", "server"]
+        )
+
         assert result.exit_code == 0
         assert "server:" in result.output
         assert "port: 8080" in result.output
@@ -56,8 +56,10 @@ execution:
 
     def test_config_show_invalid_section(self, runner, config_file):
         """Test showing invalid section."""
-        result = runner.invoke(cli, ["-c", str(config_file), "config", "show", "--section", "invalid"])
-        
+        result = runner.invoke(
+            cli, ["-c", str(config_file), "config", "show", "--section", "invalid"]
+        )
+
         assert result.exit_code == 1
         assert "Unknown section 'invalid'" in result.output
         assert "Valid sections:" in result.output
@@ -65,7 +67,7 @@ execution:
     def test_config_show_json(self, runner, config_file):
         """Test JSON output."""
         result = runner.invoke(cli, ["--json", "-c", str(config_file), "config", "show"])
-        
+
         assert result.exit_code == 0
         # Should be valid JSON
         data = json.loads(result.output)
@@ -74,8 +76,10 @@ execution:
 
     def test_config_show_json_section(self, runner, config_file):
         """Test JSON output for specific section."""
-        result = runner.invoke(cli, ["--json", "-c", str(config_file), "config", "show", "--section", "server"])
-        
+        result = runner.invoke(
+            cli, ["--json", "-c", str(config_file), "config", "show", "--section", "server"]
+        )
+
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert "port" in data
@@ -85,7 +89,7 @@ execution:
         """Test error when no config file exists."""
         # Use a non-existent path
         result = runner.invoke(cli, ["-c", str(tmp_path / "nonexistent.yaml"), "config", "show"])
-        
+
         assert result.exit_code == 1
         assert "Error:" in result.output
 
@@ -96,10 +100,18 @@ class TestValidSections:
     def test_all_valid_sections(self, tmp_path):
         """Test all valid sections are accepted."""
         from ploston_cli.main import VALID_SECTIONS
-        
+
         expected = [
-            "server", "mcp", "tools", "workflows", "execution",
-            "python_exec", "logging", "plugins", "security", "telemetry"
+            "server",
+            "mcp",
+            "tools",
+            "workflows",
+            "execution",
+            "python_exec",
+            "logging",
+            "plugins",
+            "security",
+            "telemetry",
         ]
-        
+
         assert VALID_SECTIONS == expected

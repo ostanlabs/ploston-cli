@@ -24,8 +24,7 @@ dependencies = [
     "httpx>=0.26.0",
     "rich>=13.7.0",
     "pyyaml>=6.0",
-    # Server dependencies for local mode (TODO: make optional for HTTP-only mode)
-    "ploston>=1.0.0,<2.0.0",
+    "ploston-core>=1.0.0,<2.0.0",
 ]
 
 [project.optional-dependencies]

@@ -65,9 +65,7 @@ def print_validation_result(file: str, errors: list[str], warnings: list[str]) -
     if not errors and not warnings:
         click.echo("✓ Validation passed")
     elif errors:
-        click.echo(
-            f"\nValidation failed with {len(errors)} errors and {len(warnings)} warnings"
-        )
+        click.echo(f"\nValidation failed with {len(errors)} errors and {len(warnings)} warnings")
 
 
 def print_workflow_detail(workflow: Any) -> None:
@@ -161,11 +159,7 @@ def print_tool_detail(tool: Any) -> None:
         props = tool.input_schema.get("properties", {})
         required = tool.input_schema.get("required", [])
         for name, schema in props.items():
-            req = (
-                "required"
-                if name in required
-                else f"default: {schema.get('default', 'none')}"
-            )
+            req = "required" if name in required else f"default: {schema.get('default', 'none')}"
             desc = schema.get("description", "")
             click.echo(f"  {name} ({schema.get('type', 'any')}, {req}): {desc}")
 

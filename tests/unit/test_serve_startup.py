@@ -19,8 +19,10 @@ class TestServeStartup:
 
     def test_serve_auto_detect_running_mode(self, runner):
         """Test auto-detect running mode when config exists."""
-        with patch("ploston_core.config.ConfigLoader") as mock_loader_class, \
-             patch("ploston_cli.application.AELApplication") as mock_app_class:
+        with (
+            patch("ploston_core.config.ConfigLoader") as mock_loader_class,
+            patch("ploston_cli.application.AELApplication") as mock_app_class,
+        ):
             mock_loader = MagicMock()
             mock_config = MagicMock()
             mock_loader.load.return_value = mock_config

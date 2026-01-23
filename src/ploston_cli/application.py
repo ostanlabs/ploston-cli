@@ -13,10 +13,10 @@ from ploston_core.mcp import MCPClientManager
 from ploston_core.mcp_frontend import MCPFrontend, MCPServerConfig
 from ploston_core.registry import ToolRegistry
 from ploston_core.sandbox import SandboxConfig
-from ploston_core.telemetry import setup_telemetry, TelemetryConfig, OTLPExporterConfig
+from ploston_core.telemetry import OTLPExporterConfig, TelemetryConfig, setup_telemetry
 from ploston_core.template import TemplateEngine
 from ploston_core.types import MCPTransport
-from ploston.workflow import WorkflowRegistry
+from ploston_core.workflow import WorkflowRegistry
 
 
 class AELApplication:
@@ -103,13 +103,27 @@ class AELApplication:
 
         # 3. Telemetry Setup
         # Check for environment variable overrides (common in K8s deployments)
-        telemetry_enabled = os.environ.get("AEL_TELEMETRY_ENABLED", "").lower() == "true" or config.telemetry.enabled
-        metrics_enabled = os.environ.get("AEL_METRICS_ENABLED", "").lower() == "true" or config.telemetry.metrics.enabled
-        traces_enabled = os.environ.get("AEL_TRACES_ENABLED", "").lower() == "true" or config.telemetry.tracing.enabled
-        logs_enabled = os.environ.get("AEL_LOGS_ENABLED", "").lower() == "true" or config.telemetry.logging.enabled
+        telemetry_enabled = (
+            os.environ.get("AEL_TELEMETRY_ENABLED", "").lower() == "true"
+            or config.telemetry.enabled
+        )
+        metrics_enabled = (
+            os.environ.get("AEL_METRICS_ENABLED", "").lower() == "true"
+            or config.telemetry.metrics.enabled
+        )
+        traces_enabled = (
+            os.environ.get("AEL_TRACES_ENABLED", "").lower() == "true"
+            or config.telemetry.tracing.enabled
+        )
+        logs_enabled = (
+            os.environ.get("AEL_LOGS_ENABLED", "").lower() == "true"
+            or config.telemetry.logging.enabled
+        )
 
         # OTLP endpoint from env or config
-        otlp_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", config.telemetry.export.otlp.endpoint)
+        otlp_endpoint = os.environ.get(
+            "OTEL_EXPORTER_OTLP_ENDPOINT", config.telemetry.export.otlp.endpoint
+        )
         otlp_enabled = bool(otlp_endpoint) and (traces_enabled or logs_enabled)
 
         telemetry_config = TelemetryConfig(

@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
+from ploston_core.types import ToolSource, ToolStatus
 
 from ploston_cli.main import cli
-from ploston_core.types import ToolSource, ToolStatus
 
 
 @pytest.fixture
@@ -133,6 +133,7 @@ class TestToolsList:
 
             assert result.exit_code == 0
             import json
+
             data = json.loads(result.output)
             assert len(data) == 1
             assert data[0]["name"] == "test_tool"
@@ -225,6 +226,7 @@ class TestToolsShow:
 
             assert result.exit_code == 0
             import json
+
             data = json.loads(result.output)
             assert data["name"] == "test_tool"
             assert data["source"] == "mcp"
@@ -241,7 +243,7 @@ class TestToolsRefresh:
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
             mock_app.tool_registry = MagicMock()
-            
+
             mock_result = MagicMock()
             mock_result.total_tools = 10
             mock_result.added = ["new_tool"]
@@ -266,7 +268,7 @@ class TestToolsRefresh:
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
             mock_app.tool_registry = MagicMock()
-            
+
             mock_result = MagicMock()
             mock_result.total_tools = 5
             mock_result.added = []
@@ -288,7 +290,7 @@ class TestToolsRefresh:
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
             mock_app.tool_registry = MagicMock()
-            
+
             mock_result = MagicMock()
             mock_result.total_tools = 5
             mock_result.added = []
@@ -311,7 +313,7 @@ class TestToolsRefresh:
             mock_app.initialize = AsyncMock()
             mock_app.shutdown = AsyncMock()
             mock_app.tool_registry = MagicMock()
-            
+
             mock_result = MagicMock()
             mock_result.total_tools = 10
             mock_result.added = ["new_tool"]
@@ -325,9 +327,10 @@ class TestToolsRefresh:
 
             assert result.exit_code == 0
             import json
+
             # Skip the "Refreshing tools..." line
-            lines = result.output.strip().split('\n')
-            json_output = '\n'.join(lines[1:])
+            lines = result.output.strip().split("\n")
+            json_output = "\n".join(lines[1:])
             data = json.loads(json_output)
             assert data["total_tools"] == 10
             assert "new_tool" in data["added"]
