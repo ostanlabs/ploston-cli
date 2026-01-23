@@ -7,4 +7,10 @@ build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.venv/
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
 
