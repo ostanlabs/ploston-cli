@@ -1,7 +1,8 @@
-"""Unit tests for ael validate command."""
+"""Unit tests for ploston validate command."""
 
+import json
 import tempfile
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -36,7 +37,7 @@ steps:
 
 outputs:
   - name: result
-    from_path: steps.fetch.output
+    from: steps.fetch.output
 """
 
 
@@ -56,7 +57,7 @@ steps:
 
 
 class TestValidate:
-    """Tests for ael validate command."""
+    """Tests for ploston validate command."""
 
     def test_validate_valid_workflow(self, runner, valid_workflow_yaml):
         """Test validating a valid workflow."""
@@ -93,7 +94,7 @@ steps:
 
 outputs:
   - name: result
-    from_path: steps.fetch.output
+    from: steps.fetch.output
 """
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
@@ -119,8 +120,6 @@ outputs:
             result = runner.invoke(cli, ["--json", "validate", f.name])
 
             assert result.exit_code == 0
-            import json
-
             data = json.loads(result.output)
             assert data["valid"] is True
             assert data["errors"] == []
@@ -134,38 +133,48 @@ outputs:
             result = runner.invoke(cli, ["--json", "validate", f.name])
 
             assert result.exit_code == 1
-            import json
-
             data = json.loads(result.output)
             assert data["valid"] is False
             assert len(data["errors"]) > 0
 
     def test_validate_with_check_tools(self, runner, valid_workflow_yaml):
-        """Test --check-tools flag."""
+        """Test --check-tools flag queries server for tool validation."""
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(valid_workflow_yaml)
             f.flush()
 
-            with patch("ploston_cli.main.AELApplication") as mock_app_class:
-                mock_app = MagicMock()
-                mock_app.initialize = AsyncMock()
-                mock_app.shutdown = AsyncMock()
-
-                # Mock workflow registry with validator
-                mock_validator = MagicMock()
-                mock_result = MagicMock()
-                mock_result.errors = []
-                mock_result.warnings = []
-                mock_validator.validate.return_value = mock_result
-
-                mock_app.workflow_registry = MagicMock()
-                mock_app.workflow_registry._validator = mock_validator
-                mock_app_class.return_value = mock_app
+            # Mock the server returning the tool exists
+            with patch("ploston_cli.main.PlostClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client.list_tools = AsyncMock(return_value=[{"name": "http_request"}])
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                mock_client_class.return_value = mock_client
 
                 result = runner.invoke(cli, ["validate", "--check-tools", f.name])
 
                 assert result.exit_code == 0
-                mock_validator.validate.assert_called_once()
+                mock_client.list_tools.assert_called_once()
+
+    def test_validate_with_check_tools_missing(self, runner, valid_workflow_yaml):
+        """Test --check-tools flag reports missing tools."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write(valid_workflow_yaml)
+            f.flush()
+
+            # Mock the server returning empty tools list (tool not found)
+            with patch("ploston_cli.main.PlostClient") as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client.list_tools = AsyncMock(return_value=[])
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=None)
+                mock_client_class.return_value = mock_client
+
+                result = runner.invoke(cli, ["validate", "--check-tools", f.name])
+
+                assert result.exit_code == 1
+                assert "http_request" in result.output
+                assert "not found" in result.output.lower() or "ERRORS" in result.output
 
     def test_validate_malformed_yaml(self, runner):
         """Test validating malformed YAML."""

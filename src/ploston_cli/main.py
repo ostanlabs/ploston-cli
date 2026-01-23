@@ -1,4 +1,8 @@
-"""CLI main entry point."""
+"""CLI main entry point.
+
+Ploston CLI - A thin HTTP client for Ploston servers.
+All operations are delegated to the server via REST API.
+"""
 
 import asyncio
 import json
@@ -7,225 +11,55 @@ from typing import Any
 
 import click
 
-__version__ = "1.0.0"  # Defined here to avoid circular import
-
-from .application import AELApplication
+from .client import PlostClient, PlostClientError
+from .config import DEFAULT_SERVER, load_config
 from .utils import parse_inputs
+
+__version__ = "1.0.0"
+
+
+def get_server_url(ctx: click.Context) -> str:
+    """Get server URL from context, env, or config file.
+
+    Precedence: CLI flag > env var > config file > default
+    """
+    # CLI flag takes precedence
+    if ctx.obj.get("server"):
+        return ctx.obj["server"]
+
+    # Load from config (handles env var and config file)
+    cli_config = load_config()
+    return cli_config.server
 
 
 @click.group()
-@click.option("-c", "--config", type=click.Path(), help="Config file path")
+@click.option(
+    "-s",
+    "--server",
+    envvar="PLOSTON_SERVER",
+    help=f"Server URL (default: {DEFAULT_SERVER})",
+)
 @click.option("-v", "--verbose", count=True, help="Increase verbosity")
 @click.option("-q", "--quiet", is_flag=True, help="Suppress output")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @click.pass_context
-def cli(ctx: click.Context, config: str, verbose: int, quiet: bool, json_output: bool) -> None:
-    """Agent Execution Layer CLI."""
+def cli(ctx: click.Context, server: str | None, verbose: int, quiet: bool, json_output: bool) -> None:
+    """Ploston CLI - Command-line interface for Ploston servers.
+
+    Connect to a Ploston server to manage workflows and tools.
+
+    \b
+    Server URL precedence:
+      1. --server flag
+      2. PLOSTON_SERVER environment variable
+      3. ~/.ploston/config.yaml
+      4. Default: http://localhost:8080
+    """
     ctx.ensure_object(dict)
-    ctx.obj["config_path"] = config
+    ctx.obj["server"] = server
     ctx.obj["verbose"] = verbose
     ctx.obj["quiet"] = quiet
     ctx.obj["json_output"] = json_output
-
-
-@cli.command()
-@click.option("--no-watch", is_flag=True, help="Disable hot-reload")
-@click.option(
-    "--mode",
-    type=click.Choice(["configuration", "running"]),
-    help="Force startup mode (auto-detect if not specified)",
-)
-@click.option(
-    "--transport",
-    type=click.Choice(["stdio", "http"]),
-    default="stdio",
-    help="Transport type (default: stdio)",
-)
-@click.option(
-    "--port",
-    type=int,
-    default=8080,
-    help="HTTP port (only used with --transport http)",
-)
-@click.option(
-    "--host",
-    type=str,
-    default="0.0.0.0",
-    help="HTTP host (only used with --transport http)",
-)
-@click.option(
-    "--with-api",
-    is_flag=True,
-    help="Enable REST API alongside MCP server (dual-mode)",
-)
-@click.option(
-    "--api-prefix",
-    type=str,
-    default="/api/v1",
-    help="REST API URL prefix (default: /api/v1)",
-)
-@click.option(
-    "--api-docs",
-    is_flag=True,
-    help="Enable OpenAPI docs at /docs (only with --with-api)",
-)
-@click.pass_context
-def serve(
-    ctx: click.Context,
-    no_watch: bool,
-    mode: str | None,
-    transport: str,
-    port: int,
-    host: str,
-    with_api: bool,
-    api_prefix: str,
-    api_docs: bool,
-) -> None:
-    """Start AEL as MCP server.
-
-    Use --with-api to enable REST API alongside MCP server (dual-mode).
-    """
-    from ploston_core.config import ConfigLoader, MCPHTTPConfig, Mode, ModeManager, StagedConfig
-    from ploston_core.errors import AELError
-    from ploston_core.types import MCPTransport
-
-    def print_stderr(msg: str) -> None:
-        """Print message to stderr with [AEL] prefix."""
-        click.echo(f"[AEL] {msg}", err=True)
-
-    # Convert transport string to enum
-    transport_enum = MCPTransport.HTTP if transport == "http" else MCPTransport.STDIO
-
-    async def _serve() -> None:
-        config_loader = ConfigLoader()
-        config = None
-        config_source = None
-        initial_mode: Mode
-
-        # Determine initial mode
-        if mode == "configuration":
-            # Forced configuration mode
-            initial_mode = Mode.CONFIGURATION
-            print_stderr("Mode: configuration (forced via --mode flag)")
-            print_stderr("Use config tools to set up AEL")
-        elif mode == "running":
-            # Forced running mode - fail fast if no config
-            try:
-                config = config_loader.load(ctx.obj["config_path"])
-                config_source = config_loader._config_path
-                initial_mode = Mode.RUNNING
-                print_stderr(f"Config loaded from: {config_source}")
-                print_stderr("Mode: running (forced via --mode flag)")
-            except AELError as e:
-                print_stderr(f"Error: {e.message}")
-                print_stderr("Cannot start in running mode without valid config")
-                sys.exit(1)
-        else:
-            # Auto-detect mode
-            try:
-                config = config_loader.load(ctx.obj["config_path"])
-                config_source = config_loader._config_path
-                initial_mode = Mode.RUNNING
-                print_stderr(f"Config loaded from: {config_source}")
-                print_stderr("Mode: running")
-            except AELError:
-                initial_mode = Mode.CONFIGURATION
-                print_stderr("No config found (searched: ./ael-config.yaml, ~/.ael/config.yaml)")
-                print_stderr("Mode: configuration")
-                print_stderr("Use config tools to set up AEL")
-
-        # Create mode manager
-        mode_manager = ModeManager(initial_mode=initial_mode)
-
-        # Print transport info
-        if transport_enum == MCPTransport.HTTP:
-            print_stderr(f"Transport: HTTP on {host}:{port}")
-            if with_api:
-                print_stderr(f"REST API: enabled at {api_prefix}")
-                if api_docs:
-                    print_stderr(f"OpenAPI docs: http://{host}:{port}{api_prefix}/docs")
-        else:
-            print_stderr("Transport: stdio")
-            if with_api:
-                print_stderr("Warning: --with-api requires --transport http, ignoring")
-
-        if initial_mode == Mode.RUNNING and config:
-            # Full initialization for running mode
-            app = AELApplication(
-                ctx.obj["config_path"],
-                log_output=sys.stderr,
-                transport=transport_enum,
-                http_host=host,
-                http_port=port,
-                with_rest_api=with_api and transport_enum == MCPTransport.HTTP,
-                rest_api_prefix=api_prefix,
-                rest_api_docs=api_docs,
-            )
-            await app.initialize()
-
-            # Print additional info
-            if app.mcp_manager:
-                servers = list(app.mcp_manager._connections.keys())
-                if servers:
-                    print_stderr(f"MCP servers: {', '.join(servers)} ({len(servers)})")
-            if app.workflow_registry:
-                workflows = app.workflow_registry.list_workflows()
-                print_stderr(f"Workflows: {len(workflows)} registered")
-
-            if not app.mcp_frontend:
-                print_stderr("Error: MCP frontend not initialized")
-                sys.exit(1)
-
-            frontend = app.mcp_frontend
-
-            if not no_watch:
-                app.start_watching()
-
-            try:
-                await frontend.start()
-            finally:
-                if not no_watch:
-                    app.stop_watching()
-                await app.shutdown()
-        else:
-            # Configuration mode - minimal initialization
-            from ploston_core.config.tools import ConfigToolRegistry
-            from ploston_core.mcp_frontend import MCPFrontend, MCPServerConfig
-
-            # Create staged config
-            staged_config = StagedConfig(config_loader)
-
-            # Create config tool registry
-            config_tool_registry = ConfigToolRegistry(
-                staged_config=staged_config,
-                config_loader=config_loader,
-            )
-
-            # Create HTTP config if using HTTP transport
-            http_config = (
-                MCPHTTPConfig(host=host, port=port) if transport_enum == MCPTransport.HTTP else None
-            )
-
-            # Create minimal MCP frontend for config mode
-            frontend = MCPFrontend(
-                workflow_engine=None,
-                tool_registry=None,
-                workflow_registry=None,
-                tool_invoker=None,
-                config=MCPServerConfig(),
-                logger=None,
-                mode_manager=mode_manager,
-                config_tool_registry=config_tool_registry,
-                transport=transport_enum,
-                http_config=http_config,
-            )
-
-            try:
-                await frontend.start()
-            finally:
-                pass  # No cleanup needed in config mode
-
-    asyncio.run(_serve())
 
 
 @cli.command()
@@ -241,65 +75,106 @@ def run(
     input_file: str | None,
     timeout: int | None,
 ) -> None:
-    """Execute a workflow."""
+    """Execute a workflow on the Ploston server."""
+    server_url = get_server_url(ctx)
 
     async def _run() -> None:
         # Parse inputs
         input_dict = parse_inputs(inputs, input_file)
 
-        # Initialize
-        app = AELApplication(ctx.obj["config_path"])
-        await app.initialize()
+        async with PlostClient(server_url) as client:
+            try:
+                result = await client.execute_workflow(workflow, input_dict, timeout)
 
-        try:
-            # Run workflow
-            result = await app.run_workflow(workflow, input_dict, timeout)
+                # Output result
+                if ctx.obj["json_output"]:
+                    click.echo(json.dumps(result, indent=2))
+                else:
+                    click.echo(f"Status: {result.get('status', 'unknown')}")
+                    click.echo(f"Execution ID: {result.get('execution_id', 'N/A')}")
+                    outputs = result.get("outputs", {})
+                    if outputs:
+                        click.echo("Outputs:")
+                        for key, value in outputs.items():
+                            click.echo(f"  {key}: {value}")
+                    error = result.get("error")
+                    if error:
+                        click.echo(f"Error: {error}", err=True)
 
-            # Output result
-            if ctx.obj["json_output"]:
-                # Convert result to dict for JSON output
-                result_dict = {
-                    "status": result.status.value,
-                    "execution_id": result.execution_id,
-                    "outputs": result.outputs,
-                    "error": result.error.message if result.error else None,
-                }
-                click.echo(json.dumps(result_dict, indent=2))
-            else:
-                # Simple text output
-                click.echo(f"Status: {result.status.value}")
-                click.echo(f"Execution ID: {result.execution_id}")
-                if result.outputs:
-                    click.echo("Outputs:")
-                    for key, value in result.outputs.items():
-                        click.echo(f"  {key}: {value}")
-                if result.error:
-                    # Handle both AELError (with .message) and regular exceptions
-                    error_msg = getattr(result.error, "message", str(result.error))
-                    click.echo(f"Error: {error_msg}", err=True)
-
-        finally:
-            await app.shutdown()
+            except PlostClientError as e:
+                click.echo(f"Error: {e.message}", err=True)
+                sys.exit(1)
 
     asyncio.run(_run())
 
 
 @cli.command()
-def version() -> None:
+@click.pass_context
+def version(ctx: click.Context) -> None:
     """Show version information."""
-    click.echo(f"AEL version {__version__}")
+    server_url = get_server_url(ctx)
+
+    async def _version() -> None:
+        async with PlostClient(server_url) as client:
+            try:
+                caps = await client.get_capabilities()
+                if ctx.obj["json_output"]:
+                    click.echo(
+                        json.dumps(
+                            {
+                                "cli_version": __version__,
+                                "server_version": caps.get("version", "unknown"),
+                                "server_tier": caps.get("tier", "unknown"),
+                                "server_url": server_url,
+                            },
+                            indent=2,
+                        )
+                    )
+                else:
+                    click.echo(f"Ploston CLI version {__version__}")
+                    click.echo(f"Server: {server_url}")
+                    click.echo(f"Server version: {caps.get('version', 'unknown')}")
+                    click.echo(f"Server tier: {caps.get('tier', 'unknown')}")
+            except PlostClientError:
+                # Server not available, just show CLI version
+                if ctx.obj["json_output"]:
+                    click.echo(
+                        json.dumps(
+                            {
+                                "cli_version": __version__,
+                                "server_version": None,
+                                "server_tier": None,
+                                "server_url": server_url,
+                                "server_status": "unavailable",
+                            },
+                            indent=2,
+                        )
+                    )
+                else:
+                    click.echo(f"Ploston CLI version {__version__}")
+                    click.echo(f"Server: {server_url} (unavailable)")
+
+    asyncio.run(_version())
 
 
 @cli.command()
 @click.argument("file", type=click.Path(exists=True))
 @click.option("--strict", is_flag=True, help="Treat warnings as errors")
-@click.option("--check-tools", is_flag=True, help="Verify tools exist (requires MCP connection)")
+@click.option(
+    "--check-tools",
+    is_flag=True,
+    help="Verify tools exist on server (requires server connection)",
+)
 @click.pass_context
 def validate(ctx: click.Context, file: str, strict: bool, check_tools: bool) -> None:
-    """Validate a workflow YAML file."""
+    """Validate a workflow YAML file.
+
+    Performs local YAML validation. Use --check-tools to verify
+    that referenced tools exist on the server.
+    """
     from pathlib import Path
 
-    from ploston_core.workflow import WorkflowValidator, parse_workflow_yaml
+    import yaml as pyyaml
 
     from .formatters import print_validation_result
 
@@ -316,8 +191,8 @@ def validate(ctx: click.Context, file: str, strict: bool, check_tools: bool) -> 
 
     # Parse YAML
     try:
-        workflow = parse_workflow_yaml(yaml_content, file_path)
-    except Exception as e:
+        workflow_data = pyyaml.safe_load(yaml_content)
+    except pyyaml.YAMLError as e:
         errors.append(f"YAML parse error: {e}")
         if ctx.obj["json_output"]:
             click.echo(json.dumps({"valid": False, "errors": errors, "warnings": []}, indent=2))
@@ -325,37 +200,70 @@ def validate(ctx: click.Context, file: str, strict: bool, check_tools: bool) -> 
             print_validation_result(str(file), errors, warnings)
         sys.exit(1)
 
-    # Validate with or without tool checking
-    if check_tools:
-        # Need to initialize app to get tool registry
-        async def _validate_with_tools() -> tuple[list[str], list[str]]:
-            app = AELApplication(ctx.obj["config_path"])
-            await app.initialize()
-
-            if not app.workflow_registry:
-                await app.shutdown()
-                return ["Workflow registry not available"], []
-
-            # Use the validator from workflow registry
-            result = app.workflow_registry._validator.validate(workflow, check_tools=True)
-            await app.shutdown()
-
-            errs = [f"{e.path}: {e.message}" for e in result.errors]
-            warns = [f"{w.path}: {w.message}" for w in result.warnings]
-            return errs, warns
-
-        errors, warnings = asyncio.run(_validate_with_tools())
+    # Basic structure validation (local, no server needed)
+    if not isinstance(workflow_data, dict):
+        errors.append("Workflow must be a YAML mapping")
     else:
-        # Validate without tool checking - create a mock tool registry
-        from unittest.mock import MagicMock
+        # Check required fields
+        if "name" not in workflow_data:
+            errors.append("Missing required field: name")
+        if "version" not in workflow_data:
+            errors.append("Missing required field: version")
+        if "steps" not in workflow_data:
+            errors.append("Missing required field: steps")
+        elif not isinstance(workflow_data.get("steps"), list):
+            errors.append("'steps' must be a list")
+        elif len(workflow_data.get("steps", [])) == 0:
+            errors.append("Workflow must have at least one step")
+        else:
+            # Validate each step
+            for i, step in enumerate(workflow_data["steps"]):
+                if not isinstance(step, dict):
+                    errors.append(f"steps[{i}]: Step must be a mapping")
+                    continue
+                if "id" not in step:
+                    errors.append(f"steps[{i}]: Missing required field 'id'")
+                if "tool" not in step and "code" not in step:
+                    errors.append(f"steps[{i}]: Step must have either 'tool' or 'code'")
 
-        mock_registry = MagicMock()
-        mock_registry.get.return_value = None  # Won't be called since check_tools=False
-        validator = WorkflowValidator(mock_registry)
-        result = validator.validate(workflow, check_tools=False)
+        # Validate inputs if present
+        if "inputs" in workflow_data:
+            if not isinstance(workflow_data["inputs"], list):
+                errors.append("'inputs' must be a list")
+            else:
+                for i, inp in enumerate(workflow_data["inputs"]):
+                    if not isinstance(inp, dict):
+                        errors.append(f"inputs[{i}]: Input must be a mapping")
+                        continue
+                    if "name" not in inp:
+                        errors.append(f"inputs[{i}]: Missing required field 'name'")
 
-        errors = [f"{e.path}: {e.message}" for e in result.errors]
-        warnings = [f"{w.path}: {w.message}" for w in result.warnings]
+        # Validate outputs if present
+        if "outputs" in workflow_data:
+            if not isinstance(workflow_data["outputs"], list):
+                errors.append("'outputs' must be a list")
+
+    # Check tools on server if requested
+    if check_tools and not errors:
+        server_url = get_server_url(ctx)
+
+        async def _check_tools() -> list[str]:
+            tool_errors: list[str] = []
+            async with PlostClient(server_url) as client:
+                try:
+                    tools_list = await client.list_tools()
+                    tool_names = {t["name"] for t in tools_list}
+
+                    for i, step in enumerate(workflow_data.get("steps", [])):
+                        tool_name = step.get("tool")
+                        if tool_name and tool_name not in tool_names:
+                            tool_errors.append(f"steps[{i}]: Tool '{tool_name}' not found on server")
+                except PlostClientError as e:
+                    tool_errors.append(f"Cannot connect to server for tool check: {e.message}")
+            return tool_errors
+
+        tool_check_errors = asyncio.run(_check_tools())
+        errors.extend(tool_check_errors)
 
     # Output
     if ctx.obj["json_output"]:
@@ -375,37 +283,35 @@ def validate(ctx: click.Context, file: str, strict: bool, check_tools: bool) -> 
 
 @cli.group()
 def workflows() -> None:
-    """Manage workflows."""
+    """Manage workflows on the server."""
     pass
 
 
 @workflows.command("list")
 @click.pass_context
 def workflows_list(ctx: click.Context) -> None:
-    """List registered workflows."""
+    """List registered workflows on the server."""
+    server_url = get_server_url(ctx)
 
-    async def _list() -> list[Any]:
-        app = AELApplication(ctx.obj["config_path"])
-        await app.initialize()
-        if not app.workflow_registry:
-            return []
-        workflows_list_result: list[Any] = app.workflow_registry.list_workflows()
-        await app.shutdown()
-        return workflows_list_result
+    async def _list() -> list[dict[str, Any]]:
+        async with PlostClient(server_url) as client:
+            return await client.list_workflows()
 
-    workflows_result = asyncio.run(_list())
+    try:
+        workflows_result = asyncio.run(_list())
+    except PlostClientError as e:
+        click.echo(f"Error: {e.message}", err=True)
+        sys.exit(1)
 
     if ctx.obj["json_output"]:
-        # Convert to dict for JSON output
-        workflows_data = [
-            {"name": w.name, "version": w.version, "description": w.description}
-            for w in workflows_result
-        ]
-        click.echo(json.dumps(workflows_data, indent=2))
+        click.echo(json.dumps(workflows_result, indent=2))
     else:
         click.echo(f"Total workflows: {len(workflows_result)}")
         for w in workflows_result:
-            click.echo(f"  - {w.name} (v{w.version}): {w.description}")
+            name = w.get("name", "unknown")
+            version = w.get("version", "?")
+            description = w.get("description", "")
+            click.echo(f"  - {name} (v{version}): {description}")
 
 
 @workflows.command("show")
@@ -413,75 +319,36 @@ def workflows_list(ctx: click.Context) -> None:
 @click.pass_context
 def workflows_show(ctx: click.Context, name: str) -> None:
     """Show workflow details."""
-    from .formatters import print_workflow_detail
+    from .formatters import print_workflow_detail_dict
 
-    async def _show() -> tuple[Any, list[Any] | None]:
-        app = AELApplication(ctx.obj["config_path"])
-        await app.initialize()
+    server_url = get_server_url(ctx)
 
-        if not app.workflow_registry:
-            await app.shutdown()
-            return None, None
+    async def _show() -> dict[str, Any] | None:
+        async with PlostClient(server_url) as client:
+            try:
+                return await client.get_workflow(name)
+            except PlostClientError as e:
+                if e.status_code == 404:
+                    return None
+                raise
 
-        workflow = app.workflow_registry.get(name)
-        suggestions = None
-        if not workflow:
-            # Get all workflows for suggestions
-            all_workflows = app.workflow_registry.list_workflows()
-            # Simple substring match for suggestions
-            suggestions = [w for w in all_workflows if name.lower() in w.name.lower()][:5]
-
-        await app.shutdown()
-        return workflow, suggestions
-
-    workflow, suggestions = asyncio.run(_show())
+    try:
+        workflow = asyncio.run(_show())
+    except PlostClientError as e:
+        click.echo(f"Error: {e.message}", err=True)
+        sys.exit(1)
 
     if not workflow:
         click.echo(f"Error: Workflow '{name}' not found", err=True)
-        if suggestions:
-            click.echo("\nAvailable workflows:")
-            for w in suggestions:
-                click.echo(f"  - {w.name}")
         sys.exit(1)
 
     if ctx.obj["json_output"]:
-        workflow_dict = {
-            "name": workflow.name,
-            "version": workflow.version,
-            "description": workflow.description,
-            "inputs": [
-                {
-                    "name": inp.name,
-                    "type": inp.type,
-                    "required": inp.required,
-                    "default": inp.default,
-                    "description": inp.description,
-                }
-                for inp in workflow.inputs
-            ],
-            "steps": [
-                {
-                    "id": step.id,
-                    "tool": step.tool,
-                    "code": "inline" if step.code else None,
-                }
-                for step in workflow.steps
-            ],
-            "outputs": [
-                {
-                    "name": out.name,
-                    "from": out.from_path,
-                    "description": out.description,
-                }
-                for out in workflow.outputs
-            ],
-        }
-        click.echo(json.dumps(workflow_dict, indent=2))
+        click.echo(json.dumps(workflow, indent=2))
     else:
-        print_workflow_detail(workflow)
+        print_workflow_detail_dict(workflow)
 
 
-# Valid config sections
+# Valid server config sections
 VALID_SECTIONS = [
     "server",
     "mcp",
@@ -498,19 +365,55 @@ VALID_SECTIONS = [
 
 @cli.group()
 def config() -> None:
-    """Manage configuration."""
+    """Manage CLI and server configuration."""
     pass
 
 
 @config.command("show")
-@click.option("--section", help="Show specific section")
+@click.option("--section", help="Show specific section of server config")
+@click.option("--local", is_flag=True, help="Show local CLI config instead of server config")
 @click.pass_context
-def config_show(ctx: click.Context, section: str | None) -> None:
-    """Show current configuration."""
-    from ploston_core.config import ConfigLoader
-    from ploston_core.errors import AELError
+def config_show(ctx: click.Context, section: str | None, local: bool) -> None:
+    """Show configuration.
 
-    from .formatters import dataclass_to_dict, print_config_yaml
+    By default shows server configuration. Use --local to show CLI config.
+    """
+    from .config import get_config_path, load_config
+    from .formatters import print_config_yaml
+
+    if local:
+        # Show local CLI config
+        cli_config = load_config()
+        config_path = get_config_path()
+
+        data = {
+            "server": cli_config.server,
+            "timeout": cli_config.timeout,
+            "output_format": cli_config.output_format,
+        }
+
+        if ctx.obj["json_output"]:
+            click.echo(
+                json.dumps(
+                    {
+                        "config_path": str(config_path),
+                        "values": data,
+                        "sources": cli_config._sources,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            click.echo("Ploston CLI Configuration")
+            click.echo(f"Config file: {config_path}")
+            click.echo()
+            for key, value in data.items():
+                source = cli_config.get_source(key)
+                click.echo(f"  {key}: {value} (from {source})")
+        return
+
+    # Show server config
+    server_url = get_server_url(ctx)
 
     # Validate section if provided
     if section and section not in VALID_SECTIONS:
@@ -518,39 +421,65 @@ def config_show(ctx: click.Context, section: str | None) -> None:
         click.echo(f"\nValid sections:\n  {', '.join(VALID_SECTIONS)}")
         sys.exit(1)
 
-    # Load config
-    loader = ConfigLoader()
+    async def _get_config() -> dict[str, Any]:
+        async with PlostClient(server_url) as client:
+            return await client.get_config(section)
+
     try:
-        loaded_config = loader.load(ctx.obj["config_path"])
-        source = loader._config_path
-    except AELError as e:
+        data = asyncio.run(_get_config())
+    except PlostClientError as e:
         click.echo(f"Error: {e.message}", err=True)
-        click.echo("\nSearched:")
-        click.echo("  - ./ael-config.yaml")
-        click.echo("  - ~/.ael/config.yaml")
-        click.echo("\nUse 'ael serve' to start in configuration mode.")
         sys.exit(1)
 
-    # Get data
-    if section:
-        section_data = getattr(loaded_config, section, None)
-        data = dataclass_to_dict(section_data)
-    else:
-        data = dataclass_to_dict(loaded_config)
-
-    # Output
     if ctx.obj["json_output"]:
         click.echo(json.dumps(data, indent=2, default=str))
     else:
         if not section:
-            click.echo("AEL Configuration")
-            click.echo(f"Source: {source}\n")
+            click.echo("Ploston Server Configuration")
+            click.echo(f"Server: {server_url}\n")
         print_config_yaml(data, section)
+
+
+@config.command("set")
+@click.argument("key", type=click.Choice(["server", "timeout", "output_format"]))
+@click.argument("value")
+def config_set(key: str, value: str) -> None:
+    """Set a CLI configuration value.
+
+    Saves to ~/.ploston/config.yaml
+    """
+    from .config import save_config
+
+    # Convert value to appropriate type
+    if key == "timeout":
+        try:
+            value = int(value)  # type: ignore
+        except ValueError:
+            click.echo(f"Error: timeout must be an integer", err=True)
+            sys.exit(1)
+
+    save_config(key, value)
+    click.echo(f"Set {key} = {value}")
+
+
+@config.command("unset")
+@click.argument("key", type=click.Choice(["server", "timeout", "output_format"]))
+def config_unset(key: str) -> None:
+    """Remove a CLI configuration value.
+
+    The default value will be used instead.
+    """
+    from .config import unset_config
+
+    if unset_config(key):
+        click.echo(f"Removed {key} from config")
+    else:
+        click.echo(f"{key} was not set in config")
 
 
 @cli.group()
 def tools() -> None:
-    """Manage tools."""
+    """Manage tools on the server."""
     pass
 
 
@@ -562,49 +491,25 @@ def tools() -> None:
 def tools_list(
     ctx: click.Context, source: str | None, server: str | None, status: str | None
 ) -> None:
-    """List available tools."""
-    from ploston_core.types import ToolSource, ToolStatus
+    """List available tools on the server."""
+    from .formatters import print_tools_list_dict
 
-    from .formatters import print_tools_list
+    server_url = get_server_url(ctx)
 
-    async def _list() -> list[Any]:
-        app = AELApplication(ctx.obj["config_path"])
-        await app.initialize()
+    async def _list() -> list[dict[str, Any]]:
+        async with PlostClient(server_url) as client:
+            return await client.list_tools(source=source, server=server, status=status)
 
-        if not app.tool_registry:
-            await app.shutdown()
-            return []
-
-        # Convert string options to enums (enum values are lowercase)
-        source_enum = ToolSource(source) if source else None
-        status_enum = ToolStatus(status) if status else None
-
-        tools_result = app.tool_registry.list_tools(
-            source=source_enum,
-            server_name=server,
-            status=status_enum,
-        )
-
-        await app.shutdown()
-        return tools_result
-
-    tools_result = asyncio.run(_list())
+    try:
+        tools_result = asyncio.run(_list())
+    except PlostClientError as e:
+        click.echo(f"Error: {e.message}", err=True)
+        sys.exit(1)
 
     if ctx.obj["json_output"]:
-        # Convert to dict for JSON output
-        tools_data = [
-            {
-                "name": t.name,
-                "description": t.description,
-                "source": t.source.value,
-                "server_name": t.server_name,
-                "status": t.status.value,
-            }
-            for t in tools_result
-        ]
-        click.echo(json.dumps(tools_data, indent=2))
+        click.echo(json.dumps(tools_result, indent=2))
     else:
-        print_tools_list(tools_result)
+        print_tools_list_dict(tools_result)
 
 
 @tools.command("show")
@@ -612,175 +517,59 @@ def tools_list(
 @click.pass_context
 def tools_show(ctx: click.Context, name: str) -> None:
     """Show tool details."""
-    from .formatters import print_tool_detail
+    from .formatters import print_tool_detail_dict
 
-    async def _show() -> tuple[Any, list[Any] | None]:
-        app = AELApplication(ctx.obj["config_path"])
-        await app.initialize()
+    server_url = get_server_url(ctx)
 
-        if not app.tool_registry:
-            await app.shutdown()
-            return None, None
+    async def _show() -> dict[str, Any] | None:
+        async with PlostClient(server_url) as client:
+            try:
+                return await client.get_tool(name)
+            except PlostClientError as e:
+                if e.status_code == 404:
+                    return None
+                raise
 
-        tool = app.tool_registry.get(name)
-        suggestions = None
-        if not tool:
-            # Find similar tools for suggestion
-            suggestions = app.tool_registry.search(name)[:5]
-
-        await app.shutdown()
-        return tool, suggestions
-
-    tool, suggestions = asyncio.run(_show())
+    try:
+        tool = asyncio.run(_show())
+    except PlostClientError as e:
+        click.echo(f"Error: {e.message}", err=True)
+        sys.exit(1)
 
     if not tool:
         click.echo(f"Error: Tool '{name}' not found", err=True)
-        if suggestions:
-            click.echo("\nDid you mean:")
-            for t in suggestions:
-                click.echo(f"  - {t.name}")
         sys.exit(1)
 
     if ctx.obj["json_output"]:
-        tool_dict = {
-            "name": tool.name,
-            "description": tool.description,
-            "source": tool.source.value,
-            "server_name": tool.server_name,
-            "status": tool.status.value,
-            "input_schema": tool.input_schema,
-            "output_schema": tool.output_schema,
-        }
-        click.echo(json.dumps(tool_dict, indent=2))
+        click.echo(json.dumps(tool, indent=2))
     else:
-        print_tool_detail(tool)
+        print_tool_detail_dict(tool)
 
 
 @tools.command("refresh")
-@click.option("--server", help="Refresh specific server only")
+@click.option("--server", "server_name", help="Refresh specific server only")
 @click.pass_context
-def tools_refresh(ctx: click.Context, server: str | None) -> None:
+def tools_refresh(ctx: click.Context, server_name: str | None) -> None:
     """Refresh tool schemas from MCP servers."""
-    from .formatters import print_refresh_result
+    from .formatters import print_refresh_result_dict
 
-    async def _refresh() -> Any:
-        app = AELApplication(ctx.obj["config_path"])
-        await app.initialize()
+    server_url = get_server_url(ctx)
 
-        if not app.tool_registry:
-            await app.shutdown()
-            return None
-
-        if server:
-            result = await app.tool_registry.refresh_server(server)
-        else:
-            result = await app.tool_registry.refresh()
-
-        await app.shutdown()
-        return result
+    async def _refresh() -> dict[str, Any]:
+        async with PlostClient(server_url) as client:
+            return await client.refresh_tools(server=server_name)
 
     click.echo("Refreshing tools...")
-    result = asyncio.run(_refresh())
-
-    if result is None:
-        click.echo("Error: Tool registry not available", err=True)
+    try:
+        result = asyncio.run(_refresh())
+    except PlostClientError as e:
+        click.echo(f"Error: {e.message}", err=True)
         sys.exit(1)
 
     if ctx.obj["json_output"]:
-        result_dict = {
-            "total_tools": result.total_tools,
-            "added": result.added,
-            "removed": result.removed,
-            "updated": result.updated,
-            "errors": result.errors,
-        }
-        click.echo(json.dumps(result_dict, indent=2))
+        click.echo(json.dumps(result, indent=2))
     else:
-        print_refresh_result(result)
-
-
-@cli.command()
-@click.option("--host", type=str, default="0.0.0.0", help="Host to bind to")
-@click.option("--port", type=int, default=8080, help="Port to bind to")
-@click.option("--prefix", type=str, default="/api/v1", help="API prefix")
-@click.option("--no-docs", is_flag=True, help="Disable OpenAPI docs")
-@click.option("--require-auth", is_flag=True, help="Require API key authentication")
-@click.option("--rate-limit", type=int, default=0, help="Requests per minute (0=disabled)")
-@click.option("--db", type=click.Path(), help="SQLite database path for execution store")
-@click.pass_context
-def api(
-    ctx: click.Context,
-    host: str,
-    port: int,
-    prefix: str,
-    no_docs: bool,
-    require_auth: bool,
-    rate_limit: int,
-    db: str | None,
-) -> None:
-    """Start AEL REST API server."""
-    import uvicorn
-    from ploston_core.api import RESTConfig, create_rest_app
-
-    def print_stderr(msg: str) -> None:
-        """Print message to stderr with [AEL] prefix."""
-        click.echo(f"[AEL] {msg}", err=True)
-
-    async def _api() -> None:
-        # Initialize AEL application
-        app = AELApplication(ctx.obj["config_path"], log_output=sys.stderr)
-        await app.initialize()
-
-        if not app.workflow_registry or not app.workflow_engine:
-            print_stderr("Error: Workflow components not initialized")
-            sys.exit(1)
-
-        if not app.tool_registry or not app.tool_invoker:
-            print_stderr("Error: Tool components not initialized")
-            sys.exit(1)
-
-        # Create REST config
-        rest_config = RESTConfig(
-            host=host,
-            port=port,
-            prefix=prefix,
-            docs_enabled=not no_docs,
-            require_auth=require_auth,
-            rate_limiting_enabled=rate_limit > 0,
-            requests_per_minute=rate_limit if rate_limit > 0 else 100,
-            execution_store_sqlite_path=db,
-        )
-
-        # Create FastAPI app
-        fastapi_app = create_rest_app(
-            workflow_registry=app.workflow_registry,
-            workflow_engine=app.workflow_engine,
-            tool_registry=app.tool_registry,
-            tool_invoker=app.tool_invoker,
-            config=rest_config,
-            logger=app.logger,
-        )
-
-        print_stderr(f"REST API starting on http://{host}:{port}")
-        print_stderr(f"API prefix: {prefix}")
-        if not no_docs:
-            print_stderr(f"OpenAPI docs: http://{host}:{port}/docs")
-
-        # Run uvicorn
-        config = uvicorn.Config(
-            fastapi_app,
-            host=host,
-            port=port,
-            log_level="info",
-        )
-        server = uvicorn.Server(config)
-
-        try:
-            await server.serve()
-        finally:
-            await app.shutdown()
-
-    asyncio.run(_api())
+        print_refresh_result_dict(result)
 
 
 def main() -> None:

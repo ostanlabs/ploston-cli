@@ -4,8 +4,11 @@ Command-line interface for Ploston - Deterministic Agent Execution Layer
 
 ## Overview
 
-The Ploston CLI provides a powerful command-line interface for interacting with Ploston servers.
+The Ploston CLI is a **thin HTTP client** for interacting with Ploston servers.
 It works with both the open-source community tier and enterprise tier.
+
+**Key Design Principle**: The CLI does not embed any server components. It communicates
+exclusively via HTTP with a running Ploston server.
 
 ## Installation
 
@@ -32,8 +35,11 @@ ploston version
 ## Quick Start
 
 ```bash
-# Start the MCP server
-ploston serve
+# Configure server URL (one-time setup)
+ploston config set server http://localhost:8080
+
+# Or use environment variable
+export PLOSTON_SERVER=http://localhost:8080
 
 # List available workflows
 ploston workflows list
@@ -41,8 +47,24 @@ ploston workflows list
 # Run a workflow
 ploston run my-workflow -i key=value
 
-# Validate a workflow file
+# Validate a workflow file (local validation)
 ploston validate workflow.yaml
+```
+
+## Server Connection
+
+The CLI connects to a Ploston server via HTTP. Configure the server URL using:
+
+1. **CLI flag**: `--server http://localhost:8080`
+2. **Environment variable**: `PLOSTON_SERVER=http://localhost:8080`
+3. **Config file**: `~/.ploston/config.yaml`
+
+```bash
+# Set server URL in config
+ploston config set server http://localhost:8080
+
+# Check current configuration
+ploston config show --local
 ```
 
 ## Commands
@@ -51,43 +73,14 @@ ploston validate workflow.yaml
 
 | Option | Description |
 |--------|-------------|
-| `-c, --config PATH` | Config file path |
+| `--server URL` | Ploston server URL |
 | `-v, --verbose` | Increase verbosity (can be repeated) |
 | `-q, --quiet` | Suppress output |
 | `--json` | Output as JSON |
 
-### `ploston serve`
-
-Start the MCP server.
-
-```bash
-# Start with default settings (stdio transport)
-ploston serve
-
-# Start with HTTP transport
-ploston serve --transport http --port 8080
-
-# Start with REST API enabled
-ploston serve --transport http --with-api --api-docs
-
-# Force configuration mode
-ploston serve --mode configuration
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--transport` | `stdio` | Transport type (`stdio` or `http`) |
-| `--host` | `0.0.0.0` | HTTP host |
-| `--port` | `8080` | HTTP port |
-| `--no-watch` | `false` | Disable config hot-reload |
-| `--mode` | auto | Force mode (`configuration` or `running`) |
-| `--with-api` | `false` | Enable REST API (HTTP only) |
-| `--api-prefix` | `/api/v1` | REST API URL prefix |
-| `--api-docs` | `false` | Enable OpenAPI docs at /docs |
-
 ### `ploston run`
 
-Execute a workflow.
+Execute a workflow on the server.
 
 ```bash
 # Run with inline inputs
@@ -111,27 +104,27 @@ ploston --json run my-workflow
 
 ### `ploston validate`
 
-Validate a workflow YAML file.
+Validate a workflow YAML file locally.
 
 ```bash
-# Basic validation
+# Basic validation (local only, no server needed)
 ploston validate workflow.yaml
 
 # Strict mode (warnings as errors)
 ploston validate --strict workflow.yaml
 
-# Check that tools exist (requires MCP connection)
+# Check that tools exist on server
 ploston validate --check-tools workflow.yaml
 ```
 
 | Option | Description |
 |--------|-------------|
 | `--strict` | Treat warnings as errors |
-| `--check-tools` | Verify tools exist |
+| `--check-tools` | Verify tools exist on server |
 
 ### `ploston workflows`
 
-Manage workflows.
+Manage workflows on the server.
 
 ```bash
 # List all workflows
@@ -146,76 +139,42 @@ ploston --json workflows list
 
 ### `ploston tools`
 
-Manage tools.
+Manage tools on the server.
 
 ```bash
 # List all tools
 ploston tools list
 
-# Filter by source
-ploston tools list --source mcp
-
-# Filter by server
-ploston tools list --server native-tools
-
 # Show tool details
 ploston tools show read_file
 
-# Refresh tool schemas
+# Refresh tool schemas from MCP servers
 ploston tools refresh
-ploston tools refresh --server native-tools
 ```
-
-| Option | Description |
-|--------|-------------|
-| `--source` | Filter by source (`mcp` or `system`) |
-| `--server` | Filter by MCP server name |
-| `--status` | Filter by status (`available` or `unavailable`) |
 
 ### `ploston config`
 
-Manage configuration.
+Manage CLI and server configuration.
 
 ```bash
-# Show full config
+# Show local CLI config
+ploston config show --local
+
+# Show server config
 ploston config show
 
 # Show specific section
 ploston config show --section mcp
 
-# JSON output
-ploston --json config show
+# Set CLI config values
+ploston config set server http://localhost:8080
+ploston config set timeout 60
+
+# Unset CLI config values
+ploston config unset timeout
 ```
 
 Valid sections: `server`, `mcp`, `tools`, `workflows`, `execution`, `python_exec`, `logging`, `plugins`, `security`, `telemetry`
-
-### `ploston api`
-
-Start standalone REST API server.
-
-```bash
-# Start API server
-ploston api --port 8080
-
-# With authentication required
-ploston api --require-auth
-
-# With rate limiting
-ploston api --rate-limit 100
-
-# With SQLite execution store
-ploston api --db ./executions.db
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--host` | `0.0.0.0` | Host to bind to |
-| `--port` | `8080` | Port to bind to |
-| `--prefix` | `/api/v1` | API prefix |
-| `--no-docs` | `false` | Disable OpenAPI docs |
-| `--require-auth` | `false` | Require API key |
-| `--rate-limit` | `0` | Requests per minute (0=disabled) |
-| `--db` | - | SQLite database path |
 
 ### `ploston version`
 
@@ -225,37 +184,34 @@ Show version information.
 ploston version
 ```
 
+Shows both CLI version and connected server version.
+
 ## Configuration
 
-The CLI looks for configuration in the following order:
+### CLI Configuration
 
-1. Path specified with `-c/--config`
-2. `./ael-config.yaml` (current directory)
-3. `~/.ael/config.yaml` (home directory)
-
-If no config is found, the server starts in **configuration mode** where you can use MCP tools to set up the configuration.
-
-### Example Config
+The CLI stores its configuration in `~/.ploston/config.yaml`:
 
 ```yaml
-# ael-config.yaml
-server:
-  host: 0.0.0.0
-  port: 8080
-
-mcp:
-  servers:
-    native-tools:
-      command: python
-      args: ["-m", "native_tools"]
-
-workflows:
-  paths:
-    - ./workflows/
-
-logging:
-  level: INFO
+# ~/.ploston/config.yaml
+server: http://localhost:8080
+timeout: 30
+output_format: text
 ```
+
+Configuration precedence (highest to lowest):
+1. CLI flags (`--server`)
+2. Environment variables (`PLOSTON_SERVER`)
+3. Config file (`~/.ploston/config.yaml`)
+4. Default values
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PLOSTON_SERVER` | Server URL | `http://localhost:8080` |
+| `PLOSTON_TIMEOUT` | Request timeout (seconds) | `30` |
+| `PLOSTON_OUTPUT_FORMAT` | Output format (`text` or `json`) | `text` |
 
 ## JSON Output
 
@@ -270,6 +226,24 @@ ploston --json run my-workflow -i key=value
 
 # Validate with JSON output
 ploston --json validate workflow.yaml
+```
+
+## Starting a Server
+
+The CLI is a client only. To start a Ploston server, use the `ploston` package:
+
+```bash
+# Install the server package
+pip install ploston
+
+# Start the server
+ploston-server --port 8080
+```
+
+Or use Docker:
+
+```bash
+docker run -p 8080:8080 ostanlabs/ploston:latest
 ```
 
 ## Development
@@ -300,11 +274,10 @@ make build      # Build package
 ## Features
 
 - **HTTP-only client**: No server dependencies, works with any Ploston server
-- **Tier detection**: Automatically detects community vs enterprise features
+- **Tier detection**: Automatically detects community vs enterprise features from server
 - **Rich output**: Beautiful terminal output with colors and formatting
 - **JSON mode**: Machine-readable output for scripting
-- **Config hot-reload**: Automatically reloads config changes
-- **Dual-mode server**: Run MCP and REST API simultaneously
+- **Local validation**: Validate workflow YAML without server connection
 
 ## License
 
