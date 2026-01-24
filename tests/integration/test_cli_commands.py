@@ -167,10 +167,20 @@ class TestCLIConfigCommand:
     def test_cli_021_config_show_section(self):
         """CLI-021: Config show specific section."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "config", "show", "server"],
+            ["python", "-m", "ploston_cli", "config", "show", "--section", "server"],
             capture_output=True,
             text=True
         )
-        
+
+        assert result.returncode in [0, 1]
+
+    def test_cli_022_config_show_local(self):
+        """CLI-022: Config show local CLI config."""
+        result = subprocess.run(
+            ["python", "-m", "ploston_cli", "config", "show", "--local"],
+            capture_output=True,
+            text=True
+        )
+
         assert result.returncode in [0, 1]
 

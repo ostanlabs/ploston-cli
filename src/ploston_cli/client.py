@@ -120,7 +120,9 @@ class PlostClient:
         Returns:
             List of workflow summaries
         """
-        return await self._request("GET", "/api/v1/workflows")
+        response = await self._request("GET", "/api/v1/workflows")
+        # API returns {"workflows": [...], "total": ..., ...}
+        return response.get("workflows", [])
 
     async def get_workflow(self, name: str) -> dict[str, Any]:
         """Get workflow details.
@@ -181,7 +183,11 @@ class PlostClient:
             params["server"] = server
         if status:
             params["status"] = status
-        return await self._request("GET", "/api/v1/tools", params=params or None)
+        response = await self._request("GET", "/api/v1/tools", params=params or None)
+        # API returns {"tools": [...]} but we want just the list
+        if isinstance(response, dict) and "tools" in response:
+            return response["tools"]
+        return response
 
     async def get_tool(self, name: str) -> dict[str, Any]:
         """Get tool details.
