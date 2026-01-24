@@ -3,11 +3,11 @@
 Tests actual CLI invocations via subprocess.
 """
 
-import pytest
-import subprocess
 import json
+import subprocess
+
+import pytest
 import yaml
-from pathlib import Path
 
 
 @pytest.mark.integration
@@ -21,7 +21,7 @@ class TestCLIBasicCommands:
             capture_output=True,
             text=True
         )
-        
+
         assert result.returncode == 0
         # Should contain version info
         assert "ploston" in result.stdout.lower() or "version" in result.stdout.lower()
@@ -33,21 +33,21 @@ class TestCLIBasicCommands:
             capture_output=True,
             text=True
         )
-        
+
         assert result.returncode == 0
         assert "Commands:" in result.stdout
 
     def test_cli_003_help_subcommand(self):
         """CLI-003: Help for subcommands works."""
         subcommands = ["workflows", "tools", "config", "validate"]
-        
+
         for cmd in subcommands:
             result = subprocess.run(
                 ["python", "-m", "ploston_cli", cmd, "--help"],
                 capture_output=True,
                 text=True
             )
-            
+
             assert result.returncode == 0, f"Help for {cmd} failed"
 
     def test_cli_004_unknown_command(self):
@@ -57,7 +57,7 @@ class TestCLIBasicCommands:
             capture_output=True,
             text=True
         )
-        
+
         # Should fail with error
         assert result.returncode != 0
 
@@ -79,33 +79,33 @@ class TestCLIValidateCommand:
             'steps': [{'id': 'step1', 'code': 'result = 42'}],
             'output': '{{ steps.step1.output }}'
         }
-        
+
         workflow_file = self.work_dir / "valid.yaml"
         with open(workflow_file, 'w') as f:
             yaml.dump(workflow, f)
-        
+
         result = subprocess.run(
             ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True
         )
-        
+
         assert result.returncode == 0
 
     def test_cli_011_validate_invalid_workflow(self):
         """CLI-011: Validate invalid workflow file."""
         workflow = {'name': 'incomplete'}  # Missing required fields
-        
+
         workflow_file = self.work_dir / "invalid.yaml"
         with open(workflow_file, 'w') as f:
             yaml.dump(workflow, f)
-        
+
         result = subprocess.run(
             ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True
         )
-        
+
         # Should fail or report errors
         combined = result.stdout + result.stderr
         assert result.returncode != 0 or "error" in combined.lower()
@@ -118,17 +118,17 @@ class TestCLIValidateCommand:
             'steps': [{'id': 'step1', 'code': 'result = 1'}],
             'output': '{{ steps.step1.output }}'
         }
-        
+
         workflow_file = self.work_dir / "test.yaml"
         with open(workflow_file, 'w') as f:
             yaml.dump(workflow, f)
-        
+
         result = subprocess.run(
             ["python", "-m", "ploston_cli", "--json", "validate", str(workflow_file)],
             capture_output=True,
             text=True
         )
-        
+
         assert result.returncode == 0
         # Should be valid JSON
         try:
@@ -145,7 +145,7 @@ class TestCLIValidateCommand:
             capture_output=True,
             text=True
         )
-        
+
         assert result.returncode != 0
 
 
@@ -160,7 +160,7 @@ class TestCLIConfigCommand:
             capture_output=True,
             text=True
         )
-        
+
         # Should succeed or show helpful message
         assert result.returncode in [0, 1]
 

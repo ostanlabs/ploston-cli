@@ -5,10 +5,11 @@ Note: The CLI uses config for server URL, not command-line args.
 These tests verify CLI behavior without requiring server connection.
 """
 
-import pytest
-import subprocess
 import json
+import subprocess
+
 import httpx
+import pytest
 
 
 def get_server_url():
