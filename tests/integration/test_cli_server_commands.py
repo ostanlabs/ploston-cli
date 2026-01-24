@@ -43,7 +43,7 @@ class TestCLIWorkflowsCommand:
             ["python", "-m", "ploston_cli", "workflows", "list"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         # Should succeed or fail gracefully (no server)
@@ -55,7 +55,7 @@ class TestCLIWorkflowsCommand:
             ["python", "-m", "ploston_cli", "--json", "workflows", "list"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         # Should succeed or fail gracefully
@@ -74,12 +74,14 @@ class TestCLIWorkflowsCommand:
             ["python", "-m", "ploston_cli", "workflows", "show", "nonexistent_workflow_12345"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         # Should fail or show not found
         combined = result.stdout + result.stderr
-        assert result.returncode != 0 or "not found" in combined.lower() or "error" in combined.lower()
+        assert (
+            result.returncode != 0 or "not found" in combined.lower() or "error" in combined.lower()
+        )
 
 
 @pytest.mark.integration
@@ -92,7 +94,7 @@ class TestCLIToolsCommand:
             ["python", "-m", "ploston_cli", "tools", "list"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         # Should succeed or fail gracefully
@@ -104,7 +106,7 @@ class TestCLIToolsCommand:
             ["python", "-m", "ploston_cli", "--json", "tools", "list"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         # Should succeed or fail gracefully
@@ -123,7 +125,7 @@ class TestCLIToolsCommand:
             ["python", "-m", "ploston_cli", "tools", "show", "python_exec"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         # Should succeed if tool exists or fail gracefully
@@ -135,12 +137,14 @@ class TestCLIToolsCommand:
             ["python", "-m", "ploston_cli", "tools", "show", "nonexistent_tool_12345"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         # Should fail or show not found
         combined = result.stdout + result.stderr
-        assert result.returncode != 0 or "not found" in combined.lower() or "error" in combined.lower()
+        assert (
+            result.returncode != 0 or "not found" in combined.lower() or "error" in combined.lower()
+        )
 
     def test_cli_044_tools_list_filter_source(self):
         """CLI-044: List tools filtered by source."""
@@ -148,7 +152,7 @@ class TestCLIToolsCommand:
             ["python", "-m", "ploston_cli", "tools", "list", "--source", "mcp"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         # Should succeed or fail gracefully
@@ -160,7 +164,7 @@ class TestCLIToolsCommand:
             ["python", "-m", "ploston_cli", "tools", "list", "--status", "available"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         # Should succeed or fail gracefully
@@ -181,21 +185,21 @@ class TestCLIRunCommand:
         import yaml
 
         workflow = {
-            'name': 'simple-test',
-            'version': '1.0',
-            'steps': [{'id': 'step1', 'code': 'result = 42'}],
-            'output': '{{ steps.step1.output }}'
+            "name": "simple-test",
+            "version": "1.0",
+            "steps": [{"id": "step1", "code": "result = 42"}],
+            "output": "{{ steps.step1.output }}",
         }
 
         workflow_file = self.work_dir / "simple.yaml"
-        with open(workflow_file, 'w') as f:
+        with open(workflow_file, "w") as f:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
             ["python", "-m", "ploston_cli", "run", str(workflow_file)],
             capture_output=True,
             text=True,
-            timeout=60
+            timeout=60,
         )
 
         # May succeed or fail depending on server availability
@@ -207,9 +211,8 @@ class TestCLIRunCommand:
             ["python", "-m", "ploston_cli", "run", "/nonexistent/workflow.yaml"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         # Should fail
         assert result.returncode != 0
-

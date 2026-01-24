@@ -17,9 +17,7 @@ class TestCLIBasicCommands:
     def test_cli_001_version(self):
         """CLI-001: Version command works."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "version"],
-            capture_output=True,
-            text=True
+            ["python", "-m", "ploston_cli", "version"], capture_output=True, text=True
         )
 
         assert result.returncode == 0
@@ -29,9 +27,7 @@ class TestCLIBasicCommands:
     def test_cli_002_help(self):
         """CLI-002: Help command works."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "--help"],
-            capture_output=True,
-            text=True
+            ["python", "-m", "ploston_cli", "--help"], capture_output=True, text=True
         )
 
         assert result.returncode == 0
@@ -43,9 +39,7 @@ class TestCLIBasicCommands:
 
         for cmd in subcommands:
             result = subprocess.run(
-                ["python", "-m", "ploston_cli", cmd, "--help"],
-                capture_output=True,
-                text=True
+                ["python", "-m", "ploston_cli", cmd, "--help"], capture_output=True, text=True
             )
 
             assert result.returncode == 0, f"Help for {cmd} failed"
@@ -53,9 +47,7 @@ class TestCLIBasicCommands:
     def test_cli_004_unknown_command(self):
         """CLI-004: Unknown command shows error."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "nonexistent"],
-            capture_output=True,
-            text=True
+            ["python", "-m", "ploston_cli", "nonexistent"], capture_output=True, text=True
         )
 
         # Should fail with error
@@ -74,36 +66,36 @@ class TestCLIValidateCommand:
     def test_cli_010_validate_valid_workflow(self):
         """CLI-010: Validate valid workflow file."""
         workflow = {
-            'name': 'test-workflow',
-            'version': '1.0',
-            'steps': [{'id': 'step1', 'code': 'result = 42'}],
-            'output': '{{ steps.step1.output }}'
+            "name": "test-workflow",
+            "version": "1.0",
+            "steps": [{"id": "step1", "code": "result = 42"}],
+            "output": "{{ steps.step1.output }}",
         }
 
         workflow_file = self.work_dir / "valid.yaml"
-        with open(workflow_file, 'w') as f:
+        with open(workflow_file, "w") as f:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
             ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
-            text=True
+            text=True,
         )
 
         assert result.returncode == 0
 
     def test_cli_011_validate_invalid_workflow(self):
         """CLI-011: Validate invalid workflow file."""
-        workflow = {'name': 'incomplete'}  # Missing required fields
+        workflow = {"name": "incomplete"}  # Missing required fields
 
         workflow_file = self.work_dir / "invalid.yaml"
-        with open(workflow_file, 'w') as f:
+        with open(workflow_file, "w") as f:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
             ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
-            text=True
+            text=True,
         )
 
         # Should fail or report errors
@@ -113,20 +105,20 @@ class TestCLIValidateCommand:
     def test_cli_012_validate_json_output(self):
         """CLI-012: Validate with JSON output."""
         workflow = {
-            'name': 'test',
-            'version': '1.0',
-            'steps': [{'id': 'step1', 'code': 'result = 1'}],
-            'output': '{{ steps.step1.output }}'
+            "name": "test",
+            "version": "1.0",
+            "steps": [{"id": "step1", "code": "result = 1"}],
+            "output": "{{ steps.step1.output }}",
         }
 
         workflow_file = self.work_dir / "test.yaml"
-        with open(workflow_file, 'w') as f:
+        with open(workflow_file, "w") as f:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
             ["python", "-m", "ploston_cli", "--json", "validate", str(workflow_file)],
             capture_output=True,
-            text=True
+            text=True,
         )
 
         assert result.returncode == 0
@@ -143,7 +135,7 @@ class TestCLIValidateCommand:
         result = subprocess.run(
             ["python", "-m", "ploston_cli", "validate", "/nonexistent/file.yaml"],
             capture_output=True,
-            text=True
+            text=True,
         )
 
         assert result.returncode != 0
@@ -156,9 +148,7 @@ class TestCLIConfigCommand:
     def test_cli_020_config_show(self):
         """CLI-020: Config show command works."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "config", "show"],
-            capture_output=True,
-            text=True
+            ["python", "-m", "ploston_cli", "config", "show"], capture_output=True, text=True
         )
 
         # Should succeed or show helpful message
@@ -169,7 +159,7 @@ class TestCLIConfigCommand:
         result = subprocess.run(
             ["python", "-m", "ploston_cli", "config", "show", "--section", "server"],
             capture_output=True,
-            text=True
+            text=True,
         )
 
         assert result.returncode in [0, 1]
@@ -179,8 +169,7 @@ class TestCLIConfigCommand:
         result = subprocess.run(
             ["python", "-m", "ploston_cli", "config", "show", "--local"],
             capture_output=True,
-            text=True
+            text=True,
         )
 
         assert result.returncode in [0, 1]
-
