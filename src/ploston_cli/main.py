@@ -576,6 +576,169 @@ def tools_refresh(ctx: click.Context, server_name: str | None) -> None:
         print_refresh_result_dict(result)
 
 
+# =============================================================================
+# Runner Commands
+# =============================================================================
+
+
+@cli.group()
+def runner() -> None:
+    """Manage runners (local tool execution agents)."""
+    pass
+
+
+@runner.command("create")
+@click.argument("name")
+@click.pass_context
+def runner_create(ctx: click.Context, name: str) -> None:
+    """Create a new runner and get its connection token.
+
+    The token is only shown once. Save it to connect the runner.
+
+    Example:
+        ploston runner create marc-laptop
+    """
+    server_url = get_server_url(ctx)
+
+    async def _create() -> dict[str, Any]:
+        async with PlostClient(server_url) as client:
+            return await client.create_runner(name)
+
+    try:
+        result = asyncio.run(_create())
+    except PlostClientError as e:
+        click.echo(f"Error: {e.message}", err=True)
+        sys.exit(1)
+
+    if ctx.obj["json_output"]:
+        click.echo(json.dumps(result, indent=2))
+    else:
+        click.echo(f"Runner '{name}' created successfully!")
+        click.echo()
+        click.echo("To connect this runner, run the following command on the target machine:")
+        click.echo()
+        click.echo(f"  {result.get('install_command', 'N/A')}")
+        click.echo()
+        click.echo("⚠️  Save this command - the token cannot be retrieved again.")
+
+
+@runner.command("list")
+@click.option(
+    "--status",
+    type=click.Choice(["connected", "disconnected"]),
+    help="Filter by status",
+)
+@click.pass_context
+def runner_list(ctx: click.Context, status: str | None) -> None:
+    """List all registered runners."""
+    server_url = get_server_url(ctx)
+
+    async def _list() -> list[dict[str, Any]]:
+        async with PlostClient(server_url) as client:
+            return await client.list_runners(status=status)
+
+    try:
+        runners = asyncio.run(_list())
+    except PlostClientError as e:
+        click.echo(f"Error: {e.message}", err=True)
+        sys.exit(1)
+
+    if ctx.obj["json_output"]:
+        click.echo(json.dumps({"runners": runners, "total": len(runners)}, indent=2))
+    else:
+        if not runners:
+            click.echo("No runners registered.")
+            click.echo("\nCreate one with: ploston runner create <name>")
+            return
+
+        click.echo(f"Total runners: {len(runners)}")
+        click.echo()
+        for r in runners:
+            status_icon = "🟢" if r.get("status") == "connected" else "⚪"
+            name = r.get("name", "unknown")
+            tool_count = r.get("tool_count", 0)
+            last_seen = r.get("last_seen", "never")
+            click.echo(f"  {status_icon} {name}")
+            click.echo(f"      Tools: {tool_count}, Last seen: {last_seen}")
+
+
+@runner.command("show")
+@click.argument("name")
+@click.pass_context
+def runner_show(ctx: click.Context, name: str) -> None:
+    """Show runner details."""
+    server_url = get_server_url(ctx)
+
+    async def _show() -> dict[str, Any] | None:
+        async with PlostClient(server_url) as client:
+            try:
+                return await client.get_runner(name)
+            except PlostClientError as e:
+                if e.status_code == 404:
+                    return None
+                raise
+
+    try:
+        runner_detail = asyncio.run(_show())
+    except PlostClientError as e:
+        click.echo(f"Error: {e.message}", err=True)
+        sys.exit(1)
+
+    if not runner_detail:
+        click.echo(f"Error: Runner '{name}' not found", err=True)
+        sys.exit(1)
+
+    if ctx.obj["json_output"]:
+        click.echo(json.dumps(runner_detail, indent=2))
+    else:
+        status_icon = "🟢" if runner_detail.get("status") == "connected" else "⚪"
+        click.echo(f"Runner: {runner_detail.get('name')}")
+        click.echo(f"  ID: {runner_detail.get('id')}")
+        click.echo(f"  Status: {status_icon} {runner_detail.get('status')}")
+        click.echo(f"  Created: {runner_detail.get('created_at')}")
+        click.echo(f"  Last seen: {runner_detail.get('last_seen', 'never')}")
+
+        tools = runner_detail.get("available_tools", [])
+        if tools:
+            click.echo(f"  Tools ({len(tools)}):")
+            for tool in tools[:10]:  # Show first 10
+                click.echo(f"    - {tool}")
+            if len(tools) > 10:
+                click.echo(f"    ... and {len(tools) - 10} more")
+        else:
+            click.echo("  Tools: none")
+
+
+@runner.command("delete")
+@click.argument("name")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+@click.pass_context
+def runner_delete(ctx: click.Context, name: str, force: bool) -> None:
+    """Delete a runner."""
+    if not force:
+        click.confirm(f"Delete runner '{name}'?", abort=True)
+
+    server_url = get_server_url(ctx)
+
+    async def _delete() -> dict[str, Any]:
+        async with PlostClient(server_url) as client:
+            return await client.delete_runner(name)
+
+    try:
+        result = asyncio.run(_delete())
+    except PlostClientError as e:
+        click.echo(f"Error: {e.message}", err=True)
+        sys.exit(1)
+
+    if ctx.obj["json_output"]:
+        click.echo(json.dumps(result, indent=2))
+    else:
+        if result.get("deleted"):
+            click.echo(f"Runner '{name}' deleted.")
+        else:
+            click.echo(f"Failed to delete runner '{name}'.")
+
+
 def main() -> None:
     """Main entry point."""
     cli(obj={})

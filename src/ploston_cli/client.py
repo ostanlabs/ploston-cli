@@ -239,3 +239,66 @@ class PlostClient:
             Health status dict
         """
         return await self._request("GET", "/health")
+
+    # -------------------------------------------------------------------------
+    # Runners
+    # -------------------------------------------------------------------------
+
+    async def create_runner(
+        self,
+        name: str,
+        mcps: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create a new runner.
+
+        Args:
+            name: Runner name
+            mcps: Optional MCP server configurations
+
+        Returns:
+            Runner creation response with token and install command
+        """
+        body: dict[str, Any] = {"name": name}
+        if mcps:
+            body["mcps"] = mcps
+        return await self._request("POST", "/api/v1/runners", json=body)
+
+    async def list_runners(
+        self,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List all runners.
+
+        Args:
+            status: Filter by status (connected, disconnected)
+
+        Returns:
+            List of runner summaries
+        """
+        params: dict[str, Any] = {}
+        if status:
+            params["status"] = status
+        response = await self._request("GET", "/api/v1/runners", params=params or None)
+        return response.get("runners", [])
+
+    async def get_runner(self, name: str) -> dict[str, Any]:
+        """Get runner details.
+
+        Args:
+            name: Runner name
+
+        Returns:
+            Runner details dict
+        """
+        return await self._request("GET", f"/api/v1/runners/{name}")
+
+    async def delete_runner(self, name: str) -> dict[str, Any]:
+        """Delete a runner.
+
+        Args:
+            name: Runner name
+
+        Returns:
+            Deletion result dict
+        """
+        return await self._request("DELETE", f"/api/v1/runners/{name}")
