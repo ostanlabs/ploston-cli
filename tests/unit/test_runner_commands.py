@@ -78,7 +78,7 @@ class TestRunnerCreate:
             assert "marc-laptop" in result.output
             assert "created successfully" in result.output
             assert "ploston-runner connect" in result.output
-            mock_client.create_runner.assert_called_once_with("marc-laptop")
+            mock_client.create_runner.assert_called_once_with("marc-laptop", mcps=None)
 
     def test_runner_create_json_output(self, runner, mock_create_response):
         """Test JSON output format for runner create."""

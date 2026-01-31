@@ -589,20 +589,37 @@ def runner() -> None:
 
 @runner.command("create")
 @click.argument("name")
+@click.option(
+    "--mcps",
+    type=str,
+    default=None,
+    help="MCP server configurations as JSON. Example: '{\"fs\": {\"command\": \"npx\", \"args\": [\"@mcp/filesystem\", \"/home\"]}}'",
+)
 @click.pass_context
-def runner_create(ctx: click.Context, name: str) -> None:
+def runner_create(ctx: click.Context, name: str, mcps: str | None) -> None:
     """Create a new runner and get its connection token.
 
     The token is only shown once. Save it to connect the runner.
 
-    Example:
+    Examples:
         ploston runner create marc-laptop
+
+        ploston runner create marc-laptop --mcps '{"fs": {"command": "npx", "args": ["@mcp/filesystem", "/home"]}}'
     """
     server_url = get_server_url(ctx)
 
+    # Parse MCPs JSON if provided
+    mcps_dict: dict[str, Any] | None = None
+    if mcps:
+        try:
+            mcps_dict = json.loads(mcps)
+        except json.JSONDecodeError as e:
+            click.echo(f"Error: Invalid JSON for --mcps: {e}", err=True)
+            sys.exit(1)
+
     async def _create() -> dict[str, Any]:
         async with PlostClient(server_url) as client:
-            return await client.create_runner(name)
+            return await client.create_runner(name, mcps=mcps_dict)
 
     try:
         result = asyncio.run(_create())
@@ -620,6 +637,9 @@ def runner_create(ctx: click.Context, name: str) -> None:
         click.echo(f"  {result.get('install_command', 'N/A')}")
         click.echo()
         click.echo("⚠️  Save this command - the token cannot be retrieved again.")
+        if mcps_dict:
+            click.echo()
+            click.echo(f"📦 Configured {len(mcps_dict)} MCP server(s): {', '.join(mcps_dict.keys())}")
 
 
 @runner.command("list")
