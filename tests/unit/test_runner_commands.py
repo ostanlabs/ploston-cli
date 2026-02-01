@@ -374,7 +374,9 @@ class TestRunnerRegenerateToken:
             mock_client.__aexit__ = AsyncMock(return_value=None)
             mock_client_class.return_value = mock_client
 
-            result = runner.invoke(cli, ["--json", "runner", "regenerate-token", "marc-laptop", "--force"])
+            result = runner.invoke(
+                cli, ["--json", "runner", "regenerate-token", "marc-laptop", "--force"]
+            )
 
             assert result.exit_code == 0
             data = json.loads(result.output)

@@ -6,7 +6,6 @@ Implements S-189: Test Infrastructure
 - UT-119: MockRestServer helper methods
 """
 
-
 from tests.mocks.mock_rest_server import MockRestServer
 
 
@@ -49,10 +48,9 @@ class TestMockRestServerRunnerEndpoints:
         server = MockRestServer()
         client = server.get_test_client()
 
-        response = client.post("/api/v1/runners", json={
-            "name": "test-runner",
-            "mcps": ["mcp1", "mcp2"]
-        })
+        response = client.post(
+            "/api/v1/runners", json={"name": "test-runner", "mcps": ["mcp1", "mcp2"]}
+        )
 
         assert response.status_code == 201
         data = response.json()

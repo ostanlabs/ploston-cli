@@ -661,7 +661,7 @@ def runner_create(ctx: click.Context, name: str) -> None:
     click.echo(f"    {name}:")
     click.echo("      mcp_servers:")
     click.echo("        filesystem:")
-    click.echo('          command: npx')
+    click.echo("          command: npx")
     click.echo('          args: ["@mcp/filesystem", "/home"]')
     click.echo()
     click.echo("After adding the runner to config and running config_done,")

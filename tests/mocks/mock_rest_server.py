@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 class RunnerCreateRequest(BaseModel):
     """Request body for creating a runner."""
+
     name: str
     mcps: list[str] | None = None
 
@@ -71,7 +72,7 @@ class MockRestServer:
                 "available_tools": [],
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "last_seen": None,
-                "install_command": f"curl -sSL http://localhost:8080/runner/install.sh | bash -s -- --token {token}"
+                "install_command": f"curl -sSL http://localhost:8080/runner/install.sh | bash -s -- --token {token}",
             }
             return self.created_runners[name]
 
@@ -128,10 +129,7 @@ MOCK_CERTIFICATE
         return TestClient(self.app)
 
     def add_runner(
-        self,
-        name: str,
-        status: str = "connected",
-        tools: list[str] | None = None
+        self, name: str, status: str = "connected", tools: list[str] | None = None
     ) -> dict:
         """Add a pre-configured runner.
 
@@ -153,16 +151,12 @@ MOCK_CERTIFICATE
             "available_tools": tools or [],
             "created_at": datetime.now(timezone.utc).isoformat(),
             "last_seen": datetime.now(timezone.utc).isoformat() if status == "connected" else None,
-            "install_command": f"curl -sSL http://localhost:8080/runner/install.sh | bash -s -- --token {token}"
+            "install_command": f"curl -sSL http://localhost:8080/runner/install.sh | bash -s -- --token {token}",
         }
         return self.created_runners[name]
 
     def add_tool(
-        self,
-        name: str,
-        description: str = "",
-        source: str = "local",
-        runner: str | None = None
+        self, name: str, description: str = "", source: str = "local", runner: str | None = None
     ) -> dict:
         """Add a tool to the mock server.
 
@@ -180,7 +174,7 @@ MOCK_CERTIFICATE
             "description": description,
             "source": source,
             "runner": runner,
-            "input_schema": {"type": "object", "properties": {}}
+            "input_schema": {"type": "object", "properties": {}},
         }
         self.tools.append(tool)
         return tool
