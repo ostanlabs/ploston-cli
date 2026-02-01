@@ -6,7 +6,6 @@ Implements S-189: Test Infrastructure
 - UT-119: MockRestServer helper methods
 """
 
-import pytest
 
 from tests.mocks.mock_rest_server import MockRestServer
 

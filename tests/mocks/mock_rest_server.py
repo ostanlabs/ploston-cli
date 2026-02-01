@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
