@@ -481,6 +481,52 @@ def config_unset(key: str) -> None:
         click.echo(f"{key} was not set in config")
 
 
+@config.command("diff")
+@click.pass_context
+def config_diff(ctx: click.Context) -> None:
+    """Show diff between current config and staged changes.
+
+    Only meaningful in configuration mode. Shows what changes will be
+    applied when 'config_done' is called.
+    """
+    server_url = get_server_url(ctx)
+
+    async def _get_diff() -> dict[str, Any]:
+        async with PlostClient(server_url) as client:
+            return await client.get_config_diff()
+
+    try:
+        result = asyncio.run(_get_diff())
+    except PlostClientError as e:
+        click.echo(f"Error: {e.message}", err=True)
+        raise SystemExit(1)
+
+    if not result.get("in_config_mode"):
+        click.echo("Not in configuration mode. No staged changes to show.")
+        click.echo("Use 'config_begin' to enter configuration mode.")
+        return
+
+    if not result.get("has_changes"):
+        click.echo("No staged changes.")
+        return
+
+    # Print the diff
+    diff = result.get("diff", "")
+    if diff:
+        click.echo("Staged configuration changes:")
+        click.echo()
+        # Color the diff output
+        for line in diff.splitlines():
+            if line.startswith("+") and not line.startswith("+++"):
+                click.secho(line, fg="green")
+            elif line.startswith("-") and not line.startswith("---"):
+                click.secho(line, fg="red")
+            elif line.startswith("@@"):
+                click.secho(line, fg="cyan")
+            else:
+                click.echo(line)
+
+
 @cli.group()
 def tools() -> None:
     """Manage tools on the server."""
@@ -589,57 +635,38 @@ def runner() -> None:
 
 @runner.command("create")
 @click.argument("name")
-@click.option(
-    "--mcps",
-    type=str,
-    default=None,
-    help="MCP server configurations as JSON. Example: '{\"fs\": {\"command\": \"npx\", \"args\": [\"@mcp/filesystem\", \"/home\"]}}'",
-)
 @click.pass_context
-def runner_create(ctx: click.Context, name: str, mcps: str | None) -> None:
-    """Create a new runner and get its connection token.
+def runner_create(ctx: click.Context, name: str) -> None:
+    """Create a new runner - DEPRECATED.
 
-    The token is only shown once. Save it to connect the runner.
+    Runners must be defined in the config file under the 'runners' section.
 
-    Examples:
-        ploston runner create marc-laptop
+    Example config (ael-config.yaml):
 
-        ploston runner create marc-laptop --mcps '{"fs": {"command": "npx", "args": ["@mcp/filesystem", "/home"]}}'
+        runners:
+          my-runner:
+            mcp_servers:
+              filesystem:
+                command: npx
+                args: ["@mcp/filesystem", "/home"]
+
+    After defining the runner in config and running config_done,
+    use 'ploston runner get-token <name>' to get the connection token.
     """
-    server_url = get_server_url(ctx)
-
-    # Parse MCPs JSON if provided
-    mcps_dict: dict[str, Any] | None = None
-    if mcps:
-        try:
-            mcps_dict = json.loads(mcps)
-        except json.JSONDecodeError as e:
-            click.echo(f"Error: Invalid JSON for --mcps: {e}", err=True)
-            sys.exit(1)
-
-    async def _create() -> dict[str, Any]:
-        async with PlostClient(server_url) as client:
-            return await client.create_runner(name, mcps=mcps_dict)
-
-    try:
-        result = asyncio.run(_create())
-    except PlostClientError as e:
-        click.echo(f"Error: {e.message}", err=True)
-        sys.exit(1)
-
-    if ctx.obj["json_output"]:
-        click.echo(json.dumps(result, indent=2))
-    else:
-        click.echo(f"Runner '{name}' created successfully!")
-        click.echo()
-        click.echo("To connect this runner, run the following command on the target machine:")
-        click.echo()
-        click.echo(f"  {result.get('install_command', 'N/A')}")
-        click.echo()
-        click.echo("⚠️  Save this command - the token cannot be retrieved again.")
-        if mcps_dict:
-            click.echo()
-            click.echo(f"📦 Configured {len(mcps_dict)} MCP server(s): {', '.join(mcps_dict.keys())}")
+    click.echo("Error: Runner creation via CLI is no longer supported.", err=True)
+    click.echo()
+    click.echo("Runners must be defined in the config file (ael-config.yaml):")
+    click.echo()
+    click.echo("  runners:")
+    click.echo(f"    {name}:")
+    click.echo("      mcp_servers:")
+    click.echo("        filesystem:")
+    click.echo('          command: npx')
+    click.echo('          args: ["@mcp/filesystem", "/home"]')
+    click.echo()
+    click.echo("After adding the runner to config and running config_done,")
+    click.echo(f"use 'ploston runner get-token {name}' to get the connection token.")
+    sys.exit(1)
 
 
 @runner.command("list")
@@ -757,6 +784,62 @@ def runner_delete(ctx: click.Context, name: str, force: bool) -> None:
             click.echo(f"Runner '{name}' deleted.")
         else:
             click.echo(f"Failed to delete runner '{name}'.")
+
+
+@runner.command("get-token")
+@click.argument("name")
+@click.pass_context
+def runner_get_token(ctx: click.Context, name: str) -> None:
+    """Get a runner's connection token.
+
+    Note: Tokens are not stored in retrievable form for security.
+    Use 'regenerate-token' to get a new token.
+    """
+    click.echo("Error: Tokens are not stored in retrievable form for security.", err=True)
+    click.echo()
+    click.echo(f"To get a new token, use: ploston runner regenerate-token {name}")
+    click.echo("Note: This will invalidate the current token.")
+    sys.exit(1)
+
+
+@runner.command("regenerate-token")
+@click.argument("name")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+@click.pass_context
+def runner_regenerate_token(ctx: click.Context, name: str, force: bool) -> None:
+    """Regenerate a runner's authentication token.
+
+    This invalidates the old token and generates a new one.
+    The runner will need to reconnect with the new token.
+    """
+    if not force:
+        click.confirm(
+            f"Regenerate token for runner '{name}'? This will disconnect the runner.",
+            abort=True,
+        )
+
+    server_url = get_server_url(ctx)
+
+    async def _regenerate() -> dict[str, Any]:
+        async with PlostClient(server_url) as client:
+            return await client.regenerate_runner_token(name)
+
+    try:
+        result = asyncio.run(_regenerate())
+    except PlostClientError as e:
+        click.echo(f"Error: {e.message}", err=True)
+        sys.exit(1)
+
+    if ctx.obj["json_output"]:
+        click.echo(json.dumps(result, indent=2))
+    else:
+        click.echo(f"Token regenerated for runner '{name}'")
+        click.echo()
+        click.echo("New token (save this, it won't be shown again):")
+        click.echo(f"  {result.get('token')}")
+        click.echo()
+        click.echo("Install command:")
+        click.echo(f"  {result.get('install_command')}")
 
 
 def main() -> None:

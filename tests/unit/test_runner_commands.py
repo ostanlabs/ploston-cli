@@ -61,57 +61,29 @@ def mock_create_response():
 
 
 class TestRunnerCreate:
-    """Tests for ploston runner create command (UT-099)."""
+    """Tests for ploston runner create command (UT-099).
 
-    def test_runner_create_success(self, runner, mock_create_response):
-        """Test successful runner creation."""
-        with patch("ploston_cli.main.PlostClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.create_runner = AsyncMock(return_value=mock_create_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+    Note: Runner creation via CLI is no longer supported.
+    Runners must be defined in the config file.
+    """
 
-            result = runner.invoke(cli, ["runner", "create", "marc-laptop"])
+    def test_runner_create_shows_error(self, runner):
+        """Test that runner create shows helpful error message."""
+        result = runner.invoke(cli, ["runner", "create", "marc-laptop"])
 
-            assert result.exit_code == 0
-            assert "marc-laptop" in result.output
-            assert "created successfully" in result.output
-            assert "ploston-runner connect" in result.output
-            mock_client.create_runner.assert_called_once_with("marc-laptop", mcps=None)
+        assert result.exit_code == 1
+        assert "no longer supported" in result.output
+        assert "config file" in result.output
+        assert "runners:" in result.output
+        assert "marc-laptop" in result.output
 
-    def test_runner_create_json_output(self, runner, mock_create_response):
-        """Test JSON output format for runner create."""
-        with patch("ploston_cli.main.PlostClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.create_runner = AsyncMock(return_value=mock_create_response)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+    def test_runner_create_json_output_shows_error(self, runner):
+        """Test that runner create with JSON flag still shows error."""
+        result = runner.invoke(cli, ["--json", "runner", "create", "marc-laptop"])
 
-            result = runner.invoke(cli, ["--json", "runner", "create", "marc-laptop"])
-
-            assert result.exit_code == 0
-            data = json.loads(result.output)
-            assert data["name"] == "marc-laptop"
-            assert data["token"].startswith("ploston_runner_")
-            assert "install_command" in data
-
-    def test_runner_create_duplicate_error(self, runner):
-        """Test error when creating duplicate runner."""
-        with patch("ploston_cli.main.PlostClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.create_runner = AsyncMock(
-                side_effect=PlostClientError("Runner 'marc-laptop' already exists", status_code=409)
-            )
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            result = runner.invoke(cli, ["runner", "create", "marc-laptop"])
-
-            assert result.exit_code == 1
-            assert "already exists" in result.output
+        # Even with --json, we show the helpful error message
+        assert result.exit_code == 1
+        assert "no longer supported" in result.output
 
 
 class TestRunnerList:
@@ -308,3 +280,104 @@ class TestRunnerDelete:
             data = json.loads(result.output)
             assert data["deleted"] is True
             assert data["name"] == "marc-laptop"
+
+
+class TestRunnerGetToken:
+    """Tests for ploston runner get-token command."""
+
+    def test_get_token_shows_error(self, runner):
+        """Test that get-token shows helpful error about security."""
+        result = runner.invoke(cli, ["runner", "get-token", "marc-laptop"])
+
+        assert result.exit_code == 1
+        assert "not stored" in result.output
+        assert "security" in result.output
+        assert "regenerate-token" in result.output
+
+
+class TestRunnerRegenerateToken:
+    """Tests for ploston runner regenerate-token command."""
+
+    def test_regenerate_token_success(self, runner):
+        """Test successful token regeneration with force flag."""
+        mock_response = {
+            "name": "marc-laptop",
+            "token": "ploston_runner_newtoken123",
+            "install_command": "ploston-runner install --cp-url http://localhost:8080 --token ploston_runner_newtoken123",
+        }
+        with patch("ploston_cli.main.PlostClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.regenerate_runner_token = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = runner.invoke(cli, ["runner", "regenerate-token", "marc-laptop", "--force"])
+
+            assert result.exit_code == 0
+            assert "regenerated" in result.output.lower()
+            assert "ploston_runner_newtoken123" in result.output
+            mock_client.regenerate_runner_token.assert_called_once_with("marc-laptop")
+
+    def test_regenerate_token_with_confirmation(self, runner):
+        """Test token regeneration with confirmation prompt."""
+        mock_response = {
+            "name": "marc-laptop",
+            "token": "ploston_runner_newtoken123",
+            "install_command": "ploston-runner install --cp-url http://localhost:8080 --token ploston_runner_newtoken123",
+        }
+        with patch("ploston_cli.main.PlostClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.regenerate_runner_token = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = runner.invoke(cli, ["runner", "regenerate-token", "marc-laptop"], input="y\n")
+
+            assert result.exit_code == 0
+            assert "ploston_runner_newtoken123" in result.output
+
+    def test_regenerate_token_cancelled(self, runner):
+        """Test token regeneration cancelled by user."""
+        result = runner.invoke(cli, ["runner", "regenerate-token", "marc-laptop"], input="n\n")
+
+        assert result.exit_code == 1  # Aborted
+
+    def test_regenerate_token_not_found(self, runner):
+        """Test regenerating token for non-existent runner."""
+        with patch("ploston_cli.main.PlostClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.regenerate_runner_token = AsyncMock(
+                side_effect=PlostClientError("Runner 'unknown' not found", status_code=404)
+            )
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = runner.invoke(cli, ["runner", "regenerate-token", "unknown", "--force"])
+
+            assert result.exit_code == 1
+            assert "not found" in result.output
+
+    def test_regenerate_token_json_output(self, runner):
+        """Test JSON output format for token regeneration."""
+        mock_response = {
+            "name": "marc-laptop",
+            "token": "ploston_runner_newtoken123",
+            "install_command": "ploston-runner install --cp-url http://localhost:8080 --token ploston_runner_newtoken123",
+        }
+        with patch("ploston_cli.main.PlostClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.regenerate_runner_token = AsyncMock(return_value=mock_response)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            result = runner.invoke(cli, ["--json", "runner", "regenerate-token", "marc-laptop", "--force"])
+
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["name"] == "marc-laptop"
+            assert data["token"] == "ploston_runner_newtoken123"
+            assert "install_command" in data

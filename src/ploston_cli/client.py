@@ -302,3 +302,24 @@ class PlostClient:
             Deletion result dict
         """
         return await self._request("DELETE", f"/api/v1/runners/{name}")
+
+    async def regenerate_runner_token(self, name: str) -> dict[str, Any]:
+        """Regenerate a runner's authentication token.
+
+        Args:
+            name: Runner name
+
+        Returns:
+            Token response dict with name, token, and install_command
+        """
+        return await self._request("POST", f"/api/v1/runners/{name}/regenerate-token")
+
+    # Config operations
+
+    async def get_config_diff(self) -> dict[str, Any]:
+        """Get diff between current config and staged changes.
+
+        Returns:
+            Diff response dict with diff, has_changes, and in_config_mode
+        """
+        return await self._request("GET", "/api/v1/config/diff")
