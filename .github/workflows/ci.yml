@@ -78,6 +78,7 @@ jobs:
     steps:
       - name: Download test results
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: test-results
           path: test-results/
@@ -90,18 +91,20 @@ jobs:
           TOTAL_FAILED=0
           TOTAL_SKIPPED=0
 
-          for xml in test-results/*.xml; do
-            if [ -f "$xml" ]; then
-              TESTS=$(grep -oP 'tests="\K[0-9]+' "$xml" | head -1 || echo 0)
-              FAILURES=$(grep -oP 'failures="\K[0-9]+' "$xml" | head -1 || echo 0)
-              ERRORS=$(grep -oP 'errors="\K[0-9]+' "$xml" | head -1 || echo 0)
-              SKIPPED=$(grep -oP 'skipped="\K[0-9]+' "$xml" | head -1 || echo 0)
+          if [ -d "test-results" ]; then
+            for xml in test-results/*.xml; do
+              if [ -f "$xml" ]; then
+                TESTS=$(grep -oP 'tests="\K[0-9]+' "$xml" | head -1 || echo 0)
+                FAILURES=$(grep -oP 'failures="\K[0-9]+' "$xml" | head -1 || echo 0)
+                ERRORS=$(grep -oP 'errors="\K[0-9]+' "$xml" | head -1 || echo 0)
+                SKIPPED=$(grep -oP 'skipped="\K[0-9]+' "$xml" | head -1 || echo 0)
 
-              TOTAL_TESTS=$((TOTAL_TESTS + TESTS))
-              TOTAL_FAILED=$((TOTAL_FAILED + FAILURES + ERRORS))
-              TOTAL_SKIPPED=$((TOTAL_SKIPPED + SKIPPED))
-            fi
-          done
+                TOTAL_TESTS=$((TOTAL_TESTS + TESTS))
+                TOTAL_FAILED=$((TOTAL_FAILED + FAILURES + ERRORS))
+                TOTAL_SKIPPED=$((TOTAL_SKIPPED + SKIPPED))
+              fi
+            done
+          fi
 
           TOTAL_PASSED=$((TOTAL_TESTS - TOTAL_FAILED - TOTAL_SKIPPED))
 
