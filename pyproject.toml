@@ -33,6 +33,10 @@ dev = [
     "pytest-cov>=4.0.0",
     "ruff>=0.2.0",
     "mypy>=1.8.0",
+    # Test server dependencies
+    "fastapi>=0.115.0",
+    "pydantic>=2.10.0",
+    "uvicorn>=0.34.0",
 ]
 
 [project.scripts]
@@ -58,10 +62,5 @@ ignore = ["E501"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
-[dependency-groups]
-dev = [
-    "fastapi>=0.128.0",
-    "pydantic>=2.12.5",
-    "uvicorn>=0.40.0",
-]
+
 
