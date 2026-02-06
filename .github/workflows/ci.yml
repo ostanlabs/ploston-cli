@@ -32,6 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -60,34 +61,27 @@ jobs:
           uv venv
           uv sync --all-extras
 
-      - name: Wait for ploston-core on PyPI (if specific version provided)
+      - name: Install specific ploston-core version (with retry for PyPI propagation)
         if: inputs.ploston_core_version != ''
         run: |
-          PACKAGE="ploston-core"
           VERSION="${{ inputs.ploston_core_version }}"
-          MAX_ATTEMPTS=12
+          MAX_ATTEMPTS=30
           SLEEP_INTERVAL=10
 
-          echo "Waiting for ${PACKAGE}==${VERSION} to be available on PyPI..."
+          echo "Installing ploston-core==${VERSION} (with retry for PyPI propagation)..."
           for i in $(seq 1 $MAX_ATTEMPTS); do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/${PACKAGE}/${VERSION}/json")
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "✓ ${PACKAGE}==${VERSION} is available on PyPI (attempt $i)"
+            echo "Attempt $i/$MAX_ATTEMPTS: Installing ploston-core==${VERSION}"
+            if uv pip install "ploston-core==${VERSION}"; then
+              echo "✅ Successfully installed ploston-core==${VERSION}"
               exit 0
-            else
-              echo "⏳ Waiting for ${PACKAGE}==${VERSION} on PyPI (attempt $i/$MAX_ATTEMPTS, HTTP $HTTP_CODE)..."
-              if [ "$i" -lt "$MAX_ATTEMPTS" ]; then
-                sleep $SLEEP_INTERVAL
-              fi
             fi
+            if [ "$i" -eq "$MAX_ATTEMPTS" ]; then
+              echo "❌ Failed to install ploston-core==${VERSION} after $MAX_ATTEMPTS attempts"
+              exit 1
+            fi
+            echo "⏳ Package not yet available, waiting ${SLEEP_INTERVAL}s before retry..."
+            sleep $SLEEP_INTERVAL
           done
-          echo "⚠️ Timeout waiting for ${PACKAGE}==${VERSION}, proceeding anyway..."
-
-      - name: Install specific ploston-core version (if provided)
-        if: inputs.ploston_core_version != ''
-        run: |
-          echo "Installing ploston-core==${{ inputs.ploston_core_version }}"
-          uv pip install "ploston-core==${{ inputs.ploston_core_version }}"
 
       - name: Run unit tests
         run: uv run pytest tests/unit/ -v --tb=short --junitxml=junit-results.xml
