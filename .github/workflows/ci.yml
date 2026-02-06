@@ -1,7 +1,12 @@
 # =============================================================================
 # Ploston CLI CI Workflow
 # =============================================================================
-# Runs unit tests locally, then triggers meta-repo for integration tests.
+# Runs lint and unit tests, reports to meta-repo.
+#
+# Triggers:
+#   - Push to main: Full CI + trigger meta-repo integration tests
+#   - Pull request: Lint + unit tests only
+#   - workflow_dispatch: Triggered by meta-repo for coordinated builds
 # =============================================================================
 
 name: CI
@@ -10,6 +15,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      meta_run_id:
+        description: 'Meta-repo run ID (for callback)'
+        required: false
+        default: ''
 
 jobs:
   lint:
@@ -53,9 +64,36 @@ jobs:
           name: test-results
           path: junit-results.xml
 
-  trigger-integration:
+  # ===========================================================================
+  # Report Results to Meta-Repo
+  # ===========================================================================
+
+  # Report completion when triggered by meta-repo (workflow_dispatch)
+  report-completion:
+    needs: [lint, unit-tests]
+    if: always() && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report CI completion to meta-repo
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.META_REPO_TOKEN }}
+          repository: ostanlabs/agent-execution-layer
+          event-type: package-ci-complete
+          client-payload: |
+            {
+              "package": "ploston-cli",
+              "sha": "${{ github.sha }}",
+              "run_id": "${{ github.run_id }}",
+              "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+              "meta_run_id": "${{ inputs.meta_run_id }}",
+              "status": "${{ needs.unit-tests.result == 'success' && 'success' || 'failure' }}"
+            }
+
+  # Trigger meta-repo CI when this repo changes organically (push to main)
+  trigger-meta-repo:
     needs: unit-tests
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.unit-tests.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Trigger meta-repo CI
