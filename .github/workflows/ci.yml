@@ -60,6 +60,29 @@ jobs:
           uv venv
           uv sync --all-extras
 
+      - name: Wait for ploston-core on PyPI (if specific version provided)
+        if: inputs.ploston_core_version != ''
+        run: |
+          PACKAGE="ploston-core"
+          VERSION="${{ inputs.ploston_core_version }}"
+          MAX_ATTEMPTS=12
+          SLEEP_INTERVAL=10
+
+          echo "Waiting for ${PACKAGE}==${VERSION} to be available on PyPI..."
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/${PACKAGE}/${VERSION}/json")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✓ ${PACKAGE}==${VERSION} is available on PyPI (attempt $i)"
+              exit 0
+            else
+              echo "⏳ Waiting for ${PACKAGE}==${VERSION} on PyPI (attempt $i/$MAX_ATTEMPTS, HTTP $HTTP_CODE)..."
+              if [ "$i" -lt "$MAX_ATTEMPTS" ]; then
+                sleep $SLEEP_INTERVAL
+              fi
+            fi
+          done
+          echo "⚠️ Timeout waiting for ${PACKAGE}==${VERSION}, proceeding anyway..."
+
       - name: Install specific ploston-core version (if provided)
         if: inputs.ploston_core_version != ''
         run: |
