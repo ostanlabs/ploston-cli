@@ -55,6 +55,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
+      - name: Create venv and install dependencies
+        run: |
+          uv venv
+          uv sync --all-extras
+
       - name: Install specific ploston-core version (if provided)
         if: inputs.ploston_core_version != ''
         run: |
@@ -62,9 +67,7 @@ jobs:
           uv pip install "ploston-core==${{ inputs.ploston_core_version }}"
 
       - name: Run unit tests
-        run: |
-          uv sync --all-extras
-          uv run pytest tests/unit/ -v --tb=short --junitxml=junit-results.xml
+        run: uv run pytest tests/unit/ -v --tb=short --junitxml=junit-results.xml
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
