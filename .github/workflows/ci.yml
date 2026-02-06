@@ -32,11 +32,14 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install pre-commit
-        run: pip install pre-commit
+      - name: Install ruff
+        run: pip install ruff
 
-      - name: Run pre-commit
-        run: pre-commit run --all-files --show-diff-on-failure
+      - name: Run ruff check
+        run: ruff check .
+
+      - name: Run ruff format check
+        run: ruff format --check .
 
   unit-tests:
     needs: lint
