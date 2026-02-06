@@ -75,14 +75,14 @@ test-cov:
 ## Run linter
 lint:
 	@echo "$(CYAN)Running linter...$(RESET)"
-	uv run ruff check src/ tests/
-	uv run ruff format --check src/ tests/
+	uv run --all-extras ruff check src/ tests/
+	uv run --all-extras ruff format --check src/ tests/
 
 ## Format code
 format:
 	@echo "$(CYAN)Formatting code...$(RESET)"
-	uv run ruff format src/ tests/
-	uv run ruff check --fix src/ tests/
+	uv run --all-extras ruff format src/ tests/
+	uv run --all-extras ruff check --fix src/ tests/
 
 ## Run all checks
 check: lint test
