@@ -26,12 +26,17 @@ on:
         required: false
         default: ''
 
+# Prevent concurrent runs on the same branch/ref
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
 
       - uses: actions/setup-python@v5
         with:
@@ -46,6 +51,7 @@ jobs:
   unit-tests:
     needs: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -61,27 +67,23 @@ jobs:
           uv venv
           uv sync --all-extras
 
-      - name: Install specific ploston-core version (with retry for PyPI propagation)
+      - name: Wait for ploston-core on PyPI
         if: inputs.ploston_core_version != ''
+        env:
+          GH_TOKEN: ${{ secrets.META_REPO_TOKEN }}
         run: |
-          VERSION="${{ inputs.ploston_core_version }}"
-          MAX_ATTEMPTS=30
-          SLEEP_INTERVAL=10
+          # Fetch the wait script from meta-repo
+          curl -sL \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github.v3.raw" \
+            "https://api.github.com/repos/ostanlabs/agent-execution-layer/contents/ci/scripts/wait-for-pypi.sh?ref=main" \
+            -o wait-for-pypi.sh
+          chmod +x wait-for-pypi.sh
+          ./wait-for-pypi.sh ploston-core "${{ inputs.ploston_core_version }}"
 
-          echo "Installing ploston-core==${VERSION} (with retry for PyPI propagation)..."
-          for i in $(seq 1 $MAX_ATTEMPTS); do
-            echo "Attempt $i/$MAX_ATTEMPTS: Installing ploston-core==${VERSION}"
-            if uv pip install "ploston-core==${VERSION}"; then
-              echo "✅ Successfully installed ploston-core==${VERSION}"
-              exit 0
-            fi
-            if [ "$i" -eq "$MAX_ATTEMPTS" ]; then
-              echo "❌ Failed to install ploston-core==${VERSION} after $MAX_ATTEMPTS attempts"
-              exit 1
-            fi
-            echo "⏳ Package not yet available, waiting ${SLEEP_INTERVAL}s before retry..."
-            sleep $SLEEP_INTERVAL
-          done
+      - name: Install specific ploston-core version
+        if: inputs.ploston_core_version != ''
+        run: uv pip install "ploston-core==${{ inputs.ploston_core_version }}"
 
       - name: Run unit tests
         run: uv run pytest tests/unit/ -v --tb=short --junitxml=junit-results.xml
@@ -96,34 +98,19 @@ jobs:
   # ===========================================================================
   # Report Results to Meta-Repo
   # ===========================================================================
-
-  # Report completion when triggered by meta-repo (workflow_dispatch)
-  report-completion:
-    needs: [lint, unit-tests]
-    if: always() && github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Report CI completion to meta-repo
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.META_REPO_TOKEN }}
-          repository: ostanlabs/agent-execution-layer
-          event-type: package-ci-complete
-          client-payload: |
-            {
-              "package": "ploston-cli",
-              "sha": "${{ github.sha }}",
-              "run_id": "${{ github.run_id }}",
-              "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-              "meta_run_id": "${{ inputs.meta_run_id }}",
-              "status": "${{ needs.unit-tests.result == 'success' && 'success' || 'failure' }}"
-            }
+  # When triggered by workflow_dispatch (from meta-repo), we don't send any event
+  # back - the meta-repo uses `gh run watch` to wait for completion.
+  #
+  # When triggered by push to main (organic change), we send component-updated
+  # to trigger the full meta-repo CI pipeline.
+  # ===========================================================================
 
   # Trigger meta-repo CI when this repo changes organically (push to main)
   trigger-meta-repo:
     needs: unit-tests
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.unit-tests.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Trigger meta-repo CI
         uses: peter-evans/repository-dispatch@v3
@@ -140,6 +127,8 @@ jobs:
   report-to-dashboard:
     name: Report to Dashboard
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
     needs: [lint, unit-tests]
     if: always() && github.ref == 'refs/heads/main'
     steps:
