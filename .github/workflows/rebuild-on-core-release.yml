@@ -1,0 +1,54 @@
+# =============================================================================
+# Rebuild on Core Release
+# =============================================================================
+# Triggered when ploston-core publishes a new release.
+# Rebuilds the package with the new core version.
+# =============================================================================
+
+name: Rebuild on Core Release
+
+on:
+  repository_dispatch:
+    types: [core-released]
+
+jobs:
+  rebuild:
+    name: Rebuild with new ploston-core
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Log event
+        run: |
+          echo "🔄 Core release detected: ${{ github.event.client_payload.core_version }}"
+          echo "Triggered by: ${{ github.event.client_payload.triggered_by }}"
+          echo "Release URL: ${{ github.event.client_payload.release_url }}"
+
+      - name: Trigger CI workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Extract version number (remove 'v' prefix if present)
+          CORE_VERSION="${{ github.event.client_payload.core_version }}"
+          CORE_VERSION="${CORE_VERSION#v}"
+
+          echo "Triggering CI with ploston-core version: $CORE_VERSION"
+
+          gh workflow run ci.yml \
+            --repo ${{ github.repository }} \
+            --field ploston_core_version="$CORE_VERSION"
+
+      - name: Generate summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          # 🔄 Rebuild Triggered
+
+          A new ploston-core release was detected. CI workflow has been triggered to rebuild with the new version.
+
+          | Field | Value |
+          |-------|-------|
+          | **Core Version** | ${{ github.event.client_payload.core_version }} |
+          | **Triggered By** | ${{ github.event.client_payload.triggered_by }} |
+          | **Release URL** | [${{ github.event.client_payload.core_version }}](${{ github.event.client_payload.release_url }}) |
+          EOF
+

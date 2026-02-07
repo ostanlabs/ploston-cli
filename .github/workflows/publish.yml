@@ -85,7 +85,7 @@ jobs:
 
     steps:
       - name: Trigger dashboard refresh
-        uses: peter-evans/repository-dispatch@v2
+        uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.META_REPO_TOKEN }}
           repository: ostanlabs/agent-execution-layer
