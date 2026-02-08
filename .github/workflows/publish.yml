@@ -84,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Trigger dashboard refresh
+      - name: Dispatch release-published to meta-repo
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.META_REPO_TOKEN }}
@@ -92,11 +92,9 @@ jobs:
           event-type: release-published
           client-payload: |
             {
-              "package": "ploston-cli",
+              "repo": "ploston-cli",
               "version": "${{ github.event.release.tag_name }}",
-              "release_url": "${{ github.event.release.html_url }}",
-              "run_id": "${{ github.run_id }}",
-              "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              "sha": "${{ github.sha }}"
             }
 
   notify-slack:

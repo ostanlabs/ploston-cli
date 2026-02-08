@@ -105,14 +105,14 @@ jobs:
   # to trigger the full meta-repo CI pipeline.
   # ===========================================================================
 
-  # Trigger meta-repo CI when this repo changes organically (push to main)
+  # Trigger meta-repo test-and-promote when this repo changes organically (push to main)
   trigger-meta-repo:
     needs: unit-tests
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.unit-tests.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Trigger meta-repo CI
+      - name: Dispatch component-updated to meta-repo
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.META_REPO_TOKEN }}
@@ -120,8 +120,13 @@ jobs:
           event-type: component-updated
           client-payload: |
             {
-              "trigger_repo": "ploston-cli",
-              "trigger_sha": "${{ github.sha }}"
+              "repo": "ploston-cli",
+              "sha": "${{ github.sha }}",
+              "core_version": "latest",
+              "package": {
+                "name": "ploston-cli",
+                "version": "dev"
+              }
             }
 
   report-to-dashboard:
