@@ -41,7 +41,7 @@ jobs:
           SOURCE=${{ steps.payload.outputs.source }}
           VERSION=${{ steps.payload.outputs.core_version }}
           if [[ "$SOURCE" == "test-pypi" ]]; then
-            uv add ploston-core==$VERSION --extra-index-url https://test.pypi.org/simple/
+            uv add ploston-core==$VERSION --extra-index-url https://test.pypi.org/simple/ --index-strategy unsafe-best-match
           else
             uv add ploston-core==$VERSION
           fi
