@@ -14,7 +14,7 @@ env:
 
 jobs:
   rebuild:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
       status: ${{ steps.result.outputs.status }}
@@ -89,7 +89,7 @@ jobs:
   dispatch-build-complete:
     needs: rebuild
     if: always() && needs.rebuild.outputs.status != ''
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Dispatch build-complete to meta-repo
         uses: peter-evans/repository-dispatch@v3
