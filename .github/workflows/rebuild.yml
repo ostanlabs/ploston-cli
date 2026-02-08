@@ -1,0 +1,113 @@
+name: Rebuild
+
+on:
+  repository_dispatch:
+    types: [rebuild]
+
+concurrency:
+  group: ${{ github.repository }}-builds
+  cancel-in-progress: false
+
+env:
+  DASHBOARD_URL: https://gist.githubusercontent.com/ostanmarc/${{ secrets.DASHBOARD_GIST_ID }}/raw/dashboard.json
+  UV_SYSTEM_PYTHON: 1
+
+jobs:
+  rebuild:
+    runs-on: self-hosted
+    timeout-minutes: 10
+    outputs:
+      status: ${{ steps.result.outputs.status }}
+      error: ${{ steps.result.outputs.error }}
+      version: ${{ steps.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract payload
+        id: payload
+        run: |
+          echo "cascade_id=${{ github.event.client_payload.cascade_id }}" >> $GITHUB_OUTPUT
+          echo "core_version=${{ github.event.client_payload.core_version }}" >> $GITHUB_OUTPUT
+          echo "source=${{ github.event.client_payload.source }}" >> $GITHUB_OUTPUT
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Update core dependency
+        run: |
+          SOURCE=${{ steps.payload.outputs.source }}
+          VERSION=${{ steps.payload.outputs.core_version }}
+          if [[ "$SOURCE" == "test-pypi" ]]; then
+            uv add ploston-core==$VERSION --index-url https://test.pypi.org/simple/
+          else
+            uv add ploston-core==$VERSION
+          fi
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Lint
+        run: make lint
+
+      - name: Unit tests
+        run: make test-unit
+
+      - name: Build dev package
+        id: build
+        run: |
+          make build-dev
+          VERSION=$(ls dist/*.whl | sed 's/.*ploston_cli-\(.*\)-py3.*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Built version: $VERSION"
+
+      - name: Publish to Test PyPI
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.TEST_PYPI_TOKEN }}
+        run: make publish-test-pypi
+
+      - name: Verify cascade still active
+        id: verify
+        run: |
+          CURRENT_CASCADE=$(curl -s $DASHBOARD_URL | jq -r '.cascade.cascade_id')
+          if [[ "$CURRENT_CASCADE" != "${{ steps.payload.outputs.cascade_id }}" ]]; then
+            echo "Cascade was superseded, aborting silently"
+            echo "superseded=true" >> $GITHUB_OUTPUT
+          else
+            echo "superseded=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set result
+        id: result
+        if: steps.verify.outputs.superseded != 'true'
+        run: |
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "error=" >> $GITHUB_OUTPUT
+
+  dispatch-build-complete:
+    needs: rebuild
+    if: always() && needs.rebuild.outputs.status != ''
+    runs-on: self-hosted
+    steps:
+      - name: Dispatch build-complete to meta-repo
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+          repository: ostanlabs/agent-execution-layer
+          event-type: build-complete
+          client-payload: |
+            {
+              "cascade_id": "${{ github.event.client_payload.cascade_id }}",
+              "repo": "ploston-cli",
+              "sha": "${{ github.sha }}",
+              "core_version": "${{ github.event.client_payload.core_version }}",
+              "status": "${{ needs.rebuild.result == 'success' && 'success' || 'failure' }}",
+              "error": "${{ needs.rebuild.outputs.error || '' }}",
+              "artifact": {
+                "version": "${{ needs.rebuild.outputs.version }}",
+                "source": "test-pypi"
+              }
+            }
+

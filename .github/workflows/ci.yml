@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.repository }}-builds
+  cancel-in-progress: false
+
+env:
+  DASHBOARD_URL: https://gist.githubusercontent.com/ostanmarc/${{ secrets.DASHBOARD_GIST_ID }}/raw/dashboard.json
+  UV_SYSTEM_PYTHON: 1
+
+jobs:
+  wait-for-cascade:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    steps:
+      - name: Wait for active cascade to complete
+        run: |
+          while true; do
+            ACTIVE=$(curl -s $DASHBOARD_URL | jq -r '.cascade.active')
+            if [[ "$ACTIVE" != "true" ]]; then
+              echo "No active cascade, proceeding..."
+              break
+            fi
+            echo "Cascade in progress, waiting 30s..."
+            sleep 30
+          done
+
+  lint-and-test:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Lint
+        run: make lint
+
+      - name: Unit tests
+        run: make test-unit
+
+  validate-core-version:
+    needs: [wait-for-cascade, lint-and-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    outputs:
+      core_version: ${{ steps.validate.outputs.core_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Validate core version
+        id: validate
+        run: |
+          LATEST_CORE=$(curl -s $DASHBOARD_URL | jq -r '.latest_available_core_version')
+          CURRENT_CORE=$(uv pip show ploston-core | grep Version | cut -d' ' -f2)
+          echo "core_version=$CURRENT_CORE" >> $GITHUB_OUTPUT
+
+          uv run python -c "
+          from packaging.version import Version
+          import sys
+          current, latest = sys.argv[1], sys.argv[2]
+          if Version(current) < Version(latest):
+              print(f'ERROR: Building with outdated core {current}, latest is {latest}')
+              sys.exit(1)
+          print(f'Core version {current} is valid (>= {latest})')
+          " "$CURRENT_CORE" "$LATEST_CORE"
+
+  build-and-publish:
+    needs: validate-core-version
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Build dev package
+        id: version
+        run: |
+          make build-dev
+          VERSION=$(ls dist/*.whl | sed 's/.*ploston_cli-\(.*\)-py3.*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Built version: $VERSION"
+
+      - name: Publish to Test PyPI
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.TEST_PYPI_TOKEN }}
+        run: make publish-test-pypi
+
+  dispatch-component-updated:
+    needs: [validate-core-version, build-and-publish]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    steps:
+      - name: Dispatch component-updated to meta-repo
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+          repository: ostanlabs/agent-execution-layer
+          event-type: component-updated
+          client-payload: |
+            {
+              "repo": "ploston-cli",
+              "sha": "${{ github.sha }}",
+              "core_version": "${{ needs.validate-core-version.outputs.core_version }}",
+              "package": {
+                "name": "ploston-cli",
+                "version": "${{ needs.build-and-publish.outputs.version }}",
+                "source": "test-pypi"
+              }
+            }
+
