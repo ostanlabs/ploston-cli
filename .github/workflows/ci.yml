@@ -17,7 +17,7 @@ env:
 jobs:
   wait-for-cascade:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Wait for active cascade to complete
@@ -33,7 +33,7 @@ jobs:
           done
 
   lint-and-test:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -55,7 +55,7 @@ jobs:
   validate-core-version:
     needs: [wait-for-cascade, lint-and-test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     outputs:
       core_version: ${{ steps.validate.outputs.core_version }}
     steps:
@@ -90,7 +90,7 @@ jobs:
   build-and-publish:
     needs: validate-core-version
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -121,7 +121,7 @@ jobs:
   dispatch-component-updated:
     needs: [validate-core-version, build-and-publish]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Dispatch component-updated to meta-repo
         uses: peter-evans/repository-dispatch@v3

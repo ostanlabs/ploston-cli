@@ -11,7 +11,7 @@ env:
 
 jobs:
   verify-tested:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Verify current commit is tested
         run: |
@@ -29,7 +29,7 @@ jobs:
 
   release:
     needs: verify-tested
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     permissions:
       id-token: write  # For trusted publishing
       contents: read
@@ -62,7 +62,7 @@ jobs:
 
   dispatch-release-published:
     needs: release
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Dispatch release-published to meta-repo
         uses: peter-evans/repository-dispatch@v3
