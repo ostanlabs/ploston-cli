@@ -99,12 +99,28 @@ build: clean
 	@echo "$(GREEN)Build complete!$(RESET)"
 	@ls -la dist/
 
+## Build dev package (with timestamp-based version)
+build-dev: clean
+	@echo "$(CYAN)Building dev package...$(RESET)"
+	DEV_VERSION=$$(date +%s) && \
+	sed -i.bak "s/^version = .*/version = \"0.1.0.dev$$DEV_VERSION\"/" pyproject.toml && \
+	uv build && \
+	mv pyproject.toml.bak pyproject.toml
+	@echo "$(GREEN)Build complete!$(RESET)"
+	@ls -la dist/
+
 ## Publish to TestPyPI
 publish-test: build
 	@echo "$(CYAN)Publishing to TestPyPI...$(RESET)"
 	uv publish --publish-url https://test.pypi.org/legacy/
 	@echo "$(GREEN)Published to TestPyPI!$(RESET)"
 	@echo "Install with: pip install -i https://test.pypi.org/simple/ $(PACKAGE_NAME)"
+
+## Publish dev package to TestPyPI (requires UV_PUBLISH_TOKEN env var)
+publish-test-pypi:
+	@echo "$(CYAN)Publishing to TestPyPI...$(RESET)"
+	uv publish --publish-url https://test.pypi.org/legacy/
+	@echo "$(GREEN)Published to TestPyPI!$(RESET)"
 
 ## Publish to PyPI
 publish: build
