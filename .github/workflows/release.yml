@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  DASHBOARD_URL: https://gist.githubusercontent.com/ostanmarc/${{ secrets.DASHBOARD_GIST_ID }}/raw/dashboard.json
+  UV_SYSTEM_PYTHON: 1
+
+jobs:
+  verify-tested:
+    runs-on: self-hosted
+    steps:
+      - name: Verify current commit is tested
+        run: |
+          # Get tested SHA from dashboard
+          TESTED_SHA=$(curl -s $DASHBOARD_URL | jq -r '.components["ploston-cli"].last_tested_sha')
+
+          if [[ "$TESTED_SHA" != "${{ github.sha }}" ]]; then
+            echo "ERROR: Cannot release untested code"
+            echo "Tested SHA: $TESTED_SHA"
+            echo "Current SHA: ${{ github.sha }}"
+            exit 1
+          fi
+
+          echo "Verified: current commit is tested"
+
+  release:
+    needs: verify-tested
+    runs-on: self-hosted
+    permissions:
+      id-token: write  # For trusted publishing
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Releasing version: $VERSION"
+
+      - name: Build package
+        run: make build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  dispatch-release-published:
+    needs: release
+    runs-on: self-hosted
+    steps:
+      - name: Dispatch release-published to meta-repo
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+          repository: ostanlabs/agent-execution-layer
+          event-type: release-published
+          client-payload: |
+            {
+              "repo": "ploston-cli",
+              "version": "${{ needs.release.outputs.version }}",
+              "sha": "${{ github.sha }}"
+            }
+
+      - name: Notify Slack
+        if: success()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {
+              "text": "🚀 ploston-cli ${{ needs.release.outputs.version }} released to production"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
