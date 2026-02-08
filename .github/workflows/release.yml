@@ -67,7 +67,7 @@ jobs:
       - name: Dispatch release-published to meta-repo
         uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.REPO_DISPATCH_TOKEN }}
+          token: ${{ secrets.META_REPO_TOKEN }}
           repository: ostanlabs/agent-execution-layer
           event-type: release-published
           client-payload: |
