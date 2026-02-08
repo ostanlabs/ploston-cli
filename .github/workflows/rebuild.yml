@@ -40,22 +40,22 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
 
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
       - name: Update core dependency
         run: |
           SOURCE=${{ steps.payload.outputs.source }}
           VERSION=${{ steps.payload.outputs.core_version }}
-          uv cache clean
+          uv cache clean ploston-core
           if [[ "$SOURCE" == "test-pypi" ]]; then
-            uv add ploston-core==$VERSION \
+            uv pip install ploston-core==$VERSION \
               --index-url https://test.pypi.org/simple \
               --extra-index-url https://pypi.org/simple \
               --index-strategy unsafe-best-match
           else
-            uv add ploston-core==$VERSION
+            uv pip install ploston-core==$VERSION
           fi
-
-      - name: Install dependencies
-        run: uv sync --all-extras --dev
 
       - name: Lint
         run: make lint
