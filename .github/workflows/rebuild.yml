@@ -46,15 +46,36 @@ jobs:
         run: |
           SOURCE=${{ steps.payload.outputs.source }}
           VERSION=${{ steps.payload.outputs.core_version }}
+
+          echo "=== DEBUG: Package availability check ==="
+          echo "Source: $SOURCE"
+          echo "Version: $VERSION"
+
+          if [[ "$SOURCE" == "test-pypi" ]]; then
+            echo "Checking Test PyPI for ploston-core==$VERSION..."
+            curl -s "https://test.pypi.org/pypi/ploston-core/$VERSION/json" | head -c 500 || echo "Failed to fetch JSON"
+            echo ""
+            echo "Listing available versions on Test PyPI..."
+            curl -s "https://test.pypi.org/pypi/ploston-core/json" | jq -r '.releases | keys | .[-5:]' || echo "Failed to list versions"
+          fi
+
+          echo "=== DEBUG: Current ploston-core in venv ==="
+          uv pip show --python .venv/bin/python ploston-core || echo "ploston-core not installed"
+
+          echo "=== DEBUG: Installing ploston-core ==="
           uv cache clean ploston-core
           if [[ "$SOURCE" == "test-pypi" ]]; then
             uv pip install --python .venv/bin/python ploston-core==$VERSION \
               --index-url https://test.pypi.org/simple \
               --extra-index-url https://pypi.org/simple \
-              --index-strategy unsafe-best-match
+              --index-strategy unsafe-best-match \
+              --verbose
           else
-            uv pip install --python .venv/bin/python ploston-core==$VERSION
+            uv pip install --python .venv/bin/python ploston-core==$VERSION --verbose
           fi
+
+          echo "=== DEBUG: Installed ploston-core ==="
+          uv pip show --python .venv/bin/python ploston-core
 
       - name: Lint
         run: make lint
