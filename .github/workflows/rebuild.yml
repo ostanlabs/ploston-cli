@@ -16,6 +16,10 @@ jobs:
   rebuild:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: test-pypi
+    permissions:
+      id-token: write
+      contents: read
     outputs:
       status: ${{ steps.result.outputs.status }}
       error: ${{ steps.result.outputs.error }}
@@ -68,9 +72,7 @@ jobs:
           echo "Built version: $VERSION"
 
       - name: Publish to Test PyPI
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.TEST_PYPI_TOKEN }}
-        run: make publish-test-pypi
+        run: uv publish --publish-url https://test.pypi.org/legacy/ --trusted-publishing always
 
       - name: Verify cascade still active
         id: verify
