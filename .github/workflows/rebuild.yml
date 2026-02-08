@@ -49,12 +49,12 @@ jobs:
           VERSION=${{ steps.payload.outputs.core_version }}
           uv cache clean ploston-core
           if [[ "$SOURCE" == "test-pypi" ]]; then
-            uv pip install ploston-core==$VERSION \
+            uv pip install --python .venv/bin/python ploston-core==$VERSION \
               --index-url https://test.pypi.org/simple \
               --extra-index-url https://pypi.org/simple \
               --index-strategy unsafe-best-match
           else
-            uv pip install ploston-core==$VERSION
+            uv pip install --python .venv/bin/python ploston-core==$VERSION
           fi
 
       - name: Lint
