@@ -10,7 +10,6 @@ concurrency:
 
 env:
   DASHBOARD_URL: https://gist.githubusercontent.com/ostanmarc/${{ secrets.DASHBOARD_GIST_ID }}/raw/dashboard.json
-  UV_SYSTEM_PYTHON: 1
 
 jobs:
   rebuild:
