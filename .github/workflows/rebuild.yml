@@ -52,10 +52,11 @@ jobs:
           if [[ "$SOURCE" == "test-pypi" ]]; then
             # Use PyPI as primary index for dependencies (fastapi, etc.)
             # Use Test PyPI as extra index for ploston-core
+            # Use first-match strategy so PyPI is checked first for deps like fastapi
             uv pip install --python .venv/bin/python ploston-core==$VERSION \
               --index-url https://pypi.org/simple \
               --extra-index-url https://test.pypi.org/simple \
-              --index-strategy unsafe-best-match \
+              --index-strategy unsafe-first-match \
               --refresh
           else
             uv pip install --python .venv/bin/python ploston-core==$VERSION
