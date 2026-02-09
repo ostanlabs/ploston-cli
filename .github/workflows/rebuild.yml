@@ -50,13 +50,12 @@ jobs:
           echo "Installing ploston-core==$VERSION from $SOURCE..."
           uv cache clean ploston-core
           if [[ "$SOURCE" == "test-pypi" ]]; then
-            # Use PyPI as primary index for dependencies (fastapi, etc.)
-            # Use Test PyPI as extra index for ploston-core
-            # Use first-match strategy so PyPI is checked first for deps like fastapi
+            # Pre-install dependencies from PyPI to avoid Test PyPI's broken packages
+            uv pip install --python .venv/bin/python "fastapi>=0.115.0" "pydantic>=2.0.0"
+            # Now install ploston-core from Test PyPI
             uv pip install --python .venv/bin/python ploston-core==$VERSION \
-              --index-url https://pypi.org/simple \
-              --extra-index-url https://test.pypi.org/simple \
-              --index-strategy unsafe-first-match \
+              --index-url https://test.pypi.org/simple \
+              --extra-index-url https://pypi.org/simple \
               --refresh
           else
             uv pip install --python .venv/bin/python ploston-core==$VERSION
