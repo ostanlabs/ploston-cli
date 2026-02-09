@@ -53,9 +53,11 @@ jobs:
             # Pre-install dependencies from PyPI to avoid Test PyPI's broken packages
             uv pip install --python .venv/bin/python "fastapi>=0.115.0" "pydantic>=2.0.0"
             # Now install ploston-core from Test PyPI
+            # Need unsafe-best-match to allow Test PyPI version when PyPI has older versions
             uv pip install --python .venv/bin/python ploston-core==$VERSION \
               --index-url https://test.pypi.org/simple \
               --extra-index-url https://pypi.org/simple \
+              --index-strategy unsafe-best-match \
               --refresh
           else
             uv pip install --python .venv/bin/python ploston-core==$VERSION
