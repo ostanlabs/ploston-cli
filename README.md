@@ -186,6 +186,85 @@ ploston version
 
 Shows both CLI version and connected server version.
 
+### `ploston bridge`
+
+Start MCP bridge for Claude Desktop, Cursor, and other MCP clients.
+
+```bash
+# Basic usage
+ploston bridge --url http://localhost:8080
+
+# With authentication
+ploston bridge --url https://cp.example.com --token plt_xxx
+
+# With custom timeout and logging
+ploston bridge --url http://localhost:8080 --timeout 60 --log-level debug
+```
+
+| Option | Environment Variable | Description |
+|--------|---------------------|-------------|
+| `--url` | `PLOSTON_URL` | Control Plane URL (required) |
+| `--token` | `PLOSTON_TOKEN` | Bearer token for authentication |
+| `--timeout` | `PLOSTON_TIMEOUT` | Request timeout in seconds (default: 30) |
+| `--log-level` | `PLOSTON_LOG_LEVEL` | Log level: debug, info, warning, error |
+| `--log-file` | `PLOSTON_LOG_FILE` | Log file path (default: ~/.ploston/bridge.log) |
+| `--retry-attempts` | `PLOSTON_RETRY_ATTEMPTS` | Startup retry attempts (default: 3) |
+| `--retry-delay` | `PLOSTON_RETRY_DELAY` | Delay between retries (default: 1.0s) |
+
+#### Claude Desktop Configuration
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
+or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "ploston": {
+      "command": "ploston",
+      "args": ["bridge", "--url", "http://localhost:8080"],
+      "env": {
+        "PLOSTON_TOKEN": "your-token-here"
+      }
+    }
+  }
+}
+```
+
+#### Cursor Configuration
+
+Add to `.cursor/mcp.json` in your project:
+
+```json
+{
+  "mcpServers": {
+    "ploston": {
+      "command": "ploston",
+      "args": ["bridge", "--url", "http://localhost:8080"],
+      "env": {
+        "PLOSTON_TOKEN": "your-token-here"
+      }
+    }
+  }
+}
+```
+
+#### Troubleshooting
+
+**Bridge won't start:**
+- Check that the CP URL is correct and reachable
+- Verify the token is valid (if authentication is required)
+- Check `~/.ploston/bridge.log` for detailed error messages
+
+**Connection drops:**
+- The bridge auto-reconnects on connection loss
+- Check network connectivity to the CP
+- Increase `--timeout` for slow networks
+
+**Tools not appearing:**
+- Ensure the CP has tools configured
+- Check that your token has permission to access tools
+- Run `ploston tools list` to verify tools are available
+
 ## Configuration
 
 ### CLI Configuration
@@ -269,6 +348,28 @@ make lint       # Run linter
 make format     # Format code
 make check      # Run lint + tests
 make build      # Build package
+```
+
+### Testing
+
+Tests are organized across two locations:
+
+| Test Type | Location | Run Command |
+|-----------|----------|-------------|
+| Unit tests | `packages/ploston-cli/tests/unit/` | `make test-unit` (in package) |
+| Integration tests | `packages/ploston-cli/tests/integration/` | `make test` (in package) |
+| E2E tests | `tests/e2e/docker_compose/` (meta-repo) | `make test-e2e-docker-compose` (in meta-repo) |
+
+E2E tests live in the meta-repo because they require:
+- Docker Compose infrastructure (CP running)
+- Installed CLI (from test-pypi or local build)
+- Coordination between multiple components (CLI, CP, Runner)
+
+To run E2E tests:
+
+```bash
+# From meta-repo root
+make test-e2e-docker-compose
 ```
 
 ## Features
