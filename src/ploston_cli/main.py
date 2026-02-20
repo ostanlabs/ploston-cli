@@ -12,6 +12,7 @@ from typing import Any
 import click
 
 from .client import PlostClient, PlostClientError
+from .commands.bridge import bridge_command
 from .config import DEFAULT_SERVER, load_config
 from .utils import parse_inputs
 
@@ -32,6 +33,11 @@ def get_server_url(ctx: click.Context) -> str:
     return cli_config.server
 
 
+def get_insecure(ctx: click.Context) -> bool:
+    """Get insecure flag from context."""
+    return ctx.obj.get("insecure", False)
+
+
 @click.group()
 @click.option(
     "-s",
@@ -42,9 +48,21 @@ def get_server_url(ctx: click.Context) -> str:
 @click.option("-v", "--verbose", count=True, help="Increase verbosity")
 @click.option("-q", "--quiet", is_flag=True, help="Suppress output")
 @click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option(
+    "-k",
+    "--insecure",
+    is_flag=True,
+    envvar="PLOSTON_INSECURE",
+    help="Skip SSL certificate verification (like curl -k)",
+)
 @click.pass_context
 def cli(
-    ctx: click.Context, server: str | None, verbose: int, quiet: bool, json_output: bool
+    ctx: click.Context,
+    server: str | None,
+    verbose: int,
+    quiet: bool,
+    json_output: bool,
+    insecure: bool,
 ) -> None:
     """Ploston CLI - Command-line interface for Ploston servers.
 
@@ -62,6 +80,11 @@ def cli(
     ctx.obj["verbose"] = verbose
     ctx.obj["quiet"] = quiet
     ctx.obj["json_output"] = json_output
+    ctx.obj["insecure"] = insecure
+
+
+# Register bridge command
+cli.add_command(bridge_command)
 
 
 @cli.command()
@@ -79,12 +102,13 @@ def run(
 ) -> None:
     """Execute a workflow on the Ploston server."""
     server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
 
     async def _run() -> None:
         # Parse inputs
         input_dict = parse_inputs(inputs, input_file)
 
-        async with PlostClient(server_url) as client:
+        async with PlostClient(server_url, insecure=insecure) as client:
             try:
                 result = await client.execute_workflow(workflow, input_dict, timeout)
 
@@ -115,11 +139,22 @@ def run(
 def version(ctx: click.Context) -> None:
     """Show version information."""
     server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
 
     async def _version() -> None:
-        async with PlostClient(server_url) as client:
+        async with PlostClient(server_url, insecure=insecure) as client:
             try:
-                caps = await client.get_capabilities()
+                # First check if server is reachable via health endpoint
+                health = await client.health()
+                server_available = health.get("status") == "ok"
+
+                # Try to get capabilities (may not exist on all server versions)
+                caps = {}
+                try:
+                    caps = await client.get_capabilities()
+                except PlostClientError:
+                    pass  # Capabilities endpoint may not exist
+
                 if ctx.obj["json_output"]:
                     click.echo(
                         json.dumps(
@@ -128,6 +163,7 @@ def version(ctx: click.Context) -> None:
                                 "server_version": caps.get("version", "unknown"),
                                 "server_tier": caps.get("tier", "unknown"),
                                 "server_url": server_url,
+                                "server_status": "available" if server_available else "unavailable",
                             },
                             indent=2,
                         )
@@ -135,8 +171,11 @@ def version(ctx: click.Context) -> None:
                 else:
                     click.echo(f"Ploston CLI version {__version__}")
                     click.echo(f"Server: {server_url}")
-                    click.echo(f"Server version: {caps.get('version', 'unknown')}")
-                    click.echo(f"Server tier: {caps.get('tier', 'unknown')}")
+                    if caps:
+                        click.echo(f"Server version: {caps.get('version', 'unknown')}")
+                        click.echo(f"Server tier: {caps.get('tier', 'unknown')}")
+                    else:
+                        click.echo("Server status: available")
             except PlostClientError:
                 # Server not available, just show CLI version
                 if ctx.obj["json_output"]:
@@ -248,10 +287,11 @@ def validate(ctx: click.Context, file: str, strict: bool, check_tools: bool) -> 
     # Check tools on server if requested
     if check_tools and not errors:
         server_url = get_server_url(ctx)
+        insecure = get_insecure(ctx)
 
         async def _check_tools() -> list[str]:
             tool_errors: list[str] = []
-            async with PlostClient(server_url) as client:
+            async with PlostClient(server_url, insecure=insecure) as client:
                 try:
                     tools_list = await client.list_tools()
                     tool_names = {t["name"] for t in tools_list}
@@ -296,9 +336,10 @@ def workflows() -> None:
 def workflows_list(ctx: click.Context) -> None:
     """List registered workflows on the server."""
     server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
 
     async def _list() -> list[dict[str, Any]]:
-        async with PlostClient(server_url) as client:
+        async with PlostClient(server_url, insecure=insecure) as client:
             return await client.list_workflows()
 
     try:
@@ -326,9 +367,10 @@ def workflows_show(ctx: click.Context, name: str) -> None:
     from .formatters import print_workflow_detail_dict
 
     server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
 
     async def _show() -> dict[str, Any] | None:
-        async with PlostClient(server_url) as client:
+        async with PlostClient(server_url, insecure=insecure) as client:
             try:
                 return await client.get_workflow(name)
             except PlostClientError as e:
@@ -418,6 +460,7 @@ def config_show(ctx: click.Context, section: str | None, local: bool) -> None:
 
     # Show server config
     server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
 
     # Validate section if provided
     if section and section not in VALID_SECTIONS:
@@ -426,7 +469,7 @@ def config_show(ctx: click.Context, section: str | None, local: bool) -> None:
         sys.exit(1)
 
     async def _get_config() -> dict[str, Any]:
-        async with PlostClient(server_url) as client:
+        async with PlostClient(server_url, insecure=insecure) as client:
             return await client.get_config(section)
 
     try:
@@ -490,9 +533,10 @@ def config_diff(ctx: click.Context) -> None:
     applied when 'config_done' is called.
     """
     server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
 
     async def _get_diff() -> dict[str, Any]:
-        async with PlostClient(server_url) as client:
+        async with PlostClient(server_url, insecure=insecure) as client:
             return await client.get_config_diff()
 
     try:
@@ -545,9 +589,10 @@ def tools_list(
     from .formatters import print_tools_list_dict
 
     server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
 
     async def _list() -> list[dict[str, Any]]:
-        async with PlostClient(server_url) as client:
+        async with PlostClient(server_url, insecure=insecure) as client:
             return await client.list_tools(source=source, server=server, status=status)
 
     try:
@@ -570,9 +615,10 @@ def tools_show(ctx: click.Context, name: str) -> None:
     from .formatters import print_tool_detail_dict
 
     server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
 
     async def _show() -> dict[str, Any] | None:
-        async with PlostClient(server_url) as client:
+        async with PlostClient(server_url, insecure=insecure) as client:
             try:
                 return await client.get_tool(name)
             except PlostClientError as e:
@@ -604,9 +650,10 @@ def tools_refresh(ctx: click.Context, server_name: str | None) -> None:
     from .formatters import print_refresh_result_dict
 
     server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
 
     async def _refresh() -> dict[str, Any]:
-        async with PlostClient(server_url) as client:
+        async with PlostClient(server_url, insecure=insecure) as client:
             return await client.refresh_tools(server=server_name)
 
     click.echo("Refreshing tools...")
@@ -679,9 +726,10 @@ def runner_create(ctx: click.Context, name: str) -> None:
 def runner_list(ctx: click.Context, status: str | None) -> None:
     """List all registered runners."""
     server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
 
     async def _list() -> list[dict[str, Any]]:
-        async with PlostClient(server_url) as client:
+        async with PlostClient(server_url, insecure=insecure) as client:
             return await client.list_runners(status=status)
 
     try:
@@ -715,9 +763,10 @@ def runner_list(ctx: click.Context, status: str | None) -> None:
 def runner_show(ctx: click.Context, name: str) -> None:
     """Show runner details."""
     server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
 
     async def _show() -> dict[str, Any] | None:
-        async with PlostClient(server_url) as client:
+        async with PlostClient(server_url, insecure=insecure) as client:
             try:
                 return await client.get_runner(name)
             except PlostClientError as e:
@@ -766,9 +815,10 @@ def runner_delete(ctx: click.Context, name: str, force: bool) -> None:
         click.confirm(f"Delete runner '{name}'?", abort=True)
 
     server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
 
     async def _delete() -> dict[str, Any]:
-        async with PlostClient(server_url) as client:
+        async with PlostClient(server_url, insecure=insecure) as client:
             return await client.delete_runner(name)
 
     try:
@@ -819,9 +869,10 @@ def runner_regenerate_token(ctx: click.Context, name: str, force: bool) -> None:
         )
 
     server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
 
     async def _regenerate() -> dict[str, Any]:
-        async with PlostClient(server_url) as client:
+        async with PlostClient(server_url, insecure=insecure) as client:
             return await client.regenerate_runner_token(name)
 
     try:

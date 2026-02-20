@@ -24,15 +24,17 @@ class PlostClient:
     All operations are delegated to the server via HTTP.
     """
 
-    def __init__(self, base_url: str, timeout: float = 30.0):
+    def __init__(self, base_url: str, timeout: float = 30.0, insecure: bool = False):
         """Initialize client.
 
         Args:
             base_url: Server URL (e.g., http://localhost:8080)
             timeout: Request timeout in seconds
+            insecure: Skip SSL certificate verification (like curl -k)
         """
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.insecure = insecure
         self._client: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> "PlostClient":
@@ -41,6 +43,7 @@ class PlostClient:
             base_url=self.base_url,
             timeout=self.timeout,
             headers={"Content-Type": "application/json"},
+            verify=not self.insecure,
         )
         return self
 

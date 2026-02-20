@@ -16,7 +16,7 @@ def get_server_url():
     """Get URL of running server, or None if not available."""
     urls = [
         "http://localhost:8082",
-        "http://ploston.ostanlabs.homelab",
+        "https://ploston.homelab",
     ]
 
     for url in urls:
