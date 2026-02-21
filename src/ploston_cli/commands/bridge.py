@@ -108,6 +108,13 @@ def setup_logging(log_level: str, log_file: str | None) -> None:
     default=DEFAULT_RETRY_DELAY,
     help=f"Delay between retries in seconds (default: {DEFAULT_RETRY_DELAY})",
 )
+@click.option(
+    "--insecure",
+    envvar="PLOSTON_INSECURE",
+    is_flag=True,
+    default=False,
+    help="Skip SSL certificate verification (for self-signed certs)",
+)
 def bridge_command(
     url: str,
     token: str | None,
@@ -116,6 +123,7 @@ def bridge_command(
     log_file: str | None,
     retry_attempts: int,
     retry_delay: float,
+    insecure: bool,
 ) -> None:
     """Start MCP bridge to Control Plane.
 
@@ -134,6 +142,7 @@ def bridge_command(
       PLOSTON_TIMEOUT   - Request timeout
       PLOSTON_LOG_LEVEL - Log level
       PLOSTON_LOG_FILE  - Log file path
+      PLOSTON_INSECURE  - Skip SSL verification
     """
     # Setup logging (to file, not stdout)
     setup_logging(log_level, log_file)
@@ -141,7 +150,7 @@ def bridge_command(
     logger.info(f"Starting bridge to {url}")
 
     try:
-        asyncio.run(run_bridge(url, token, timeout, retry_attempts, retry_delay))
+        asyncio.run(run_bridge(url, token, timeout, retry_attempts, retry_delay, insecure))
     except KeyboardInterrupt:
         logger.info("Bridge interrupted by user")
         sys.exit(0)
@@ -158,9 +167,10 @@ async def run_bridge(
     timeout: float,
     retry_attempts: int,
     retry_delay: float,
+    insecure: bool = False,
 ) -> None:
     """Run the bridge main loop."""
-    proxy = BridgeProxy(url=url, token=token, timeout=timeout)
+    proxy = BridgeProxy(url=url, token=token, timeout=timeout, insecure=insecure)
     server = BridgeServer(proxy=proxy)
 
     # Startup health check with retry
@@ -230,9 +240,11 @@ async def stdio_loop(server: BridgeServer, shutdown_event: asyncio.Event) -> Non
             # Handle request
             response = await server.handle_request(request)
 
-            # Write response to stdout
-            sys.stdout.write(json.dumps(response) + "\n")
-            sys.stdout.flush()
+            # Write response to stdout (only for requests, not notifications)
+            # JSON-RPC notifications don't get responses, so handle_request returns None
+            if response is not None:
+                sys.stdout.write(json.dumps(response) + "\n")
+                sys.stdout.flush()
 
         except asyncio.TimeoutError:
             # No input, check shutdown and continue

@@ -38,6 +38,7 @@ class BridgeProxy:
         url: str,
         token: str | None = None,
         timeout: float = 30.0,
+        insecure: bool = False,
     ):
         """Initialize BridgeProxy.
 
@@ -45,6 +46,7 @@ class BridgeProxy:
             url: Control Plane URL (e.g., http://localhost:8080)
             token: Optional bearer token for authentication
             timeout: Request timeout in seconds (default: 30)
+            insecure: Skip SSL certificate verification (default: False)
 
         Raises:
             ValueError: If URL is invalid
@@ -57,6 +59,7 @@ class BridgeProxy:
         self.url = url.rstrip("/")
         self.token = token
         self.timeout = timeout
+        self.insecure = insecure
         self._client: httpx.AsyncClient | None = None
         self._closed = False
         self._request_id = 0
@@ -79,6 +82,7 @@ class BridgeProxy:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self.timeout),
                 headers=self._get_headers(),
+                verify=not self.insecure,
             )
         return self._client
 

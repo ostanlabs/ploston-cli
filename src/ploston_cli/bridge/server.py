@@ -33,17 +33,21 @@ class BridgeServer:
         self.on_notification: Callable[[dict[str, Any]], None] | None = None
         self._cp_server_info: dict[str, Any] | None = None
 
-    async def handle_request(self, request: dict[str, Any]) -> dict[str, Any]:
+    async def handle_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
         """Handle incoming JSON-RPC request from agent.
 
         Args:
             request: JSON-RPC request object
 
         Returns:
-            JSON-RPC response object
+            JSON-RPC response object, or None for notifications (no id)
         """
         method = request.get("method", "")
         request_id = request.get("id")
+
+        # JSON-RPC notifications have no id and should not receive a response
+        # Per spec: "A Notification is a Request object without an 'id' member"
+        is_notification = "id" not in request
 
         try:
             if method == "initialize":
@@ -52,12 +56,22 @@ class BridgeServer:
                 return await self._handle_tools_list(request)
             elif method == "tools/call":
                 return await self._handle_tools_call(request)
+            elif is_notification:
+                # Notifications don't get responses - just log and return None
+                logger.debug(f"Received notification: {method}")
+                return None
             else:
                 # Forward unknown methods to CP
                 return await self._forward_request(request)
         except BridgeProxyError as e:
+            if is_notification:
+                logger.warning(f"Error handling notification {method}: {e.message}")
+                return None
             return self._make_error_response(request_id, e.code, e.message)
         except Exception as e:
+            if is_notification:
+                logger.warning(f"Error handling notification {method}: {e}")
+                return None
             logger.exception(f"Error handling request: {e}")
             return self._make_error_response(
                 request_id, JSONRPC_SERVER_ERROR, f"Internal bridge error: {e}"
