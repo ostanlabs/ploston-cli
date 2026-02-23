@@ -133,11 +133,21 @@ class BridgeProxy:
         client = await self._ensure_client()
         url = f"{self.url}/mcp"
 
+        method = request.get("method", "unknown")
+        request_id = request.get("id", "notification")
+        logger.debug(f"HTTP POST {url} - method={method} id={request_id}")
+
         try:
             response = await client.post(url, json=request)
 
+            logger.debug(
+                f"HTTP response: status={response.status_code} "
+                f"content-type={response.headers.get('content-type', 'unknown')}"
+            )
+
             if response.status_code == 401 or response.status_code == 403:
                 error = map_http_error(response.status_code, response.text)
+                logger.debug(f"HTTP auth error: {error.code} - {error.message}")
                 raise BridgeProxyError(
                     code=error.code,
                     message=error.message,
@@ -147,6 +157,7 @@ class BridgeProxy:
 
             if response.status_code >= 400:
                 error = map_http_error(response.status_code, response.text)
+                logger.debug(f"HTTP error: {error.code} - {error.message}")
                 raise BridgeProxyError(
                     code=error.code,
                     message=error.message,
@@ -154,10 +165,24 @@ class BridgeProxy:
                     data=error.data,
                 )
 
-            return response.json()
+            result = response.json()
+
+            # Log response summary
+            if "error" in result:
+                err = result["error"]
+                logger.debug(f"CP returned error: {err.get('code')} - {err.get('message')}")
+            else:
+                # Truncate large results for logging
+                result_preview = json.dumps(result.get("result", {}))
+                if len(result_preview) > 300:
+                    result_preview = result_preview[:300] + "..."
+                logger.debug(f"CP returned result: {result_preview}")
+
+            return result
 
         except httpx.ConnectError as e:
             error = map_connection_error(str(e), url)
+            logger.debug(f"HTTP connection error: {e}")
             raise BridgeProxyError(
                 code=error.code,
                 message=f"Cannot reach Control Plane at {self.url}: {e}",
@@ -165,6 +190,7 @@ class BridgeProxy:
             ) from e
         except httpx.TimeoutException as e:
             error = map_connection_error(str(e), url, is_timeout=True)
+            logger.debug(f"HTTP timeout: {e}")
             raise BridgeProxyError(
                 code=error.code,
                 message=error.message,

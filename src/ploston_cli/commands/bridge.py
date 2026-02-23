@@ -3,11 +3,22 @@
 Translates between stdio MCP (agent-facing) and HTTP+SSE MCP (CP-facing).
 Enables Claude Desktop, Cursor, and other stdio MCP clients to connect
 to remote Ploston Control Plane.
+
+Debug mode:
+    Set PLOSTON_DEBUG=1 or use --log-level debug to enable detailed logging.
+    Logs are written to ~/.ploston/bridge.log (or custom path via --log-file).
+
+    Example:
+        PLOSTON_DEBUG=1 ploston bridge --url http://localhost:8443
+
+    To tail logs in real-time:
+        tail -f ~/.ploston/bridge.log
 """
 
 import asyncio
 import json
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -24,6 +35,9 @@ DEFAULT_LOG_LEVEL = "info"
 DEFAULT_LOG_FILE = "~/.ploston/bridge.log"
 DEFAULT_RETRY_ATTEMPTS = 3
 DEFAULT_RETRY_DELAY = 1.0
+
+# Check for debug mode via environment variable
+DEBUG_MODE = os.environ.get("PLOSTON_DEBUG", "").lower() in ("1", "true", "yes")
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +59,10 @@ def setup_logging(log_level: str, log_file: str | None) -> None:
 
     Note: We log to file only, not stdout (would disrupt stdio protocol).
     """
+    # Override log level if PLOSTON_DEBUG is set
+    if DEBUG_MODE:
+        log_level = "debug"
+
     level = getattr(logging, log_level.upper(), logging.INFO)
 
     # Expand ~ in path
@@ -115,6 +133,13 @@ def setup_logging(log_level: str, log_file: str | None) -> None:
     default=False,
     help="Skip SSL certificate verification (for self-signed certs)",
 )
+@click.option(
+    "--tools",
+    envvar="PLOSTON_TOOLS",
+    type=click.Choice(["all", "local", "native"], case_sensitive=False),
+    default="all",
+    help="Which tools to expose to the agent: all (default), local (runner only), native (native-tools only)",
+)
 def bridge_command(
     url: str,
     token: str | None,
@@ -124,6 +149,7 @@ def bridge_command(
     retry_attempts: int,
     retry_delay: float,
     insecure: bool,
+    tools: str,
 ) -> None:
     """Start MCP bridge to Control Plane.
 
@@ -134,30 +160,48 @@ def bridge_command(
     Example usage:
       ploston bridge --url http://localhost:8080
       ploston bridge --url https://cp.example.com --token plt_xxx
+      ploston bridge --url http://localhost:8080 --tools local
+
+    \b
+    Tool filtering (--tools):
+      all    - All tools: native-tools + local-runner + MCP servers (default)
+      local  - Local runner tools only (from connected runners)
+      native - Native tools only (filesystem, kafka, etc.)
 
     \b
     Environment variables:
       PLOSTON_URL       - Control Plane URL
       PLOSTON_TOKEN     - Bearer token
       PLOSTON_TIMEOUT   - Request timeout
-      PLOSTON_LOG_LEVEL - Log level
+      PLOSTON_LOG_LEVEL - Log level (debug, info, warning, error)
       PLOSTON_LOG_FILE  - Log file path
       PLOSTON_INSECURE  - Skip SSL verification
+      PLOSTON_TOOLS     - Tool filter (all, local, native)
+      PLOSTON_DEBUG     - Enable debug logging (set to 1)
+
+    \b
+    Debug mode:
+      PLOSTON_DEBUG=1 ploston bridge --url http://localhost:8443
+      tail -f ~/.ploston/bridge.log
     """
     # Setup logging (to file, not stdout)
     setup_logging(log_level, log_file)
 
+    effective_log_level = "debug" if DEBUG_MODE else log_level
+
     logger.info(f"Starting bridge to {url}")
+    logger.info(f"Debug mode: {DEBUG_MODE}, Log level: {effective_log_level}, Tools: {tools}")
 
     try:
-        asyncio.run(run_bridge(url, token, timeout, retry_attempts, retry_delay, insecure))
+        asyncio.run(run_bridge(url, token, timeout, retry_attempts, retry_delay, insecure, tools))
     except KeyboardInterrupt:
         logger.info("Bridge interrupted by user")
         sys.exit(0)
     except BridgeProxyError as e:
         logger.error(f"Bridge error: {e.message}")
-        # Write error to stderr (not stdout)
-        print(f"Error: {e.message}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        logger.exception(f"Unexpected error: {e}")
         sys.exit(1)
 
 
@@ -168,10 +212,11 @@ async def run_bridge(
     retry_attempts: int,
     retry_delay: float,
     insecure: bool = False,
+    tools_filter: str = "all",
 ) -> None:
     """Run the bridge main loop."""
     proxy = BridgeProxy(url=url, token=token, timeout=timeout, insecure=insecure)
-    server = BridgeServer(proxy=proxy)
+    server = BridgeServer(proxy=proxy, tools_filter=tools_filter)
 
     # Startup health check with retry
     for attempt in range(retry_attempts):
@@ -191,21 +236,73 @@ async def run_bridge(
 
     # Setup signal handlers for graceful shutdown
     shutdown_event = asyncio.Event()
+    shutdown_requested = False
 
     def signal_handler() -> None:
-        logger.info("Received shutdown signal")
+        nonlocal shutdown_requested
+        if shutdown_requested:
+            # Second signal - force exit
+            logger.info("Received second shutdown signal, forcing exit")
+            return
+        shutdown_requested = True
+        logger.info("Received shutdown signal, stopping gracefully...")
         shutdown_event.set()
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, signal_handler)
+        try:
+            loop.add_signal_handler(sig, signal_handler)
+        except NotImplementedError:
+            # Signal handlers not supported on this platform (e.g., Windows)
+            logger.debug(f"Signal handler for {sig} not supported on this platform")
 
     # Main loop: read from stdin, process, write to stdout
     try:
         await stdio_loop(server, shutdown_event)
+    except asyncio.CancelledError:
+        logger.info("Bridge task cancelled")
     finally:
-        logger.info("Bridge shutting down")
-        await proxy.close()
+        logger.info("Bridge shutting down, closing connections...")
+        try:
+            await asyncio.wait_for(proxy.close(), timeout=5.0)
+            logger.info("Bridge shutdown complete")
+        except asyncio.TimeoutError:
+            logger.warning("Timeout waiting for proxy to close")
+        except Exception as e:
+            logger.warning(f"Error during shutdown: {e}")
+
+
+def _format_request_for_log(request: dict) -> str:
+    """Format request for debug logging (truncate large payloads)."""
+    method = request.get("method", "unknown")
+    request_id = request.get("id", "notification")
+    params = request.get("params", {})
+
+    # For tools/call, show tool name and truncated args
+    if method == "tools/call":
+        tool_name = params.get("name", "unknown")
+        args = params.get("arguments", {})
+        args_str = json.dumps(args)
+        if len(args_str) > 200:
+            args_str = args_str[:200] + "..."
+        return f"[{request_id}] {method} -> {tool_name} args={args_str}"
+
+    return f"[{request_id}] {method}"
+
+
+def _format_response_for_log(response: dict) -> str:
+    """Format response for debug logging (truncate large payloads)."""
+    request_id = response.get("id", "?")
+
+    if "error" in response:
+        error = response["error"]
+        return f"[{request_id}] ERROR: {error.get('code')} - {error.get('message')}"
+
+    result = response.get("result", {})
+    result_str = json.dumps(result)
+    if len(result_str) > 500:
+        result_str = result_str[:500] + "..."
+    return f"[{request_id}] OK: {result_str}"
 
 
 async def stdio_loop(server: BridgeServer, shutdown_event: asyncio.Event) -> None:
@@ -215,6 +312,8 @@ async def stdio_loop(server: BridgeServer, shutdown_event: asyncio.Event) -> Non
 
     loop = asyncio.get_running_loop()
     await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+
+    logger.debug("stdio loop started, waiting for requests...")
 
     while not shutdown_event.is_set():
         try:
@@ -237,18 +336,30 @@ async def stdio_loop(server: BridgeServer, shutdown_event: asyncio.Event) -> Non
                 logger.warning(f"Invalid JSON: {e}")
                 continue
 
+            # Debug log the incoming request
+            logger.debug(f">>> REQUEST: {_format_request_for_log(request)}")
+
             # Handle request
             response = await server.handle_request(request)
 
             # Write response to stdout (only for requests, not notifications)
             # JSON-RPC notifications don't get responses, so handle_request returns None
             if response is not None:
+                # Debug log the response
+                logger.debug(f"<<< RESPONSE: {_format_response_for_log(response)}")
+
                 sys.stdout.write(json.dumps(response) + "\n")
                 sys.stdout.flush()
 
         except asyncio.TimeoutError:
             # No input, check shutdown and continue
             continue
+        except asyncio.CancelledError:
+            # Task was cancelled (e.g., during shutdown)
+            logger.debug("stdio loop cancelled")
+            break
         except Exception as e:
             logger.exception(f"Error in stdio loop: {e}")
             break
+
+    logger.debug("stdio loop exiting")

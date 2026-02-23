@@ -23,13 +23,22 @@ class BridgeServer:
     and returns responses on stdout.
     """
 
-    def __init__(self, proxy: BridgeProxy):
+    # Map tools filter to source list for CP
+    TOOLS_FILTER_MAP = {
+        "all": None,  # No filter - return all tools
+        "local": ["runner"],  # Only runner tools
+        "native": ["native"],  # Only native tools
+    }
+
+    def __init__(self, proxy: BridgeProxy, tools_filter: str = "all"):
         """Initialize BridgeServer.
 
         Args:
             proxy: BridgeProxy instance for CP communication
+            tools_filter: Which tools to expose: "all", "local", or "native"
         """
         self.proxy = proxy
+        self.tools_filter = tools_filter
         self.on_notification: Callable[[dict[str, Any]], None] | None = None
         self._cp_server_info: dict[str, Any] | None = None
 
@@ -44,17 +53,26 @@ class BridgeServer:
         """
         method = request.get("method", "")
         request_id = request.get("id")
+        params = request.get("params", {})
 
         # JSON-RPC notifications have no id and should not receive a response
         # Per spec: "A Notification is a Request object without an 'id' member"
         is_notification = "id" not in request
 
+        logger.debug(
+            f"Handling request: method={method} id={request_id} notification={is_notification}"
+        )
+
         try:
             if method == "initialize":
+                logger.debug("Handling initialize request")
                 return await self._handle_initialize(request)
             elif method == "tools/list":
+                logger.debug("Handling tools/list request")
                 return await self._handle_tools_list(request)
             elif method == "tools/call":
+                tool_name = params.get("name", "unknown")
+                logger.debug(f"Handling tools/call request: tool={tool_name}")
                 return await self._handle_tools_call(request)
             elif is_notification:
                 # Notifications don't get responses - just log and return None
@@ -62,13 +80,16 @@ class BridgeServer:
                 return None
             else:
                 # Forward unknown methods to CP
+                logger.debug(f"Forwarding unknown method to CP: {method}")
                 return await self._forward_request(request)
         except BridgeProxyError as e:
+            logger.debug(f"BridgeProxyError: code={e.code} message={e.message}")
             if is_notification:
                 logger.warning(f"Error handling notification {method}: {e.message}")
                 return None
             return self._make_error_response(request_id, e.code, e.message)
         except Exception as e:
+            logger.debug(f"Unexpected error: {type(e).__name__}: {e}")
             if is_notification:
                 logger.warning(f"Error handling notification {method}: {e}")
                 return None
@@ -99,7 +120,17 @@ class BridgeServer:
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
     async def _handle_tools_list(self, request: dict[str, Any]) -> dict[str, Any]:
-        """Handle tools/list request - forward to CP and return as-is."""
+        """Handle tools/list request - forward to CP with optional source filter."""
+        # Add source filter to params if configured
+        sources = self.TOOLS_FILTER_MAP.get(self.tools_filter)
+        if sources is not None:
+            # Clone request and add sources to params
+            filtered_request = request.copy()
+            params = filtered_request.get("params", {}) or {}
+            params = params.copy()
+            params["sources"] = sources
+            filtered_request["params"] = params
+            return await self._forward_request(filtered_request)
         return await self._forward_request(request)
 
     async def _handle_tools_call(self, request: dict[str, Any]) -> dict[str, Any]:
