@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ploston-cli"
 version = "1.0.0"
-description = "CLI for Ploston - Deterministic Agent Execution Layer"
+description = "Unified CLI for Ploston - Bridge, Runner, and Management Commands"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
@@ -27,6 +27,8 @@ dependencies = [
     "mcp>=1.20.0",
     "rich>=13.7.0",
     "pyyaml>=6.0",
+    "websockets>=12.0",
+    "structlog>=24.0.0",
 ]
 
 [project.optional-dependencies]
@@ -70,4 +72,9 @@ markers = [
     "bridge_unit: marks tests as bridge unit tests",
     "bridge_integration: marks tests as bridge integration tests",
     "bridge_e2e: marks tests as bridge e2e tests",
+    "runner: marks tests as runner tests",
+    "runner_unit: marks tests as runner unit tests",
+    "runner_integration: marks tests as runner integration tests",
+    "cli: marks tests as CLI management command tests",
+    "cli_unit: marks tests as CLI unit tests",
 ]

@@ -67,6 +67,26 @@ test-unit:
 	@echo "$(CYAN)Running unit tests...$(RESET)"
 	$(PYTEST) tests/unit/ -v
 
+## Run runner unit tests only
+test-unit-runner:
+	@echo "$(CYAN)Running runner unit tests...$(RESET)"
+	$(PYTEST) tests/unit/runner/ -v -m runner_unit
+
+## Run bridge unit tests only
+test-unit-bridge:
+	@echo "$(CYAN)Running bridge unit tests...$(RESET)"
+	$(PYTEST) tests/unit/bridge/ -v -m bridge_unit
+
+## Run CLI unit tests only
+test-unit-cli:
+	@echo "$(CYAN)Running CLI unit tests...$(RESET)"
+	$(PYTEST) tests/unit/ -v -m cli_unit
+
+## Run shared module unit tests only
+test-unit-shared:
+	@echo "$(CYAN)Running shared module unit tests...$(RESET)"
+	$(PYTEST) tests/unit/shared/ -v
+
 ## Run tests with coverage
 test-cov:
 	@echo "$(CYAN)Running tests with coverage...$(RESET)"
@@ -141,4 +161,3 @@ clean:
 	rm -rf htmlcov/ .coverage
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	@echo "$(GREEN)Clean!$(RESET)"
-

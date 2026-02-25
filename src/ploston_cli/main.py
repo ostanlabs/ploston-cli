@@ -893,6 +893,126 @@ def runner_regenerate_token(ctx: click.Context, name: str, force: bool) -> None:
         click.echo(f"  {result.get('install_command')}")
 
 
+# =============================================================================
+# Local Runner Daemon Commands
+# =============================================================================
+
+
+@runner.command("start")
+@click.option(
+    "--cp",
+    envvar="PLOSTON_RUNNER_CP",
+    required=True,
+    help="CP WebSocket URL (wss://...)",
+)
+@click.option(
+    "--token",
+    envvar="PLOSTON_RUNNER_TOKEN",
+    required=True,
+    help="Runner authentication token",
+)
+@click.option(
+    "--name",
+    envvar="PLOSTON_RUNNER_NAME",
+    required=True,
+    help="Runner name (unique identifier)",
+)
+@click.option(
+    "--daemon/--foreground",
+    default=True,
+    help="Run as daemon (default) or in foreground",
+)
+@click.option(
+    "--log-level",
+    default="info",
+    type=click.Choice(["debug", "info", "warning", "error"]),
+    help="Log level",
+)
+def runner_start(cp: str, token: str, name: str, daemon: bool, log_level: str) -> None:
+    """Start the local runner daemon.
+
+    The runner connects to the Control Plane via WebSocket and executes
+    tools locally using MCP servers defined in the CP configuration.
+
+    \b
+    Examples:
+      ploston runner start --daemon --cp wss://ploston:8443/runner --token xxx --name my-laptop
+      ploston runner start --foreground --cp wss://ploston:8443/runner --token xxx --name my-laptop
+    """
+    from .runner.command import run_runner
+    from .runner.daemon import start_daemon
+    from .shared.paths import ensure_dirs
+
+    ensure_dirs()
+
+    if daemon:
+        start_daemon(
+            run_runner,
+            cp=cp,
+            token=token,
+            name=name,
+            log_level=log_level,
+        )
+    else:
+        # Foreground mode - run directly
+        from .shared.logging import configure_logging
+
+        configure_logging(level=log_level, json_output=False)
+        run_runner(cp=cp, token=token, name=name)
+
+
+@runner.command("stop")
+def runner_stop() -> None:
+    """Stop the local runner daemon."""
+    from .runner.daemon import stop_daemon
+
+    stop_daemon()
+
+
+@runner.command("status")
+def runner_status() -> None:
+    """Check local runner daemon status."""
+    from .runner.daemon import is_running
+
+    alive, pid = is_running()
+    if alive:
+        # Also check health endpoint
+        import httpx
+
+        try:
+            resp = httpx.get("http://localhost:9876/health", timeout=2)
+            health = resp.json()
+            click.echo(f"Runner: running (PID {pid})")
+            click.echo(f"  Name: {health.get('name', 'unknown')}")
+            click.echo(f"  CP: {health.get('cp_connected', 'unknown')}")
+            click.echo(f"  Tools: {health.get('available_tools', 0)} available")
+        except Exception:
+            click.echo(f"Runner: running (PID {pid}) but health check failed")
+    else:
+        click.echo("Runner: not running")
+
+
+@runner.command("logs")
+@click.option("--follow", "-f", is_flag=True, help="Follow log output")
+@click.option("--lines", "-n", default=50, help="Number of lines to show")
+def runner_logs(follow: bool, lines: int) -> None:
+    """View local runner daemon logs."""
+    import subprocess
+
+    from .shared.paths import LOG_DIR
+
+    log_file = LOG_DIR / "runner.log"
+
+    if not log_file.exists():
+        click.echo("No log file found.")
+        return
+
+    if follow:
+        subprocess.run(["tail", "-f", str(log_file)])
+    else:
+        subprocess.run(["tail", "-n", str(lines), str(log_file)])
+
+
 def main() -> None:
     """Main entry point."""
     cli(obj={})
