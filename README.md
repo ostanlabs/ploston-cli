@@ -1,14 +1,17 @@
 # Ploston CLI
 
-Command-line interface for Ploston - Deterministic Agent Execution Layer
+Command-line interface and local runner for Ploston - Deterministic Agent Execution Layer
 
 ## Overview
 
-The Ploston CLI is a **thin HTTP client** for interacting with Ploston servers.
-It works with both the open-source community tier and enterprise tier.
+The Ploston CLI provides two main capabilities:
 
-**Key Design Principle**: The CLI does not embed any server components. It communicates
-exclusively via HTTP with a running Ploston server.
+1. **CLI Client** - A thin HTTP client for interacting with Ploston servers
+2. **Local Runner** - An edge runner for executing MCP tools locally while connected to a remote Control Plane
+
+**Key Design Principle**: The CLI client does not embed any server components. It communicates
+exclusively via HTTP with a running Ploston server. The runner connects via WebSocket to the
+Control Plane and executes MCP tools locally.
 
 ## Installation
 
@@ -264,6 +267,63 @@ Add to `.cursor/mcp.json` in your project:
 - Ensure the CP has tools configured
 - Check that your token has permission to access tools
 - Run `ploston tools list` to verify tools are available
+
+### `ploston runner`
+
+Start a local runner that connects to a Ploston Control Plane and executes MCP tools locally.
+
+```bash
+# Start runner with config file
+ploston runner start --config runner-config.yaml
+
+# Start runner with inline MCP servers
+ploston runner start --url http://localhost:8080 --mcps filesystem,memory
+
+# Start runner with custom name
+ploston runner start --url http://localhost:8080 --name my-runner --mcps filesystem
+```
+
+| Option | Environment Variable | Description |
+|--------|---------------------|-------------|
+| `--url` | `PLOSTON_URL` | Control Plane URL (required) |
+| `--token` | `PLOSTON_TOKEN` | Bearer token for authentication |
+| `--name` | `PLOSTON_RUNNER_NAME` | Runner name (default: hostname) |
+| `--config` | - | Path to runner config YAML file |
+| `--mcps` | - | Comma-separated list of MCP servers to enable |
+| `--log-level` | `PLOSTON_LOG_LEVEL` | Log level: debug, info, warning, error |
+
+#### Runner Configuration File
+
+```yaml
+# runner-config.yaml
+name: my-local-runner
+control_plane:
+  url: http://localhost:8080
+  token: plt_xxx  # Optional
+
+mcps:
+  filesystem:
+    command: npx
+    args: ["-y", "@anthropic/mcp-server-filesystem", "/path/to/allowed"]
+  memory:
+    command: npx
+    args: ["-y", "@anthropic/mcp-server-memory"]
+```
+
+#### How It Works
+
+1. Runner connects to the Control Plane via WebSocket
+2. Runner registers its available MCP tools with the CP
+3. When a workflow needs a local tool, CP routes the request to the runner
+4. Runner executes the tool via MCP and returns the result
+5. If connection is lost, runner exits (code 1) for process supervisor restart
+
+#### Use Cases
+
+- **Local file access**: Execute filesystem tools on your machine
+- **Private APIs**: Connect to internal services not accessible from the CP
+- **GPU workloads**: Run ML inference tools on local hardware
+- **Development**: Test MCP servers before deploying to production
 
 ## Configuration
 
