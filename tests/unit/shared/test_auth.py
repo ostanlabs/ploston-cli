@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import pytest
+
 from ploston_cli.shared.auth import (
     auth_headers,
     delete_token,
