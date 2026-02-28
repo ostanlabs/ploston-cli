@@ -1,0 +1,30 @@
+# Workflow: Simple Linear
+# Scenario: S-04, S-05
+# Description: Simple linear workflow for validation testing
+
+name: simple-linear
+description: Simple linear workflow with two sequential steps
+version: "1.0"
+
+inputs:
+  input_text:
+    type: string
+    description: Input text to process
+    required: true
+
+steps:
+  - id: step1
+    tool: echo
+    inputs:
+      message: "Step 1: {{ inputs.input_text }}"
+
+  - id: step2
+    tool: echo
+    inputs:
+      message: "Step 2: {{ steps.step1.output }}"
+    depends_on:
+      - step1
+
+outputs:
+  final_result:
+    value: "{{ steps.step2.output }}"

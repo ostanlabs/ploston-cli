@@ -1,0 +1,34 @@
+# Workflow: Python Transform
+# Uses inline Python code for data transformation
+name: python-transform
+version: "1.0"
+description: Workflow with Python code step for transformation
+
+inputs:
+  - name: data
+    type: string
+    required: true
+    description: JSON data to transform
+  - name: multiplier
+    type: integer
+    required: false
+    default: 2
+    description: Multiplier for numeric values
+
+steps:
+  - id: transform
+    code: |
+      import json
+      data = json.loads(inputs["data"])
+      multiplier = inputs.get("multiplier", 2)
+      if isinstance(data, list):
+          result = [x * multiplier if isinstance(x, (int, float)) else x for x in data]
+      elif isinstance(data, dict):
+          result = {k: v * multiplier if isinstance(v, (int, float)) else v for k, v in data.items()}
+      else:
+          result = data
+      output = json.dumps(result)
+
+outputs:
+  - name: transformed
+    value: "{{ steps.transform.output }}"

@@ -1,0 +1,35 @@
+# Workflow: Scrape and Save
+# Two-step workflow: scrape URL, save to file
+name: scrape-and-save
+version: "1.0"
+description: Scrape a URL and save the content to a file
+
+inputs:
+  - name: url
+    type: string
+    required: true
+    description: URL to scrape
+  - name: output_path
+    type: string
+    required: true
+    description: Path to save the scraped content
+
+steps:
+  - id: scrape
+    tool: web_scrape
+    params:
+      url: "{{ inputs.url }}"
+
+  - id: save
+    tool: file_write
+    params:
+      path: "{{ inputs.output_path }}"
+      content: "{{ steps.scrape.output }}"
+    depends_on:
+      - scrape
+
+outputs:
+  - name: saved_path
+    value: "{{ inputs.output_path }}"
+  - name: content_length
+    value: "{{ steps.scrape.output.length }}"

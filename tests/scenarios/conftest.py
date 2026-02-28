@@ -183,3 +183,24 @@ def golden_dir() -> Path:
     if not d.exists():
         pytest.skip("Golden fixtures not found")
     return d
+
+
+# ---------------------------------------------------------------------------
+# MockAgent Fixture (Layer 2 — requires Docker)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def mock_agent(cp_url: str):
+    """Create a MockAgent connected to the bridge.
+
+    This fixture requires the CP to be running (Layer 2).
+    It spawns the ploston bridge and communicates via MCP protocol.
+    """
+    from tests.e2e.mock_agent import MockAgent
+
+    agent = await MockAgent.create(cp_url)
+    try:
+        yield agent
+    finally:
+        await agent.close()
