@@ -4,9 +4,20 @@ This module provides the HTTP client for communicating with Ploston servers.
 The CLI is a thin client that delegates all operations to the server via HTTP.
 """
 
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
+
+
+@dataclass
+class CPConnectionResult:
+    """Result of checking CP connectivity."""
+
+    connected: bool
+    url: str
+    error: str | None = None
+    version: str | None = None
 
 
 class PlostClientError(Exception):
@@ -326,3 +337,96 @@ class PlostClient:
             Diff response dict with diff, has_changes, and in_config_mode
         """
         return await self._request("GET", "/api/v1/config/diff")
+
+    # -------------------------------------------------------------------------
+    # Config Import Methods (for ploston init --import)
+    # -------------------------------------------------------------------------
+
+    async def check_cp_connectivity(self) -> CPConnectionResult:
+        """Check if CP is reachable and responding.
+
+        Uses existing health() method but wraps result in CPConnectionResult.
+
+        Returns:
+            CPConnectionResult with connection status and version info
+        """
+        try:
+            data = await self.health()
+            return CPConnectionResult(
+                connected=True,
+                url=self.base_url,
+                version=data.get("version"),
+            )
+        except PlostClientError as e:
+            return CPConnectionResult(
+                connected=False,
+                url=self.base_url,
+                error=e.message,
+            )
+
+    async def config_set(self, path: str, value: Any) -> dict[str, Any]:
+        """Stage a configuration change.
+
+        Args:
+            path: Dot-separated config path (e.g., "runners.local")
+            value: Value to set at that path
+
+        Returns:
+            Response with staged status and validation result
+        """
+        return await self._request(
+            "POST",
+            "/api/v1/config/set",
+            json={"path": path, "value": value},
+        )
+
+    async def config_done(self) -> dict[str, Any]:
+        """Apply staged configuration changes.
+
+        Returns:
+            Response with success status and applied config info
+        """
+        return await self._request("POST", "/api/v1/config/done", json={})
+
+    async def push_runner_config(
+        self,
+        runner_name: str,
+        mcp_servers: dict[str, dict[str, Any]],
+        token: str,
+    ) -> dict[str, Any]:
+        """Push runner configuration to CP via staged config API.
+
+        Convenience method that combines config_set + config_done.
+
+        Args:
+            runner_name: Name of the runner (e.g., "local")
+            mcp_servers: Dict of MCP server configurations
+            token: Authentication token for the runner
+
+        Returns:
+            Response from config_done
+        """
+        runner_config = {
+            "token": token,
+            "mcp_servers": mcp_servers,
+        }
+        await self.config_set(f"runners.{runner_name}", runner_config)
+        return await self.config_done()
+
+    async def get_runner_token(self, runner_name: str) -> str:
+        """Get the authentication token for a runner.
+
+        Args:
+            runner_name: Name of the runner
+
+        Returns:
+            The runner's authentication token
+
+        Raises:
+            PlostClientError: If runner not found (404)
+        """
+        response = await self._request(
+            "GET",
+            f"/api/v1/runners/{runner_name}/token",
+        )
+        return response["token"]
