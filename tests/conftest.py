@@ -463,3 +463,105 @@ def sample_tool_call_error() -> dict[str, Any]:
             "isError": True,
         },
     }
+
+
+# =============================================================================
+# CLI Test Fixtures - For init --import scenarios
+# =============================================================================
+
+
+@dataclass
+class CLIResult:
+    """Result from CLI invocation."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+@pytest.fixture
+def cli(tmp_path):
+    """Fixture providing a CLI runner function.
+
+    Returns a function that runs ploston CLI commands and returns CLIResult.
+    """
+    import subprocess
+
+    def run_cli(*args, check: bool = True, timeout: int = 30) -> CLIResult:
+        """Run ploston CLI with given arguments."""
+        result = subprocess.run(
+            ["ploston", *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(tmp_path),
+        )
+        cli_result = CLIResult(
+            returncode=result.returncode,
+            stdout=result.stdout,
+            stderr=result.stderr,
+        )
+        if check and result.returncode != 0:
+            # Don't raise for expected failures
+            pass
+        return cli_result
+
+    return run_cli
+
+
+@pytest.fixture
+def mock_claude_config(tmp_path, monkeypatch):
+    """Create a mock Claude Desktop config for testing.
+
+    Sets up a temporary HOME with a Claude Desktop config file.
+    """
+    import platform
+
+    # Create config directory based on platform
+    if platform.system() == "Darwin":
+        config_dir = tmp_path / "Library" / "Application Support" / "Claude"
+    else:
+        config_dir = tmp_path / ".config" / "Claude"
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_file = config_dir / "claude_desktop_config.json"
+
+    # Write sample config with MCP servers
+    config_content = {
+        "mcpServers": {
+            "filesystem": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+            },
+            "memory": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-memory"],
+            },
+        }
+    }
+    config_file.write_text(json.dumps(config_content, indent=2))
+
+    # Set HOME to temp path
+    monkeypatch.setenv("HOME", str(tmp_path))
+    if platform.system() != "Darwin":
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))
+
+    return config_file
+
+
+@pytest.fixture
+def cp_url():
+    """URL for Control Plane in Docker Compose environment.
+
+    Returns the default CP URL. Tests marked with @pytest.mark.docker
+    require the CP to be running.
+    """
+    import os
+
+    return os.environ.get("PLOSTON_CP_URL", "http://localhost:8080")
+
+
+@pytest.fixture
+def api_url(cp_url):
+    """API URL for Control Plane REST endpoints."""
+    return f"{cp_url}/api/v1"

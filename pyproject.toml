@@ -78,4 +78,6 @@ markers = [
     "runner_integration: marks tests as runner integration tests",
     "cli: marks tests as CLI management command tests",
     "cli_unit: marks tests as CLI unit tests",
+    "scenario: marks tests as scenario-based tests (user journey validation)",
+    "docker: marks tests requiring Docker Compose environment (Layer 2)",
 ]
