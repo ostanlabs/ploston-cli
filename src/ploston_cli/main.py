@@ -13,6 +13,7 @@ import click
 
 from .client import PlostClient, PlostClientError
 from .commands.bridge import bridge_command
+from .commands.init import init_command
 from .config import DEFAULT_SERVER, load_config
 from .utils import parse_inputs
 
@@ -83,8 +84,9 @@ def cli(
     ctx.obj["insecure"] = insecure
 
 
-# Register bridge command
+# Register commands
 cli.add_command(bridge_command)
+cli.add_command(init_command)
 
 
 @cli.command()
