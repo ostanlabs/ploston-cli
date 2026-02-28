@@ -148,13 +148,13 @@ async def _run_import_flow(
         sys.exit(1)
 
     # Step 3: Select servers to import
-    server_infos = config_detector.build_server_infos(servers)
+    # servers is already a dict[str, ServerInfo] from merge_configs or found[0].servers
     if non_interactive:
-        selected_names = selector.select_all(server_infos)
+        selected_names = selector.select_all(servers)
         click.echo(f"\n📦 Importing all {len(selected_names)} servers (non-interactive mode).\n")
     else:
         click.echo()
-        selected_names = selector.prompt_selection(server_infos)
+        selected_names = selector.prompt_selection(servers)
         click.echo(f"\n📦 {len(selected_names)} servers selected for import\n")
 
     if not selected_names:
@@ -169,7 +169,8 @@ async def _ensure_cp_connectivity(cp_url: str, non_interactive: bool) -> str | N
     """Ensure CP is reachable, prompting for URL if needed."""
     click.echo(f"🔗 Checking Control Plane connectivity ({cp_url})...")
 
-    async with PlostClient(cp_url) as client:
+    # Use a shorter timeout for connectivity check (5 seconds)
+    async with PlostClient(cp_url, timeout=5.0) as client:
         result = await client.check_cp_connectivity()
 
     if result.connected:
@@ -204,7 +205,7 @@ async def _ensure_cp_connectivity(cp_url: str, non_interactive: bool) -> str | N
 
         if choice == "1":
             new_url = click.prompt("Enter CP URL", default=cp_url)
-            async with PlostClient(new_url) as client:
+            async with PlostClient(new_url, timeout=5.0) as client:
                 result = await client.check_cp_connectivity()
             if result.connected:
                 click.echo(f"  ✓ Connected to {new_url}")
@@ -215,7 +216,7 @@ async def _ensure_cp_connectivity(cp_url: str, non_interactive: bool) -> str | N
         if choice == "2":
             click.echo("  Waiting for CP to be available...")
             click.pause("  Press Enter when CP is running...")
-            async with PlostClient(cp_url) as client:
+            async with PlostClient(cp_url, timeout=5.0) as client:
                 result = await client.check_cp_connectivity()
             if result.connected:
                 click.echo(f"  ✓ Connected to {cp_url}")
@@ -229,7 +230,7 @@ async def _ensure_cp_connectivity(cp_url: str, non_interactive: bool) -> str | N
             click.echo("  Please start the Control Plane manually using docker-compose or k8s.")
             click.echo()
             click.pause("  Press Enter when CP is running...")
-            async with PlostClient(cp_url) as client:
+            async with PlostClient(cp_url, timeout=5.0) as client:
                 result = await client.check_cp_connectivity()
             if result.connected:
                 click.echo(f"  ✓ Connected to {cp_url}")
