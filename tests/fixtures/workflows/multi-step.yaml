@@ -1,0 +1,44 @@
+# Workflow: Multi-Step with Template Interpolation
+# Tests parameter passing between steps
+name: multi-step
+version: "1.0"
+description: Multi-step workflow with template interpolation
+
+inputs:
+  - name: search_query
+    type: string
+    required: true
+    description: Search query
+  - name: output_dir
+    type: string
+    required: true
+    description: Output directory
+
+steps:
+  - id: search
+    tool: web_search
+    params:
+      query: "{{ inputs.search_query }}"
+      max_results: 5
+
+  - id: transform
+    tool: transform_results
+    params:
+      data: "{{ steps.search.output }}"
+      format: json
+    depends_on:
+      - search
+
+  - id: save
+    tool: file_write
+    params:
+      path: "{{ inputs.output_dir }}/results.json"
+      content: "{{ steps.transform.output }}"
+    depends_on:
+      - transform
+
+outputs:
+  - name: results_path
+    value: "{{ inputs.output_dir }}/results.json"
+  - name: result_count
+    value: "{{ steps.search.output.count }}"

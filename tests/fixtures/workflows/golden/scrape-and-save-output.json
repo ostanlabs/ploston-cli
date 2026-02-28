@@ -1,0 +1,33 @@
+{
+  "status": "completed",
+  "workflow": "scrape-and-save",
+  "inputs": {
+    "url": "https://example.com",
+    "output_path": "/tmp/out.md"
+  },
+  "outputs": {
+    "scraped_content": {
+      "content": "Example Domain content",
+      "url": "https://example.com"
+    },
+    "saved_path": "/tmp/out.md"
+  },
+  "steps": [
+    {
+      "id": "scrape",
+      "status": "completed",
+      "tool": "firecrawl_scrape",
+      "output": {
+        "content": "Example Domain content",
+        "url": "https://example.com"
+      }
+    },
+    {
+      "id": "save",
+      "status": "completed",
+      "tool": "filesystem_write_file",
+      "output": "File written successfully"
+    }
+  ],
+  "duration_ms": 500
+}
