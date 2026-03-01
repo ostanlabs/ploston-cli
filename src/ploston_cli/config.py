@@ -12,7 +12,7 @@ from typing import Any
 import yaml
 
 # Default values
-DEFAULT_SERVER = "http://localhost:8080"
+DEFAULT_SERVER = "http://localhost:8082"
 DEFAULT_TIMEOUT = 30
 DEFAULT_OUTPUT_FORMAT = "table"
 
