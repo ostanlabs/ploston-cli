@@ -1,1 +1,0 @@
-"""Mock MCP server fixtures."""
