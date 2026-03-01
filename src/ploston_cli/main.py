@@ -12,6 +12,7 @@ from typing import Any
 import click
 
 from .client import PlostClient, PlostClientError
+from .commands.bootstrap import bootstrap
 from .commands.bridge import bridge_command
 from .commands.init import init_command
 from .config import DEFAULT_SERVER, load_config
@@ -74,7 +75,7 @@ def cli(
       1. --server flag
       2. PLOSTON_SERVER environment variable
       3. ~/.ploston/config.yaml
-      4. Default: http://localhost:8080
+      4. Default: http://localhost:8082
     """
     ctx.ensure_object(dict)
     ctx.obj["server"] = server
@@ -85,6 +86,7 @@ def cli(
 
 
 # Register commands
+cli.add_command(bootstrap)
 cli.add_command(bridge_command)
 cli.add_command(init_command)
 

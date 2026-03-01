@@ -24,7 +24,7 @@ from ploston_cli.init import (
 if TYPE_CHECKING:
     from ploston_cli.init.detector import DetectedConfig, ServerInfo
 
-DEFAULT_CP_URL = "http://localhost:8080"
+DEFAULT_CP_URL = "http://localhost:8082"
 DEFAULT_RUNNER_NAME = "local"
 
 
