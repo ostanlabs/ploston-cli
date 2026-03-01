@@ -72,12 +72,14 @@ jobs:
 
       - name: Validate core version
         id: validate
+        env:
+          UV_SYSTEM_PYTHON: ""
         run: |
           LATEST_CORE=$(curl -s $DASHBOARD_URL | jq -r '.latest_available_core_version')
-          CURRENT_CORE=$(.venv/bin/pip show ploston-core | grep Version | cut -d' ' -f2)
+          CURRENT_CORE=$(uv pip show ploston-core | grep Version | cut -d' ' -f2)
           echo "core_version=$CURRENT_CORE" >> $GITHUB_OUTPUT
 
-          .venv/bin/python -c "
+          uv run python -c "
           from packaging.version import Version
           import sys
           current, latest = sys.argv[1], sys.argv[2]
