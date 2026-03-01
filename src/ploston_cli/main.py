@@ -11,14 +11,14 @@ from typing import Any
 
 import click
 
+# Import version from package metadata (set in __init__.py)
+from . import __version__
 from .client import PlostClient, PlostClientError
 from .commands.bootstrap import bootstrap
 from .commands.bridge import bridge_command
 from .commands.init import init_command
 from .config import DEFAULT_SERVER, load_config
 from .utils import parse_inputs
-
-__version__ = "1.0.0"
 
 
 def get_server_url(ctx: click.Context) -> str:
