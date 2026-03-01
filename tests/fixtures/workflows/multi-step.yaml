@@ -5,37 +5,29 @@ version: "1.0"
 description: Multi-step workflow with template interpolation
 
 inputs:
-  - name: search_query
-    type: string
-    required: true
-    description: Search query
-  - name: output_dir
-    type: string
-    required: true
-    description: Output directory
+  - search_query:
+      type: string
+      required: true
+      description: Search query
+  - output_dir:
+      type: string
+      required: true
+      description: Output directory
 
 steps:
   - id: search
-    tool: web_search
+    tool: brave_search
     params:
       query: "{{ inputs.search_query }}"
       max_results: 5
 
-  - id: transform
-    tool: transform_results
-    params:
-      data: "{{ steps.search.output }}"
-      format: json
-    depends_on:
-      - search
-
   - id: save
-    tool: file_write
+    tool: filesystem_write_file
     params:
       path: "{{ inputs.output_dir }}/results.json"
-      content: "{{ steps.transform.output }}"
+      content: "{{ steps.search.output }}"
     depends_on:
-      - transform
+      - search
 
 outputs:
   - name: results_path

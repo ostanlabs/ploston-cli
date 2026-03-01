@@ -1,0 +1,43 @@
+# =============================================================================
+# Ploston Configuration for Scenario Tests
+# =============================================================================
+# This config file is used by the ploston CP in docker-compose.scenario.yaml
+# to connect to mock MCP servers for testing.
+# =============================================================================
+
+# Server settings
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+# Tools configuration
+tools:
+  # System tools
+  system_tools:
+    python_exec_enabled: true
+
+  # MCP servers to connect to
+  mcp_servers:
+    # Mock MCP server 1 - provides firecrawl_scrape, filesystem_write_file
+    mock-mcp:
+      url: "http://mock-mcp:8080"
+      transport: http
+      timeout: 30
+
+    # Mock MCP server 2 - provides brave_search, echo
+    mock-mcp-2:
+      url: "http://mock-mcp-2:8080"
+      transport: http
+      timeout: 30
+
+# Runners for scenario tests
+runners:
+  scenario-runner-1:
+    mcp_servers: {}
+  scenario-runner-2:
+    mcp_servers: {}
+
+# Logging
+logging:
+  level: DEBUG
+  format: json

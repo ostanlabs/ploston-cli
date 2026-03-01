@@ -18,13 +18,13 @@ class TestS26AgentDiscoverTools:
     """S-26: Agent lists tools through bridge → CP → MCP servers."""
 
     @pytest.mark.asyncio
-    async def test_tools_list_via_bridge(self, mock_agent):
+    async def test_tools_list_via_bridge(self, mock_agent, registered_workflows):
         """MockAgent → tools/list returns tools."""
         tools = await mock_agent.list_tools()
         assert len(tools) > 0, "S-26: bridge should expose tools"
 
     @pytest.mark.asyncio
-    async def test_workflow_tools_present(self, mock_agent):
+    async def test_workflow_tools_present(self, mock_agent, registered_workflows):
         """Workflow tools (workflow:*) are present alongside individual tools."""
         tools = await mock_agent.list_tools()
         tool_names = [t["name"] for t in tools]
@@ -38,14 +38,19 @@ class TestS27AgentCallsTool:
     """S-27: Agent calls individual tool through bridge."""
 
     @pytest.mark.asyncio
-    async def test_tool_call_returns_result(self, mock_agent):
+    async def test_tool_call_returns_result(self, mock_agent, registered_workflows):
         """MockAgent → tools/call returns result from mock MCP."""
         tools = await mock_agent.list_tools()
         if not tools:
             pytest.skip("No tools available")
 
-        tool_name = tools[0]["name"]
-        result = await mock_agent.call_tool(tool_name, {})
+        # Find the echo tool which accepts a message parameter
+        echo_tool = next((t for t in tools if t["name"] == "echo"), None)
+        if echo_tool:
+            result = await mock_agent.call_tool("echo", {"message": "test"})
+        else:
+            # Fall back to python_exec with proper params
+            result = await mock_agent.call_tool("python_exec", {"code": "result = 'hello'"})
         assert result is not None, "S-27: tool call should return result"
 
 
@@ -60,16 +65,23 @@ class TestS28AhaMoment:
     """
 
     @pytest.mark.asyncio
-    async def test_workflow_tool_call(self, mock_agent):
+    async def test_workflow_tool_call(self, mock_agent, registered_workflows):
         """One agent call triggers full workflow execution."""
+        if not registered_workflows:
+            pytest.skip("No workflows registered")
+
         tools = await mock_agent.list_tools()
-        workflow_tools = [t for t in tools if t["name"].startswith("workflow:")]
-        if not workflow_tools:
-            pytest.skip("No workflow tools available")
+        # Look for echo-test workflow which has simple inputs
+        echo_workflow = next(
+            (t for t in tools if t["name"] == "workflow:echo-test"),
+            None,
+        )
+        if not echo_workflow:
+            pytest.skip("workflow:echo-test not available")
 
         result = await mock_agent.call_tool(
-            workflow_tools[0]["name"],
-            {},
+            "workflow:echo-test",
+            {"message": "hello from agent"},
         )
         # Result should not be an error
         assert not result.get("isError", False), f"S-28: workflow should succeed, got: {result}"
@@ -93,16 +105,23 @@ class TestS30WorkflowError:
     """S-30: Agent triggers workflow that fails — structured MCP error."""
 
     @pytest.mark.asyncio
-    async def test_error_response_via_bridge(self, mock_agent):
+    async def test_error_response_via_bridge(self, mock_agent, registered_workflows):
         """Failing workflow returns MCP error with isError=true."""
-        tools = await mock_agent.list_tools()
-        workflow_tools = [t for t in tools if t["name"].startswith("workflow:")]
-        if not workflow_tools:
-            pytest.skip("No workflow tools available")
+        if not registered_workflows:
+            pytest.skip("No workflows registered")
 
-        # Try to trigger an error by passing invalid inputs
+        tools = await mock_agent.list_tools()
+        # Look for echo-test workflow
+        echo_workflow = next(
+            (t for t in tools if t["name"] == "workflow:echo-test"),
+            None,
+        )
+        if not echo_workflow:
+            pytest.skip("workflow:echo-test not available")
+
+        # Try to trigger an error by passing invalid inputs (missing required 'message')
         result = await mock_agent.call_tool(
-            workflow_tools[0]["name"],
+            "workflow:echo-test",
             {"invalid_param": "should_fail"},
         )
         # Either success or structured error is acceptable

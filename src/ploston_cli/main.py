@@ -270,16 +270,25 @@ def validate(ctx: click.Context, file: str, strict: bool, check_tools: bool) -> 
                     errors.append(f"steps[{i}]: Step must have either 'tool' or 'code'")
 
         # Validate inputs if present
+        # Supported formats:
+        # - "name"  (string - simple required input)
+        # - name: default  (dict with name as key, default value)
+        # - name: {type: ..., ...}  (dict with name as key, full definition)
         if "inputs" in workflow_data:
             if not isinstance(workflow_data["inputs"], list):
                 errors.append("'inputs' must be a list")
             else:
                 for i, inp in enumerate(workflow_data["inputs"]):
-                    if not isinstance(inp, dict):
-                        errors.append(f"inputs[{i}]: Input must be a mapping")
+                    if isinstance(inp, str):
+                        # Simple string format: required input
                         continue
-                    if "name" not in inp:
-                        errors.append(f"inputs[{i}]: Missing required field 'name'")
+                    elif isinstance(inp, dict):
+                        # Dict format: key is the input name
+                        if len(inp) == 0:
+                            errors.append(f"inputs[{i}]: Empty input definition")
+                        # Valid: {name: default} or {name: {type: ..., ...}}
+                    else:
+                        errors.append(f"inputs[{i}]: Input must be a string or mapping")
 
         # Validate outputs if present
         if "outputs" in workflow_data:

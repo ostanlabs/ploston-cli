@@ -1,20 +1,20 @@
 # Workflow: Echo Test
-# Simple workflow that echoes a message back
+# Simple workflow that echoes a message back using python_exec
 name: echo-test
 version: "1.0"
 description: Simple echo workflow for testing
 
 inputs:
-  - name: message
-    type: string
-    required: true
-    description: Message to echo
+  - message:
+      type: string
+      required: true
+      description: Message to echo
 
 steps:
   - id: echo
-    tool: echo
+    tool: python_exec
     params:
-      message: "{{ inputs.message }}"
+      code: "result = '{{ inputs.message }}'"
 
 outputs:
   - name: echoed
