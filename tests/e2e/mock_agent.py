@@ -52,12 +52,16 @@ class MockAgent:
     async def _start(self) -> None:
         """Start the bridge subprocess and initialize MCP session."""
         env = os.environ.copy()
-        env["PLOSTON_SERVER"] = self.cp_url
+        env["PLOSTON_URL"] = self.cp_url
 
+        # Use the ploston CLI entry point to run the bridge command
         self.process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-m",
-            "ploston_cli.commands.bridge",
+            "ploston_cli",
+            "bridge",
+            "--url",
+            self.cp_url,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

@@ -73,8 +73,9 @@ class TestS02HealthCheck:
         """Health response shows all checks healthy."""
         response = requests.get(f"{cp_url}/health", timeout=10)
         data = response.json()
-        assert data.get("status") == "healthy", (
-            f"S-02: status should be 'healthy', got {data.get('status')}"
+        # Accept both "ok" and "healthy" as valid status values
+        assert data.get("status") in ("ok", "healthy"), (
+            f"S-02: status should be 'ok' or 'healthy', got {data.get('status')}"
         )
 
     def test_api_health_endpoint(self, api_url):

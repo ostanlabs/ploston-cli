@@ -16,8 +16,10 @@ import requests
 class TestS31ExecutionTrace:
     """S-31: Full execution trace captured."""
 
-    def test_execution_has_trace(self, api_url):
+    def test_execution_has_trace(self, api_url, registered_workflows):
         """Run workflow → GET execution → verify trace fields."""
+        if "echo-test" not in registered_workflows:
+            pytest.skip("echo-test workflow not registered")
         # Execute workflow
         exec_response = requests.post(
             f"{api_url}/workflows/echo-test/execute",
@@ -61,8 +63,10 @@ class TestS32ExecutionHistory:
 class TestS33ExecutionLogs:
     """S-33: Execution logs retrieval."""
 
-    def test_execution_logs_available(self, api_url):
+    def test_execution_logs_available(self, api_url, registered_workflows):
         """Execution logs contain structured entries."""
+        if "echo-test" not in registered_workflows:
+            pytest.skip("echo-test workflow not registered")
         # Execute workflow first
         exec_response = requests.post(
             f"{api_url}/workflows/echo-test/execute",

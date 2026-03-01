@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 import requests
+import yaml
 
 if TYPE_CHECKING:
     pass
@@ -167,7 +168,7 @@ def mock_claude_config(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def workflow_dir() -> Path:
     """Path to test workflow YAML fixtures."""
     d = WORKFLOWS_DIR
@@ -176,13 +177,61 @@ def workflow_dir() -> Path:
     return d
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def golden_dir() -> Path:
     """Path to golden file fixtures for regression."""
     d = WORKFLOWS_DIR / "golden"
     if not d.exists():
         pytest.skip("Golden fixtures not found")
     return d
+
+
+@pytest.fixture(scope="module")
+def registered_workflows(api_url: str, workflow_dir: Path) -> list[str]:
+    """Register all test workflows and return their names.
+
+    This fixture registers workflows from the fixtures directory
+    and cleans them up after the test module completes.
+    """
+    registered = []
+    workflow_files = [
+        "echo-test.yaml",
+        "scrape-and-save.yaml",
+        "multi-step.yaml",
+        "python-transform.yaml",
+        "simple-linear.yaml",
+    ]
+
+    for filename in workflow_files:
+        filepath = workflow_dir / filename
+        if not filepath.exists():
+            continue
+
+        with open(filepath) as f:
+            content = f.read()
+
+        # Register the workflow
+        response = requests.post(
+            f"{api_url}/workflows",
+            data=content,
+            headers={"Content-Type": "application/x-yaml"},
+            timeout=10,
+        )
+
+        if response.status_code in (200, 201):
+            # Extract workflow name from the file
+            data = yaml.safe_load(content)
+            name = data.get("name", filename.replace(".yaml", ""))
+            registered.append(name)
+
+    yield registered
+
+    # Cleanup: delete registered workflows
+    for name in registered:
+        try:
+            requests.delete(f"{api_url}/workflows/{name}", timeout=10)
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
