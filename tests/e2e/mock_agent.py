@@ -37,15 +37,22 @@ class MockAgent:
     """
 
     cp_url: str
+    extra_args: list[str] = field(default_factory=list)
     process: asyncio.subprocess.Process | None = None
     _request_id: int = field(default=0, init=False)
     _pending: dict[int, asyncio.Future] = field(default_factory=dict, init=False)
     _reader_task: asyncio.Task | None = field(default=None, init=False)
 
     @classmethod
-    async def create(cls, cp_url: str) -> MockAgent:
-        """Create and initialize a MockAgent connected to the bridge."""
-        agent = cls(cp_url=cp_url)
+    async def create(cls, cp_url: str, extra_args: list[str] | None = None) -> MockAgent:
+        """Create and initialize a MockAgent connected to the bridge.
+
+        Args:
+            cp_url: URL of the control plane
+            extra_args: Additional CLI arguments to pass to the bridge command
+                       (e.g., ["--filter-servers", "native-tools"])
+        """
+        agent = cls(cp_url=cp_url, extra_args=extra_args or [])
         await agent._start()
         return agent
 
@@ -54,14 +61,20 @@ class MockAgent:
         env = os.environ.copy()
         env["PLOSTON_URL"] = self.cp_url
 
-        # Use the ploston CLI entry point to run the bridge command
-        self.process = await asyncio.create_subprocess_exec(
+        # Build command with base args and any extra args
+        cmd = [
             sys.executable,
             "-m",
             "ploston_cli",
             "bridge",
             "--url",
             self.cp_url,
+            *self.extra_args,
+        ]
+
+        # Use the ploston CLI entry point to run the bridge command
+        self.process = await asyncio.create_subprocess_exec(
+            *cmd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

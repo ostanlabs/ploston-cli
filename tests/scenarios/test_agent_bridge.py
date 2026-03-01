@@ -93,10 +93,49 @@ class TestS29BridgeFiltering:
     """S-29: Bridge with tool filtering profile (DEC-131)."""
 
     @pytest.mark.asyncio
-    async def test_filtered_tools_list(self, cp_url):
-        """Bridge with --filter-servers shows only allowed tools."""
-        # This test requires MockAgent with extra_args support
-        pytest.skip("Bridge filtering requires extra_args support in MockAgent")
+    async def test_filtered_tools_native_only(self, cp_url):
+        """Bridge with --tools native excludes MCP tools.
+
+        The scenario config doesn't have native tools configured,
+        so this test verifies that the filter correctly excludes
+        MCP tools (brave_search, echo, etc.) when native filter is used.
+        """
+        from tests.e2e.mock_agent import MockAgent
+
+        async with await MockAgent.create(cp_url, extra_args=["--tools", "native"]) as agent:
+            tools = await agent.list_tools()
+            tool_names = [t["name"] for t in tools]
+
+            # Should NOT have mock MCP tools (brave_search, etc.)
+            # These are registered as 'mcp' source, not 'native'
+            mcp_tools = ["brave_search", "echo", "firecrawl_scrape", "filesystem_write_file"]
+            for mcp_tool in mcp_tools:
+                assert mcp_tool not in tool_names, (
+                    f"S-29: native filter should exclude MCP tool {mcp_tool}, got: {tool_names[:10]}"
+                )
+
+            # Should NOT have system tools (python_exec)
+            assert "python_exec" not in tool_names, (
+                f"S-29: native filter should exclude system tool python_exec, got: {tool_names[:10]}"
+            )
+
+            # Should NOT have workflow tools
+            workflow_tools = [t for t in tool_names if t.startswith("workflow:")]
+            assert len(workflow_tools) == 0, (
+                f"S-29: native filter should exclude workflow tools, got: {workflow_tools}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_filtered_tools_all(self, cp_url):
+        """Bridge with --tools all shows all tools (default behavior)."""
+        from tests.e2e.mock_agent import MockAgent
+
+        async with await MockAgent.create(cp_url, extra_args=["--tools", "all"]) as agent:
+            tools = await agent.list_tools()
+            tool_names = [t["name"] for t in tools]
+
+            # Should have tools from multiple sources
+            assert len(tool_names) > 0, "S-29: expected tools with 'all' filter, got none"
 
 
 @pytest.mark.scenario
