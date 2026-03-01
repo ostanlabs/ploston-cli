@@ -97,7 +97,7 @@
       "isError": false
     },
     "brave_search": {
-      "content": [{"type": "text", "text": "{\"results\": [{\"url\": \"https://example.com\", \"title\": \"Example\"}]}"}],
+      "content": [{"type": "text", "text": "{\"results\": [{\"url\": \"https://example.com\", \"title\": \"Example\"}], \"count\": 1}"}],
       "isError": false
     },
     "workflow:echo-test": {

@@ -50,9 +50,13 @@ class TestS10StarCrossServerWorkflow:
         )
         if response.status_code == 404:
             pytest.skip("Multi-step workflow not registered")
-        # Accept 500 as known bug (PydanticSerializationError)
-        if response.status_code == 500:
-            pytest.xfail("Known bug: PydanticSerializationError in response serialization")
+        assert response.status_code in (200, 400, 422), (
+            f"S-10*: unexpected status code {response.status_code}"
+        )
         data = response.json()
         # Either success or structured error is acceptable
         assert data is not None, "S-10*: should return execution result"
+        if response.status_code == 200:
+            assert data.get("status") in ("completed", "success", "failed"), (
+                f"S-10*: should have valid status, got: {data}"
+            )

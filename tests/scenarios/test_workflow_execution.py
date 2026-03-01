@@ -60,18 +60,19 @@ class TestS10MultiStepInterpolation:
         )
         if response.status_code == 404:
             pytest.skip("Workflow not registered")
-        # Accept 200 (success), 400/422 (validation error), or 500 (known serialization bug)
-        # TODO: Remove 500 once PydanticSerializationError bug is fixed in ploston-core
-        assert response.status_code in (200, 400, 422, 500), (
+        # Accept 200 (success) or 400/422 (validation error)
+        assert response.status_code in (200, 400, 422), (
             f"S-10: unexpected status code {response.status_code}"
         )
-        if response.status_code == 500:
-            # Known bug: PydanticSerializationError when serializing response
-            pytest.xfail("Known bug: PydanticSerializationError in response serialization")
         if response.status_code == 200:
             data = response.json()
             assert data.get("status") in ("completed", "success", "failed"), (
                 f"S-10: multi-step should have valid status, got: {data}"
+            )
+            # Verify interpolation worked - result_count should be from steps.search.output.count
+            outputs = data.get("outputs", {})
+            assert "result_count" in outputs, (
+                f"S-10: expected result_count in outputs, got: {outputs}"
             )
 
 
