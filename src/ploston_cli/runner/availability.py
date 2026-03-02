@@ -98,10 +98,12 @@ class AvailabilityReporter:
         Returns:
             MCPServerDefinition for MCPClientManager
         """
+        from ploston_core.types import MCPTransport
+
         if config.url:
             return MCPServerDefinition(
                 url=config.url,
-                transport="http",
+                transport=MCPTransport.HTTP,
             )
         else:
             if config.args:
@@ -112,7 +114,7 @@ class AvailabilityReporter:
             return MCPServerDefinition(
                 command=full_command,
                 env=config.env,
-                transport="stdio",
+                transport=MCPTransport.STDIO,
             )
 
     async def initialize_mcps(self, config: RunnerMCPConfig) -> None:
@@ -182,6 +184,7 @@ class AvailabilityReporter:
         Sends full tool schemas including name, description, and inputSchema.
         Tool names are prefixed with MCP server name using __ delimiter.
         """
+        logger.info("Reporting availability to Control Plane")
         if not self._connection.is_connected:
             logger.warning("Cannot report availability: not connected to CP")
             return
@@ -203,6 +206,10 @@ class AvailabilityReporter:
             else:
                 unavailable.append(mcp_name)
 
+        logger.info(
+            f"Reporting {len(available)} available tools, {len(unavailable)} unavailable MCPs"
+        )
+
         try:
             from .types import RunnerMethods
 
@@ -213,7 +220,7 @@ class AvailabilityReporter:
                     "unavailable": unavailable,
                 },
             )
-            logger.debug(f"Reported availability: {len(available)} tools available")
+            logger.info(f"Reported availability: {len(available)} tools available")
         except Exception as e:
             logger.error(f"Failed to report availability: {e}")
 
