@@ -78,6 +78,28 @@ class RunnerConnection:
         if on_tool_call:
             self._handlers[RunnerMethods.TOOL_CALL] = on_tool_call
 
+    def set_handlers(
+        self,
+        on_config_push: MessageHandler | None = None,
+        on_workflow_execute: MessageHandler | None = None,
+        on_tool_call: MessageHandler | None = None,
+    ) -> None:
+        """Set message handlers after construction.
+
+        This allows setting handlers that need a reference to the connection itself.
+
+        Args:
+            on_config_push: Handler for config/push messages
+            on_workflow_execute: Handler for workflow/execute messages
+            on_tool_call: Handler for tool/call messages
+        """
+        if on_config_push:
+            self._handlers[RunnerMethods.CONFIG_PUSH] = on_config_push
+        if on_workflow_execute:
+            self._handlers[RunnerMethods.WORKFLOW_EXECUTE] = on_workflow_execute
+        if on_tool_call:
+            self._handlers[RunnerMethods.TOOL_CALL] = on_tool_call
+
     @property
     def status(self) -> RunnerConnectionStatus:
         """Current connection status."""
