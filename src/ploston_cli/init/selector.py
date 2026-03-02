@@ -31,7 +31,7 @@ class ServerSelector:
         """
         self.secret_detector = secret_detector
 
-    def prompt_selection(self, server_infos: list[ServerInfo]) -> list[str]:
+    async def prompt_selection(self, server_infos: list[ServerInfo]) -> list[str]:
         """Show interactive checkbox selection.
 
         Args:
@@ -61,10 +61,10 @@ class ServerSelector:
                 )
             )
 
-        selected = questionary.checkbox(
+        selected = await questionary.checkbox(
             "Select servers to import (↑↓ navigate, Space toggle, Enter confirm):",
             choices=choices,
-        ).ask()
+        ).ask_async()
 
         if selected is None:
             # User cancelled (Ctrl+C)

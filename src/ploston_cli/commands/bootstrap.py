@@ -50,7 +50,7 @@ class BootstrapResult:
     default="docker",
     help="Deployment target",
 )
-@click.option("--tag", default="latest", help="Docker image tag")
+@click.option("--tag", default="edge", help="Docker image tag")
 @click.option("--port", default=8082, type=int, help="CP port")
 @click.option(
     "--with-observability",
@@ -58,6 +58,7 @@ class BootstrapResult:
     help="Include Prometheus + Grafana + Loki",
 )
 @click.option("--no-import", is_flag=True, help="Skip auto-detection and import chaining")
+@click.option("--no-pull", is_flag=True, help="Skip pulling images (use local images)")
 @click.option("--non-interactive", "-y", is_flag=True, help="Accept all defaults")
 @click.option("--kubeconfig", default=None, help="Kubeconfig path (K8s only)")
 @click.option("--namespace", default="ploston", help="K8s namespace")
@@ -69,6 +70,7 @@ def bootstrap(
     port,
     with_observability,
     no_import,
+    no_pull,
     non_interactive,
     kubeconfig,
     namespace,
@@ -103,6 +105,7 @@ def bootstrap(
             port=port,
             with_observability=with_observability,
             skip_import=no_import,
+            skip_pull=no_pull,
             non_interactive=non_interactive,
             kubeconfig=kubeconfig,
             namespace=namespace,
@@ -191,6 +194,7 @@ async def _run_bootstrap(
     port: int,
     with_observability: bool,
     skip_import: bool,
+    skip_pull: bool,
     non_interactive: bool,
     kubeconfig: str | None = None,
     namespace: str = "ploston",
@@ -270,20 +274,20 @@ async def _run_bootstrap(
     # ── Step 3: Port check ──
     click.echo("\n📋 Step 2: Port Check\n")
     scanner = PortScanner()
-    port_status = scanner.check_ports([port, 6379])
+    port_status = scanner.check_ports({port: "ploston", 6379: "redis"})
 
-    for p, status in port_status.items():
+    for status in port_status:
         if status.available:
-            click.echo(f"  ✓ Port {p}: available")
+            click.echo(f"  ✓ Port {status.port}: available")
         else:
-            click.echo(f"  ✗ Port {p}: in use by {status.process_name or 'unknown'}")
+            click.echo(f"  ✗ Port {status.port}: in use by {status.service_name or 'unknown'}")
             if not non_interactive:
-                alt = scanner.suggest_alternative(p)
+                alt = scanner.suggest_alternative(status.port)
                 if alt and click.confirm(f"  Use port {alt} instead?"):
-                    if p == port:
+                    if status.port == port:
                         port = alt
                 else:
-                    return BootstrapResult(success=False, error=f"Port {p} in use")
+                    return BootstrapResult(success=False, error=f"Port {status.port} in use")
 
     # ── Step 4: Generate config ──
     click.echo("\n📋 Step 3: Generate Configuration\n")
@@ -324,8 +328,11 @@ async def _run_bootstrap(
 
     if target == "docker":
         stack_manager = StackManager()
-        click.echo("  Pulling images...")
-        success, msg = stack_manager.up(pull=True)
+        if not skip_pull:
+            click.echo("  Pulling images...")
+        else:
+            click.echo("  Using local images (--no-pull)...")
+        success, msg = stack_manager.up(pull=not skip_pull)
         if not success:
             click.echo(f"  ✗ {msg}", err=True)
             return BootstrapResult(success=False, error=msg)

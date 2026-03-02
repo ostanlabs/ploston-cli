@@ -6,6 +6,7 @@ Implements the `ploston init --import` command per PLOSTON_INIT_IMPORT_SPEC.md.
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from typing import TYPE_CHECKING
 
@@ -26,6 +27,9 @@ if TYPE_CHECKING:
 
 DEFAULT_CP_URL = "http://localhost:8082"
 DEFAULT_RUNNER_NAME = "local"
+
+# Environment variable to override config base path (for testing)
+ENV_CONFIG_BASE_PATH = "PLOSTON_CONFIG_BASE_PATH"
 
 
 @click.command("init")
@@ -115,7 +119,9 @@ async def _run_import_flow(
         sys.exit(1)
 
     # Step 2: Detect MCP configurations
-    config_detector = ConfigDetector()
+    # Allow overriding config base path via environment variable (for testing)
+    config_base_path = os.environ.get(ENV_CONFIG_BASE_PATH)
+    config_detector = ConfigDetector(config_base_path=config_base_path)
     selector = ServerSelector()
 
     click.echo("📂 Scanning for MCP configurations...")
@@ -155,7 +161,7 @@ async def _run_import_flow(
         click.echo(f"\n📦 Importing all {len(selected_names)} servers (non-interactive mode).\n")
     else:
         click.echo()
-        selected_names = selector.prompt_selection(server_list)
+        selected_names = await selector.prompt_selection(server_list)
         click.echo(f"\n📦 {len(selected_names)} servers selected for import\n")
 
     if not selected_names:
@@ -194,7 +200,7 @@ async def _ensure_cp_connectivity(cp_url: str, non_interactive: bool) -> str | N
     click.echo("Options:")
     click.echo("  [1] Enter a different CP URL")
     click.echo("  [2] Start CP manually and press Enter to retry")
-    click.echo("  [3] Run 'ploston bootstrap' to set up CP (placeholder - not yet implemented)")
+    click.echo("  [3] Run 'ploston bootstrap' to set up CP")
     click.echo("  [q] Quit")
     click.echo()
 
@@ -227,16 +233,25 @@ async def _ensure_cp_connectivity(cp_url: str, non_interactive: bool) -> str | N
 
         if choice == "3":
             click.echo()
-            click.echo("  ⚠️  PLACEHOLDER: 'ploston bootstrap' is not yet implemented.")
-            click.echo("  Please start the Control Plane manually using docker-compose or k8s.")
+            click.echo("  🚀 Running 'ploston bootstrap'...")
             click.echo()
-            click.pause("  Press Enter when CP is running...")
+            import subprocess
+
+            # Run bootstrap with --no-import to avoid circular dependency
+            result = subprocess.run(
+                ["ploston", "bootstrap", "--no-import"],
+                capture_output=False,
+            )
+            if result.returncode != 0:
+                click.echo("  ❌ Bootstrap failed. Please check the output above.")
+                continue
+            # After bootstrap, check connectivity
             async with PlostClient(cp_url, timeout=5.0) as client:
-                result = await client.check_cp_connectivity()
-            if result.connected:
+                conn_result = await client.check_cp_connectivity()
+            if conn_result.connected:
                 click.echo(f"  ✓ Connected to {cp_url}")
                 return cp_url
-            click.echo(f"  ❌ Still cannot connect: {result.error}")
+            click.echo(f"  ❌ Still cannot connect: {conn_result.error}")
             continue
 
         click.echo("  Invalid option. Please select 1, 2, 3, or q.")
@@ -329,9 +344,6 @@ async def _complete_import_flow(
     click.echo("Next steps:")
     click.echo("  1. Start the local runner:")
     click.echo(
-        f"     ploston runner start --cp {cp_url.replace('http', 'ws')}/runner --token <token> --name {runner_name}"
+        f"     ploston runner start --daemon --cp {cp_url.replace('http', 'ws')}/runner --token {runner_token} --name {runner_name}"
     )
-    click.echo()
-    click.echo("  2. Or view the runner token:")
-    click.echo(f"     cat {env_file} | grep PLOSTON_RUNNER_TOKEN")
     click.echo()

@@ -7,7 +7,6 @@ from Claude Desktop and Cursor applications.
 from __future__ import annotations
 
 import json
-import os
 import platform
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -77,28 +76,36 @@ class ConfigDetector:
     Handles platform-specific config paths and directory scanning for Cursor.
     """
 
-    # Config paths per platform
+    # Config paths per platform (relative to home directory)
+    # Use {home} as placeholder for the home/base directory
     CONFIG_PATHS: dict[SourceType, dict[str, str]] = {
         "claude_desktop": {
-            "darwin": "~/Library/Application Support/Claude/claude_desktop_config.json",
-            "linux": "~/.config/Claude/claude_desktop_config.json",
-            "windows": "%APPDATA%\\Claude\\claude_desktop_config.json",
+            "darwin": "{home}/Library/Application Support/Claude/claude_desktop_config.json",
+            "linux": "{home}/.config/Claude/claude_desktop_config.json",
+            "windows": "{home}/AppData/Roaming/Claude/claude_desktop_config.json",
         },
         "cursor": {
-            "darwin": "~/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/",
-            "linux": "~/.config/Cursor/User/globalStorage/cursor.mcp/",
-            "windows": "%APPDATA%\\Cursor\\User\\globalStorage\\cursor.mcp\\",
+            "darwin": "{home}/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/",
+            "linux": "{home}/.config/Cursor/User/globalStorage/cursor.mcp/",
+            "windows": "{home}/AppData/Roaming/Cursor/User/globalStorage/cursor.mcp/",
         },
     }
 
-    def __init__(self, secret_detector: SecretDetector | None = None):
+    def __init__(
+        self,
+        secret_detector: SecretDetector | None = None,
+        config_base_path: Path | str | None = None,
+    ):
         """Initialize detector.
 
         Args:
             secret_detector: SecretDetector instance for env var extraction
+            config_base_path: Base path for config files. Defaults to user's home directory.
+                              Can be overridden for testing.
         """
         self.secret_detector = secret_detector or SecretDetector()
         self._platform = self._get_platform()
+        self._config_base_path = Path(config_base_path) if config_base_path else None
 
     def _get_platform(self) -> str:
         """Get normalized platform name."""
@@ -108,6 +115,16 @@ class ConfigDetector:
         elif system == "windows":
             return "windows"
         return "linux"
+
+    def _get_home_path(self) -> Path:
+        """Get the home/base path for config files.
+
+        Returns:
+            The config_base_path if set, otherwise the user's home directory.
+        """
+        if self._config_base_path:
+            return self._config_base_path
+        return Path.home()
 
     def get_config_path(self, source: SourceType) -> Path | None:
         """Get the config path for a source on the current platform.
@@ -121,13 +138,14 @@ class ConfigDetector:
         if source not in self.CONFIG_PATHS:
             return None
 
-        path_str = self.CONFIG_PATHS[source].get(self._platform)
-        if not path_str:
+        path_template = self.CONFIG_PATHS[source].get(self._platform)
+        if not path_template:
             return None
 
-        # Expand ~ and environment variables
-        path_str = os.path.expanduser(path_str)
-        path_str = os.path.expandvars(path_str)
+        # Substitute {home} with the base path
+        home_path = self._get_home_path()
+        path_str = path_template.format(home=str(home_path))
+
         return Path(path_str)
 
     def detect_all(self) -> list[DetectedConfig]:
