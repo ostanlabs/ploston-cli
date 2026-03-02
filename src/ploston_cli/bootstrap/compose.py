@@ -19,6 +19,7 @@ PLOSTON_DIR = Path.home() / ".ploston"
 DEFAULT_REGISTRY = "ghcr.io/ostanlabs"
 DEFAULT_PLOSTON_IMAGE = "ploston-dev"
 DEFAULT_NATIVE_TOOLS_IMAGE = "native-tools-dev"
+DEFAULT_NETWORK_NAME = "ploston-network"
 
 
 @dataclass
@@ -35,6 +36,9 @@ class ComposeConfig:
     ploston_image: str = DEFAULT_PLOSTON_IMAGE
     native_tools_image: str = DEFAULT_NATIVE_TOOLS_IMAGE
     output_dir: Path = field(default_factory=lambda: PLOSTON_DIR)
+    # Network configuration
+    network_name: str = DEFAULT_NETWORK_NAME
+    network_external: bool = False  # If True, use existing network
 
 
 class ComposeGenerator:
@@ -132,11 +136,24 @@ class ComposeGenerator:
             },
         }
 
+        # Build network configuration
+        if config.network_external:
+            # Use existing external network
+            network_config: dict[str, Any] = {
+                "default": {
+                    "name": config.network_name,
+                    "external": True,
+                },
+            }
+        else:
+            # Create new network
+            network_config = {
+                "default": {"name": config.network_name},
+            }
+
         compose_data: dict[str, Any] = {
             "services": services,
-            "networks": {
-                "default": {"name": "ploston-network"},
-            },
+            "networks": network_config,
         }
 
         # Add observability services if requested

@@ -12,6 +12,7 @@ from .compose import ComposeConfig, ComposeGenerator, VolumeManager
 from .health import HealthCheckResult, HealthPoller
 from .integration import AutoChainDetector, AutoChainResult, ImportHandoff, RunnerAutoStart
 from .k8s import K8sConfig, K8sHealthCheck, K8sManifestGenerator, KubectlDeployer
+from .network import NetworkConflict, NetworkConflictAction, NetworkInfo, NetworkManager
 from .prerequisites import (
     DockerDetector,
     DockerInfo,
@@ -50,6 +51,11 @@ __all__ = [
     "BootstrapAction",
     "BootstrapState",
     "BootstrapStateManager",
+    # Network management
+    "NetworkManager",
+    "NetworkConflict",
+    "NetworkConflictAction",
+    "NetworkInfo",
     # Init integration
     "AutoChainDetector",
     "AutoChainResult",
