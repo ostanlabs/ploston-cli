@@ -18,9 +18,10 @@ def generate_runner_token() -> str:
     """Generate a secure token for runner authentication.
 
     Returns:
-        Token string in format "plr_<random>"
+        Token string in format "ploston_runner_<random>"
+        (matches CP's expected format per DEC-119)
     """
-    return f"plr_{secrets.token_urlsafe(32)}"
+    return f"ploston_runner_{secrets.token_urlsafe(32)}"
 
 
 def write_env_file(

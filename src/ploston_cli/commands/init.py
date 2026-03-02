@@ -344,6 +344,6 @@ async def _complete_import_flow(
     click.echo("Next steps:")
     click.echo("  1. Start the local runner:")
     click.echo(
-        f"     ploston runner start --daemon --cp {cp_url.replace('http', 'ws')}/runner --token {runner_token} --name {runner_name}"
+        f"     ploston runner start --daemon --cp {cp_url.replace('http', 'ws')}/api/v1/runner/ws --token {runner_token} --name {runner_name}"
     )
     click.echo()
