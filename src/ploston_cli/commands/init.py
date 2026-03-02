@@ -148,13 +148,14 @@ async def _run_import_flow(
         sys.exit(1)
 
     # Step 3: Select servers to import
-    # servers is already a dict[str, ServerInfo] from merge_configs or found[0].servers
+    # servers is a dict[str, ServerInfo] - convert to list for selector
+    server_list = list(servers.values())
     if non_interactive:
-        selected_names = selector.select_all(servers)
+        selected_names = selector.select_all(server_list)
         click.echo(f"\n📦 Importing all {len(selected_names)} servers (non-interactive mode).\n")
     else:
         click.echo()
-        selected_names = selector.prompt_selection(servers)
+        selected_names = selector.prompt_selection(server_list)
         click.echo(f"\n📦 {len(selected_names)} servers selected for import\n")
 
     if not selected_names:
@@ -261,7 +262,7 @@ async def _complete_import_flow(
 
     for name, server_info in selected_servers.items():
         for var_name, value in server_info.env.items():
-            if secret_detector.is_secret(var_name, value):
+            if secret_detector.detect(var_name, value):
                 env_vars[var_name] = value
                 click.echo(f"  ✓ {var_name} (from {name})")
 
@@ -283,7 +284,7 @@ async def _complete_import_flow(
         if server_info.env:
             # Replace actual values with ${VAR} references for secrets
             mcp_entry["env"] = {
-                k: f"${{{k}}}" if secret_detector.is_secret(k, v) else v
+                k: f"${{{k}}}" if secret_detector.detect(k, v) else v
                 for k, v in server_info.env.items()
             }
         mcp_servers[name] = mcp_entry
