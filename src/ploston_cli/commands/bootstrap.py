@@ -25,12 +25,15 @@ from ..bootstrap import (
     K8sManifestGenerator,
     KubectlDeployer,
     KubectlDetector,
+    NetworkManager,
     PortScanner,
     RunnerAutoStart,
     StackManager,
     StackState,
     VolumeManager,
 )
+
+DEFAULT_NETWORK_NAME = "ploston-network"
 
 
 @dataclass
@@ -41,6 +44,130 @@ class BootstrapResult:
     port: int = 8082
     cp_url: str = "http://localhost:8082"
     error: str | None = None
+
+
+@dataclass
+class NetworkResolution:
+    """Result of network conflict resolution."""
+
+    proceed: bool = True
+    network_name: str = DEFAULT_NETWORK_NAME
+    network_external: bool = False
+    error: str | None = None
+
+
+def _handle_network_conflict(
+    network_name: str,
+    non_interactive: bool,
+) -> NetworkResolution:
+    """Check for and handle network conflicts.
+
+    Args:
+        network_name: Name of the network to check.
+        non_interactive: If True, auto-resolve conflicts.
+
+    Returns:
+        NetworkResolution with the resolved network configuration.
+    """
+    net_manager = NetworkManager(network_name)
+    conflict = net_manager.check_network_exists()
+
+    if not conflict.exists:
+        # No conflict, proceed normally
+        return NetworkResolution(
+            proceed=True,
+            network_name=network_name,
+            network_external=False,
+        )
+
+    # Network exists - show info
+    click.echo(f"\n⚠️  Network '{network_name}' already exists")
+
+    if conflict.network_info:
+        info = conflict.network_info
+        click.echo(f"   ID: {info.id}")
+        click.echo(f"   Driver: {info.driver}")
+        if info.containers:
+            click.echo(f"   Containers: {', '.join(info.containers)}")
+        else:
+            click.echo("   Containers: (none)")
+
+    # Check for service conflicts
+    service_conflicts = net_manager.check_service_conflicts()
+    if service_conflicts:
+        click.echo(f"\n   ⚠️  Conflicting services: {', '.join(service_conflicts)}")
+
+    if non_interactive:
+        # In non-interactive mode, try to use the existing network
+        click.echo("\n   Using existing network (non-interactive mode)")
+        return NetworkResolution(
+            proceed=True,
+            network_name=network_name,
+            network_external=True,
+        )
+
+    # Interactive mode - ask user
+    click.echo("\nOptions:")
+    click.echo("  [1] Remove network and recreate")
+    if service_conflicts:
+        click.echo("      ⚠️  This will stop conflicting containers")
+    click.echo("  [2] Use existing network")
+    if service_conflicts:
+        click.echo("      ⚠️  Existing services will be replaced")
+    alt_name = net_manager.suggest_alternative_name()
+    click.echo(f"  [3] Deploy to different network ({alt_name})")
+    click.echo("  [4] Cancel")
+
+    choice = click.prompt(
+        "Select option",
+        type=click.Choice(["1", "2", "3", "4"]),
+        default="2",
+    )
+
+    if choice == "1":
+        # Remove network
+        if service_conflicts:
+            if not click.confirm(
+                f"This will stop containers: {', '.join(service_conflicts)}. Continue?"
+            ):
+                return NetworkResolution(proceed=False, error="Cancelled by user")
+
+        click.echo(f"   Removing network '{network_name}'...")
+        success, msg = net_manager.remove_network(force=True)
+        if not success:
+            click.echo(f"   ✗ {msg}")
+            return NetworkResolution(proceed=False, error=msg)
+        click.echo(f"   ✓ {msg}")
+        return NetworkResolution(
+            proceed=True,
+            network_name=network_name,
+            network_external=False,
+        )
+
+    elif choice == "2":
+        # Use existing network
+        if service_conflicts:
+            if not click.confirm(
+                f"Services {', '.join(service_conflicts)} will be replaced. Continue?"
+            ):
+                return NetworkResolution(proceed=False, error="Cancelled by user")
+        return NetworkResolution(
+            proceed=True,
+            network_name=network_name,
+            network_external=True,
+        )
+
+    elif choice == "3":
+        # Use alternative network name
+        return NetworkResolution(
+            proceed=True,
+            network_name=alt_name,
+            network_external=False,
+        )
+
+    else:
+        # Cancel
+        return NetworkResolution(proceed=False, error="Cancelled by user")
 
 
 @click.group(invoke_without_command=True)
@@ -62,6 +189,7 @@ class BootstrapResult:
 @click.option("--non-interactive", "-y", is_flag=True, help="Accept all defaults")
 @click.option("--kubeconfig", default=None, help="Kubeconfig path (K8s only)")
 @click.option("--namespace", default="ploston", help="K8s namespace")
+@click.option("--network", default=DEFAULT_NETWORK_NAME, help="Docker network name")
 @click.pass_context
 def bootstrap(
     ctx,
@@ -74,6 +202,7 @@ def bootstrap(
     non_interactive,
     kubeconfig,
     namespace,
+    network,
 ):
     """Deploy the Ploston Control Plane.
 
@@ -94,6 +223,9 @@ def bootstrap(
 
         # Use specific image tag
         ploston bootstrap --tag v1.0.0
+
+        # Use a different network name
+        ploston bootstrap --network my-custom-network
     """
     if ctx.invoked_subcommand is not None:
         return  # Subcommand handles it
@@ -109,6 +241,7 @@ def bootstrap(
             non_interactive=non_interactive,
             kubeconfig=kubeconfig,
             namespace=namespace,
+            network_name=network,
         )
     )
 
@@ -198,6 +331,7 @@ async def _run_bootstrap(
     non_interactive: bool,
     kubeconfig: str | None = None,
     namespace: str = "ploston",
+    network_name: str = DEFAULT_NETWORK_NAME,
 ) -> BootstrapResult:
     """Execute the full bootstrap flow."""
     click.echo("\n🚀 Ploston Bootstrap\n")
@@ -289,14 +423,34 @@ async def _run_bootstrap(
                 else:
                     return BootstrapResult(success=False, error=f"Port {status.port} in use")
 
-    # ── Step 4: Generate config ──
-    click.echo("\n📋 Step 3: Generate Configuration\n")
+    # ── Step 4: Network check (Docker only) ──
+    network_external = False
+    if target == "docker":
+        click.echo("\n📋 Step 3: Network Check\n")
+        net_resolution = _handle_network_conflict(network_name, non_interactive)
+
+        if not net_resolution.proceed:
+            click.echo(f"  ✗ {net_resolution.error}", err=True)
+            return BootstrapResult(success=False, error=net_resolution.error)
+
+        network_name = net_resolution.network_name
+        network_external = net_resolution.network_external
+
+        if network_external:
+            click.echo(f"  ✓ Using existing network: {network_name}")
+        else:
+            click.echo(f"  ✓ Will create network: {network_name}")
+
+    # ── Step 5: Generate config ──
+    click.echo("\n📋 Step 4: Generate Configuration\n")
 
     if target == "docker":
         config = ComposeConfig(
             tag=tag,
             port=port,
             with_observability=with_observability,
+            network_name=network_name,
+            network_external=network_external,
         )
         generator = ComposeGenerator()
         compose_file = generator.generate(config)
@@ -323,8 +477,8 @@ async def _run_bootstrap(
         manifest_dir = k8s_generator.generate(k8s_config)
         click.echo(f"  ✓ Generated manifests: {manifest_dir}")
 
-    # ── Step 5: Deploy ──
-    click.echo("\n📋 Step 4: Deploy Stack\n")
+    # ── Step 6: Deploy ──
+    click.echo("\n📋 Step 5: Deploy Stack\n")
 
     if target == "docker":
         stack_manager = StackManager()
@@ -345,8 +499,8 @@ async def _run_bootstrap(
             return BootstrapResult(success=False, error=msg)
         click.echo("  ✓ Manifests applied")
 
-    # ── Step 6: Wait for health ──
-    click.echo("\n📋 Step 5: Wait for CP Health\n")
+    # ── Step 7: Wait for health ──
+    click.echo("\n📋 Step 6: Wait for CP Health\n")
 
     cp_url = f"http://localhost:{port}"
 
@@ -365,9 +519,9 @@ async def _run_bootstrap(
         click.echo(f"  ✗ {health.error}", err=True)
         return BootstrapResult(success=False, error=health.error)
 
-    # ── Step 7: Auto-chain to import ──
+    # ── Step 8: Auto-chain to import ──
     if not skip_import:
-        click.echo("\n📋 Step 6: Detect MCP Configs\n")
+        click.echo("\n📋 Step 7: Detect MCP Configs\n")
         chain_detector = AutoChainDetector()
         chain_result = chain_detector.detect()
 
