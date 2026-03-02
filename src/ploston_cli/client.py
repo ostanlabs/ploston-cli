@@ -111,6 +111,14 @@ class PlostClient:
             raise PlostClientError(message, status_code=e.response.status_code)
         except httpx.TimeoutException:
             raise PlostClientError(f"Request timed out after {self.timeout}s")
+        except httpx.ReadError:
+            raise PlostClientError(
+                f"Connection to {self.base_url} was interrupted.\n"
+                "The server may have crashed or restarted."
+            )
+        except httpx.HTTPError as e:
+            # Catch-all for any other httpx errors
+            raise PlostClientError(f"HTTP error: {e}")
 
     # -------------------------------------------------------------------------
     # Capabilities
