@@ -70,14 +70,15 @@ class ComposeGenerator:
         ploston_image = f"{config.registry}/{config.ploston_image}:{config.tag}"
         native_tools_image = f"{config.registry}/{config.native_tools_image}:{config.tag}"
 
+        # Note: ploston image runs on port 8080 internally (hardcoded)
+        # We map host port (config.port) to container port 8080
         services: dict[str, Any] = {
             "ploston": {
                 "image": ploston_image,
                 "container_name": "ploston-cp",
-                "ports": [f"{config.port}:8082"],
+                "ports": [f"{config.port}:8080"],
                 "environment": {
                     "PLOSTON_HOST": "0.0.0.0",
-                    "PLOSTON_PORT": "8082",
                     "PLOSTON_LOG_LEVEL": config.log_level,
                     "REDIS_URL": "redis://redis:6379/0",
                     "NATIVE_TOOLS_URL": "http://native-tools:8081",
@@ -91,7 +92,7 @@ class ComposeGenerator:
                     "native-tools": {"condition": "service_started"},
                 },
                 "healthcheck": {
-                    "test": ["CMD", "curl", "-f", "http://localhost:8082/health"],
+                    "test": ["CMD", "curl", "-f", "http://localhost:8080/health"],
                     "interval": "10s",
                     "timeout": "5s",
                     "retries": 5,
