@@ -56,7 +56,7 @@ def mock_create_response():
         "id": "runner_abc123",
         "name": "marc-laptop",
         "token": "ploston_runner_abc123xyz",
-        "install_command": "uv tool install ploston-runner && ploston-runner connect --token ploston_runner_abc123xyz --cp-url http://localhost:8080/runner/ws --name marc-laptop",
+        "install_command": "uv tool install ploston-runner && ploston-runner connect --token ploston_runner_abc123xyz --cp-url http://localhost:8022/runner/ws --name marc-laptop",
     }
 
 
@@ -303,7 +303,7 @@ class TestRunnerRegenerateToken:
         mock_response = {
             "name": "marc-laptop",
             "token": "ploston_runner_newtoken123",
-            "install_command": "ploston-runner install --cp-url http://localhost:8080 --token ploston_runner_newtoken123",
+            "install_command": "ploston-runner install --cp-url http://localhost:8022 --token ploston_runner_newtoken123",
         }
         with patch("ploston_cli.main.PlostClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -324,7 +324,7 @@ class TestRunnerRegenerateToken:
         mock_response = {
             "name": "marc-laptop",
             "token": "ploston_runner_newtoken123",
-            "install_command": "ploston-runner install --cp-url http://localhost:8080 --token ploston_runner_newtoken123",
+            "install_command": "ploston-runner install --cp-url http://localhost:8022 --token ploston_runner_newtoken123",
         }
         with patch("ploston_cli.main.PlostClient") as mock_client_class:
             mock_client = AsyncMock()
@@ -365,7 +365,7 @@ class TestRunnerRegenerateToken:
         mock_response = {
             "name": "marc-laptop",
             "token": "ploston_runner_newtoken123",
-            "install_command": "ploston-runner install --cp-url http://localhost:8080 --token ploston_runner_newtoken123",
+            "install_command": "ploston-runner install --cp-url http://localhost:8022 --token ploston_runner_newtoken123",
         }
         with patch("ploston_cli.main.PlostClient") as mock_client_class:
             mock_client = AsyncMock()

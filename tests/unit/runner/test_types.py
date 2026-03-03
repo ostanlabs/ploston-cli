@@ -216,11 +216,11 @@ class TestMCPConfig:
         config = MCPConfig(
             name="remote-mcp",
             command="",
-            url="http://localhost:8080/mcp",
+            url="http://localhost:8022/mcp",
         )
 
         assert config.name == "remote-mcp"
-        assert config.url == "http://localhost:8080/mcp"
+        assert config.url == "http://localhost:8022/mcp"
 
 
 @pytest.mark.runner_unit

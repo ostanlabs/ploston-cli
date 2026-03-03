@@ -17,7 +17,7 @@ class TestComposeConfig:
         """Test default configuration values."""
         config = ComposeConfig()
         assert config.tag == "latest"
-        assert config.port == 8082
+        assert config.port == 8022
         assert config.redis_port == 6379
         assert config.with_observability is False
 

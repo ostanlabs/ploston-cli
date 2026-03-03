@@ -27,7 +27,7 @@ class ComposeConfig:
     """Configuration for docker-compose generation."""
 
     tag: str = "latest"
-    port: int = 8082
+    port: int = 8022
     redis_port: int = 6379
     with_observability: bool = False
     log_level: str = "INFO"
@@ -70,13 +70,13 @@ class ComposeGenerator:
         ploston_image = f"{config.registry}/{config.ploston_image}:{config.tag}"
         native_tools_image = f"{config.registry}/{config.native_tools_image}:{config.tag}"
 
-        # Note: ploston image runs on port 8080 internally (hardcoded)
-        # We map host port (config.port) to container port 8080
+        # Note: ploston image runs on port 8022 internally
+        # We map host port (config.port) to container port 8022
         services: dict[str, Any] = {
             "ploston": {
                 "image": ploston_image,
                 "container_name": "ploston-cp",
-                "ports": [f"{config.port}:8080"],
+                "ports": [f"{config.port}:8022"],
                 "environment": {
                     "PLOSTON_HOST": "0.0.0.0",
                     "PLOSTON_LOG_LEVEL": config.log_level,
@@ -92,7 +92,7 @@ class ComposeGenerator:
                     "native-tools": {"condition": "service_started"},
                 },
                 "healthcheck": {
-                    "test": ["CMD", "curl", "-f", "http://localhost:8080/health"],
+                    "test": ["CMD", "curl", "-f", "http://localhost:8022/health"],
                     "interval": "10s",
                     "timeout": "5s",
                     "retries": 5,
@@ -308,7 +308,7 @@ class VolumeManager:
             "scrape_configs": [
                 {
                     "job_name": "ploston",
-                    "static_configs": [{"targets": ["ploston:8082"]}],
+                    "static_configs": [{"targets": ["ploston:8022"]}],
                     "metrics_path": "/metrics",
                 },
             ],

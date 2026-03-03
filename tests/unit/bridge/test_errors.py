@@ -158,11 +158,11 @@ class TestConnectionErrorMapping:
         """UT-B040: Connection refused error has clear message with URL."""
         skip_if_not_implemented()
 
-        error = map_connection_error("Connection refused", url="http://localhost:8080")
+        error = map_connection_error("Connection refused", url="http://localhost:8022")
 
         assert error.code == -32000
         assert "Cannot reach" in error.message or "Connection" in error.message
-        assert "localhost:8080" in error.message
+        assert "localhost:8022" in error.message
         assert error.retryable is True
 
 
@@ -178,7 +178,7 @@ class TestTimeoutExceptionMapping:
         """UT-B041: Timeout exceptions map to retryable errors."""
         skip_if_not_implemented()
 
-        error = map_connection_error("Read timed out", url="http://localhost:8080", is_timeout=True)
+        error = map_connection_error("Read timed out", url="http://localhost:8022", is_timeout=True)
 
         assert error.code == -32000
         assert error.retryable is True

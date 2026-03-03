@@ -15,7 +15,7 @@ import pytest
 def get_server_url():
     """Get URL of running server, or None if not available."""
     urls = [
-        "http://localhost:8082",
+        "http://localhost:8022",
         "https://ploston.ostanlabs.homelab",
     ]
 

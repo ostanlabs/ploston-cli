@@ -29,7 +29,7 @@ class K8sConfig:
 
     namespace: str = "ploston"
     tag: str = "latest"
-    port: int = 8082
+    port: int = 8022
     redis_port: int = 6379
     registry: str = DEFAULT_REGISTRY
     ploston_image: str = DEFAULT_PLOSTON_IMAGE
@@ -199,10 +199,10 @@ class K8sManifestGenerator:
                             {
                                 "name": "ploston",
                                 "image": image,
-                                "ports": [{"containerPort": 8082}],
+                                "ports": [{"containerPort": 8022}],
                                 "env": [
                                     {"name": "PLOSTON_HOST", "value": "0.0.0.0"},
-                                    {"name": "PLOSTON_PORT", "value": "8082"},
+                                    {"name": "PLOSTON_PORT", "value": "8022"},
                                     {"name": "REDIS_URL", "value": "redis://redis:6379/0"},
                                     {
                                         "name": "NATIVE_TOOLS_URL",
@@ -210,7 +210,7 @@ class K8sManifestGenerator:
                                     },
                                 ],
                                 "readinessProbe": {
-                                    "httpGet": {"path": "/health", "port": 8082},
+                                    "httpGet": {"path": "/health", "port": 8022},
                                     "initialDelaySeconds": 15,
                                     "periodSeconds": 10,
                                 },
@@ -227,7 +227,7 @@ class K8sManifestGenerator:
             "metadata": {"name": "ploston", "namespace": config.namespace},
             "spec": {
                 "selector": {"app": "ploston"},
-                "ports": [{"port": config.port, "targetPort": 8082}],
+                "ports": [{"port": config.port, "targetPort": 8022}],
             },
         }
 

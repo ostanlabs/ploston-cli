@@ -28,7 +28,7 @@ class TestInjectPlostIntoConfig:
         backup_path = inject_ploston_into_config(
             config_path=config_file,
             imported_servers=["filesystem", "github"],
-            cp_url="http://localhost:8080",
+            cp_url="http://localhost:8022",
         )
 
         assert backup_path.exists()
@@ -51,7 +51,7 @@ class TestInjectPlostIntoConfig:
         inject_ploston_into_config(
             config_path=config_file,
             imported_servers=["filesystem", "github"],
-            cp_url="http://localhost:8080",
+            cp_url="http://localhost:8022",
         )
 
         result = json.loads(config_file.read_text())
@@ -72,14 +72,14 @@ class TestInjectPlostIntoConfig:
         inject_ploston_into_config(
             config_path=config_file,
             imported_servers=["filesystem"],
-            cp_url="http://localhost:8080",
+            cp_url="http://localhost:8022",
         )
 
         result = json.loads(config_file.read_text())
         assert "ploston" in result["mcpServers"]
         ploston_entry = result["mcpServers"]["ploston"]
         assert ploston_entry["command"] == "npx"
-        assert "http://localhost:8080" in ploston_entry["args"]
+        assert "http://localhost:8022" in ploston_entry["args"]
 
     def test_inject_removes_imported_servers_from_mcp_servers(self, tmp_path):
         """Test that imported servers are removed from mcpServers."""
@@ -96,7 +96,7 @@ class TestInjectPlostIntoConfig:
         inject_ploston_into_config(
             config_path=config_file,
             imported_servers=["filesystem", "github"],
-            cp_url="http://localhost:8080",
+            cp_url="http://localhost:8022",
         )
 
         result = json.loads(config_file.read_text())
@@ -118,7 +118,7 @@ class TestInjectPlostIntoConfig:
         inject_ploston_into_config(
             config_path=config_file,
             imported_servers=["filesystem"],
-            cp_url="http://localhost:8080",
+            cp_url="http://localhost:8022",
         )
 
         result = json.loads(config_file.read_text())
@@ -134,7 +134,7 @@ class TestSourceConfigInjector:
         config_file = tmp_path / "config.json"
         config_file.write_text(json.dumps({"mcpServers": {"server1": {"command": "cmd"}}}))
 
-        injector = SourceConfigInjector(config_file, cp_url="http://localhost:8080")
+        injector = SourceConfigInjector(config_file, cp_url="http://localhost:8022")
         backup_path = injector.inject(["server1"])
 
         assert backup_path.exists()

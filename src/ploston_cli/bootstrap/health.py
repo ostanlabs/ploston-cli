@@ -47,7 +47,7 @@ class HealthPoller:
 
     async def wait_for_healthy(
         self,
-        url: str = "http://localhost:8082",
+        url: str = "http://localhost:8022",
         on_attempt: callable | None = None,
     ) -> HealthCheckResult:
         """Poll health endpoint until healthy or timeout.
@@ -104,7 +104,7 @@ class HealthPoller:
 
     def wait_for_healthy_sync(
         self,
-        url: str = "http://localhost:8082",
+        url: str = "http://localhost:8022",
         on_attempt: callable | None = None,
     ) -> HealthCheckResult:
         """Synchronous wrapper for wait_for_healthy.

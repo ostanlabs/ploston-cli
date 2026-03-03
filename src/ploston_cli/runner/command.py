@@ -18,7 +18,7 @@ def run_runner(cp: str, token: str, name: str) -> None:
     3. Runs the connection's main loop
 
     Args:
-        cp: Control Plane WebSocket URL (e.g., wss://ploston:8443/runner/ws)
+        cp: Control Plane WebSocket URL (e.g., wss://ploston:8022/runner/ws)
         token: Runner authentication token
         name: Runner name (unique identifier)
     """

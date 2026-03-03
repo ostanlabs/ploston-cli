@@ -75,9 +75,10 @@ class TestPortScanner:
     def test_suggest_alternative(self):
         """Test suggesting alternative ports."""
         scanner = PortScanner()
-        alt = scanner.suggest_alternative(8082)
-        # Should suggest a port >= 8083
-        assert alt >= 8083
+        alt = scanner.suggest_alternative(8022)
+        # Should suggest a port > 8022
+        assert alt > 8022
+        assert scanner._is_port_available(alt)
 
 
 class TestImageResolver:

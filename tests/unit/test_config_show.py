@@ -59,7 +59,7 @@ class TestConfigShowServer:
     def test_config_show_server(self, runner):
         """Test showing server configuration."""
         mock_config = {
-            "server": {"port": 8080, "host": "localhost"},
+            "server": {"port": 8022, "host": "localhost"},
             "logging": {"level": "INFO"},
         }
 
@@ -99,10 +99,10 @@ class TestConfigSet:
         config_file = config_dir / "config.yaml"
 
         with patch("ploston_cli.config.get_config_path", return_value=config_file):
-            result = runner.invoke(cli, ["config", "set", "server", "http://new:8080"])
+            result = runner.invoke(cli, ["config", "set", "server", "http://new:8022"])
 
         assert result.exit_code == 0
-        assert "Set server = http://new:8080" in result.output
+        assert "Set server = http://new:8022" in result.output
 
     def test_config_set_timeout_invalid(self, runner):
         """Test setting invalid timeout."""

@@ -63,7 +63,7 @@ class TestHealthPoller:
             mock_response.json.return_value = {"status": "ok", "version": "1.0.0"}
             mock_client.get.return_value = mock_response
 
-            result = await poller.wait_for_healthy("http://localhost:8082")
+            result = await poller.wait_for_healthy("http://localhost:8022")
 
             assert result.healthy is True
             assert result.version == "1.0.0"
@@ -78,7 +78,7 @@ class TestHealthPoller:
             mock_client_class.return_value.__aenter__.return_value = mock_client
             mock_client.get.side_effect = Exception("Connection refused")
 
-            result = await poller.wait_for_healthy("http://localhost:8082")
+            result = await poller.wait_for_healthy("http://localhost:8022")
 
             assert result.healthy is False
             assert result.error is not None
@@ -106,7 +106,7 @@ class TestHealthPoller:
             ]
 
             result = await poller.wait_for_healthy(
-                "http://localhost:8082",
+                "http://localhost:8022",
                 on_attempt=on_attempt,
             )
 
@@ -125,6 +125,6 @@ class TestHealthPoller:
             mock_response.json.return_value = {"status": "ok", "version": "1.0.0"}
             mock_client.get.return_value = mock_response
 
-            result = poller.wait_for_healthy_sync("http://localhost:8082")
+            result = poller.wait_for_healthy_sync("http://localhost:8022")
 
             assert result.healthy is True

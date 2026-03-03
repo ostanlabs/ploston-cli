@@ -41,8 +41,8 @@ class BootstrapResult:
     """Result of bootstrap execution."""
 
     success: bool
-    port: int = 8082
-    cp_url: str = "http://localhost:8082"
+    port: int = 8022
+    cp_url: str = "http://localhost:8022"
     error: str | None = None
 
 
@@ -178,7 +178,7 @@ def _handle_network_conflict(
     help="Deployment target",
 )
 @click.option("--tag", default="edge", help="Docker image tag")
-@click.option("--port", default=8082, type=int, help="CP port")
+@click.option("--port", default=8022, type=int, help="CP port")
 @click.option(
     "--with-observability",
     is_flag=True,

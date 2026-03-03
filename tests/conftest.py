@@ -558,7 +558,7 @@ def cp_url():
     """
     import os
 
-    return os.environ.get("PLOSTON_CP_URL", "http://localhost:8080")
+    return os.environ.get("PLOSTON_CP_URL", "http://localhost:8022")
 
 
 @pytest.fixture

@@ -24,7 +24,7 @@ class TestK8sConfig:
         config = K8sConfig()
         assert config.namespace == "ploston"
         assert config.tag == "latest"
-        assert config.port == 8082
+        assert config.port == 8022
         assert config.registry == "ghcr.io/ostanlabs"
 
     def test_custom_values(self):

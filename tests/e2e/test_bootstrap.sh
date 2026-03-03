@@ -120,7 +120,7 @@ fi
 # Test 8: Check CP health
 echo -e "\n${YELLOW}Test 8: Check CP health...${NC}"
 sleep 5  # Give CP time to start
-if curl -s http://localhost:8082/health | grep -q "ok"; then
+if curl -s http://localhost:8022/health | grep -q "ok"; then
     echo -e "${GREEN}PASS: CP is healthy${NC}"
 else
     echo -e "${YELLOW}WARN: CP health check failed (may need more time)${NC}"

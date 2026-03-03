@@ -72,7 +72,7 @@ class MockRestServer:
                 "available_tools": [],
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "last_seen": None,
-                "install_command": f"curl -sSL http://localhost:8080/runner/install.sh | bash -s -- --token {token}",
+                "install_command": f"curl -sSL http://localhost:8022/runner/install.sh | bash -s -- --token {token}",
             }
             return self.created_runners[name]
 
@@ -151,7 +151,7 @@ MOCK_CERTIFICATE
             "available_tools": tools or [],
             "created_at": datetime.now(timezone.utc).isoformat(),
             "last_seen": datetime.now(timezone.utc).isoformat() if status == "connected" else None,
-            "install_command": f"curl -sSL http://localhost:8080/runner/install.sh | bash -s -- --token {token}",
+            "install_command": f"curl -sSL http://localhost:8022/runner/install.sh | bash -s -- --token {token}",
         }
         return self.created_runners[name]
 

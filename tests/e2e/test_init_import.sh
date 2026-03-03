@@ -17,7 +17,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-CP_URL="${CP_URL:-http://localhost:8080}"
+CP_URL="${CP_URL:-http://localhost:8022}"
 TEST_DIR=$(mktemp -d)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

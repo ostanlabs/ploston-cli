@@ -64,7 +64,7 @@ class AutoChainDetector:
 class ImportHandoff:
     """Handle handoff to init --import flow."""
 
-    def __init__(self, cp_url: str = "http://localhost:8082"):
+    def __init__(self, cp_url: str = "http://localhost:8022"):
         """Initialize handoff.
 
         Args:
@@ -120,7 +120,7 @@ class ImportHandoff:
 class RunnerAutoStart:
     """Handle automatic runner start after import."""
 
-    def __init__(self, cp_url: str = "http://localhost:8082"):
+    def __init__(self, cp_url: str = "http://localhost:8022"):
         """Initialize runner auto-start.
 
         Args:
