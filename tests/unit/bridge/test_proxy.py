@@ -38,26 +38,26 @@ class TestBridgeProxyInitialization:
     def test_ut_b001_initialize_with_url(self):
         """UT-B001: BridgeProxy initializes with CP URL."""
         skip_if_not_implemented()
-        proxy = BridgeProxy(url="http://localhost:8080")
-        assert proxy.url == "http://localhost:8080"
+        proxy = BridgeProxy(url="http://localhost:8022")
+        assert proxy.url == "http://localhost:8022"
         assert proxy.token is None
 
     def test_ut_b002_initialize_with_token(self):
         """UT-B002: BridgeProxy initializes with auth token."""
         skip_if_not_implemented()
-        proxy = BridgeProxy(url="http://localhost:8080", token="plt_test_token")
+        proxy = BridgeProxy(url="http://localhost:8022", token="plt_test_token")
         assert proxy.token == "plt_test_token"
 
     def test_ut_b003_initialize_with_timeout(self):
         """UT-B003: BridgeProxy initializes with custom timeout."""
         skip_if_not_implemented()
-        proxy = BridgeProxy(url="http://localhost:8080", timeout=60.0)
+        proxy = BridgeProxy(url="http://localhost:8022", timeout=60.0)
         assert proxy.timeout == 60.0
 
     def test_ut_b004_initialize_default_timeout(self):
         """UT-B004: BridgeProxy has default timeout of 30 seconds."""
         skip_if_not_implemented()
-        proxy = BridgeProxy(url="http://localhost:8080")
+        proxy = BridgeProxy(url="http://localhost:8022")
         assert proxy.timeout == 30.0
 
     def test_ut_b005_initialize_validates_url(self):

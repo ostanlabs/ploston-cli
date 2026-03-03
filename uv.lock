@@ -1503,7 +1503,7 @@ wheels = [
 
 [[package]]
 name = "ploston-cli"
-version = "1.0.0"
+version = "0.0.0+local"
 source = { editable = "." }
 dependencies = [
     { name = "click" },

@@ -19,10 +19,10 @@ class TestGenerateRunnerToken:
         """Test that generated token has correct format."""
         token = generate_runner_token()
 
-        assert token.startswith("plr_")
+        assert token.startswith("ploston_runner_")
         # Token uses token_urlsafe(32) which produces ~43 chars
-        # plr_ prefix + 43 chars = ~47 chars
-        assert len(token) > 40
+        # ploston_runner_ prefix (15 chars) + 43 chars = ~58 chars
+        assert len(token) > 50
 
     def test_token_uniqueness(self):
         """Test that tokens are unique."""

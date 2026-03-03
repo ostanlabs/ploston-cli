@@ -39,7 +39,7 @@ class PlostClient:
         """Initialize client.
 
         Args:
-            base_url: Server URL (e.g., http://localhost:8080)
+            base_url: Server URL (e.g., http://localhost:8022)
             timeout: Request timeout in seconds
             insecure: Skip SSL certificate verification (like curl -k)
         """
@@ -372,6 +372,28 @@ class PlostClient:
                 error=e.message,
             )
 
+    async def get_mode(self) -> dict[str, Any]:
+        """Get current operating mode.
+
+        Returns:
+            Response with mode, running_workflows, and optional message
+        """
+        return await self._request("GET", "/api/v1/config/mode")
+
+    async def enter_configuration_mode(self) -> dict[str, Any]:
+        """Enter configuration mode.
+
+        Must be called before using config_set.
+
+        Returns:
+            Response with mode, running_workflows, and message
+        """
+        return await self._request(
+            "POST",
+            "/api/v1/config/mode",
+            json={"mode": "configuration"},
+        )
+
     async def config_set(self, path: str, value: Any) -> dict[str, Any]:
         """Stage a configuration change.
 
@@ -404,7 +426,10 @@ class PlostClient:
     ) -> dict[str, Any]:
         """Push runner configuration to CP via staged config API.
 
-        Convenience method that combines config_set + config_done.
+        Convenience method that:
+        1. Enters configuration mode if needed
+        2. Stages the runner config
+        3. Applies changes via config_done
 
         Args:
             runner_name: Name of the runner (e.g., "local")
@@ -414,6 +439,11 @@ class PlostClient:
         Returns:
             Response from config_done
         """
+        # Check current mode and enter configuration mode if needed
+        mode_response = await self.get_mode()
+        if mode_response.get("mode") != "configuration":
+            await self.enter_configuration_mode()
+
         runner_config = {
             "token": token,
             "mcp_servers": mcp_servers,

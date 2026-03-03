@@ -75,7 +75,7 @@ def cli(
       1. --server flag
       2. PLOSTON_SERVER environment variable
       3. ~/.ploston/config.yaml
-      4. Default: http://localhost:8082
+      4. Default: http://localhost:8022
     """
     ctx.ensure_object(dict)
     ctx.obj["server"] = server
@@ -949,8 +949,8 @@ def runner_start(cp: str, token: str, name: str, daemon: bool, log_level: str) -
 
     \b
     Examples:
-      ploston runner start --daemon --cp wss://ploston:8443/runner --token xxx --name my-laptop
-      ploston runner start --foreground --cp wss://ploston:8443/runner --token xxx --name my-laptop
+      ploston runner start --daemon --cp wss://ploston:8022/runner --token xxx --name my-laptop
+      ploston runner start --foreground --cp wss://ploston:8022/runner --token xxx --name my-laptop
     """
     from .runner.command import run_runner
     from .runner.daemon import start_daemon

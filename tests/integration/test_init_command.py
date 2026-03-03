@@ -51,7 +51,7 @@ class TestInitImportNoConfig:
         """Test import when no Claude/Cursor config exists."""
         # Mock CP connectivity check to succeed
         mock_result = CPConnectionResult(
-            connected=True, url="http://localhost:8080", version="1.0.0"
+            connected=True, url="http://localhost:8022", version="1.0.0"
         )
 
         with patch("ploston_cli.commands.init.PlostClient") as mock_client_class:
@@ -114,7 +114,7 @@ class TestInitImportWithConfig:
         """Test import with config in non-interactive mode."""
         # Mock CP connectivity
         mock_result = CPConnectionResult(
-            connected=True, url="http://localhost:8080", version="1.0.0"
+            connected=True, url="http://localhost:8022", version="1.0.0"
         )
 
         with patch("ploston_cli.commands.init.PlostClient") as mock_client_class:

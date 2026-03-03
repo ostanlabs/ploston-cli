@@ -16,7 +16,7 @@ from pathlib import Path
 def inject_ploston_into_config(
     config_path: Path,
     imported_servers: list[str],
-    cp_url: str = "http://localhost:8082",
+    cp_url: str = "http://localhost:8022",
 ) -> Path:
     """Inject Ploston into a Claude/Cursor config file.
 
@@ -119,7 +119,7 @@ class SourceConfigInjector:
     Provides a class-based interface for injection management.
     """
 
-    def __init__(self, config_path: Path, cp_url: str = "http://localhost:8082"):
+    def __init__(self, config_path: Path, cp_url: str = "http://localhost:8022"):
         """Initialize injector.
 
         Args:

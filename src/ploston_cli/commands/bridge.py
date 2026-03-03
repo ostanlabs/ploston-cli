@@ -9,7 +9,7 @@ Debug mode:
     Logs are written to ~/.ploston/bridge.log (or custom path via --log-file).
 
     Example:
-        PLOSTON_DEBUG=1 ploston bridge --url http://localhost:8443
+        PLOSTON_DEBUG=1 ploston bridge --url http://localhost:8022
 
     To tail logs in real-time:
         tail -f ~/.ploston/bridge.log
@@ -85,7 +85,7 @@ def setup_logging(log_level: str, log_file: str | None) -> None:
     envvar="PLOSTON_URL",
     callback=validate_url,
     required=True,
-    help="Control Plane URL (e.g., http://localhost:8080)",
+    help="Control Plane URL (e.g., http://localhost:8022)",
 )
 @click.option(
     "--token",
@@ -158,9 +158,9 @@ def bridge_command(
 
     \b
     Example usage:
-      ploston bridge --url http://localhost:8080
+      ploston bridge --url http://localhost:8022
       ploston bridge --url https://cp.example.com --token plt_xxx
-      ploston bridge --url http://localhost:8080 --tools local
+      ploston bridge --url http://localhost:8022 --tools local
 
     \b
     Tool filtering (--tools):
@@ -181,7 +181,7 @@ def bridge_command(
 
     \b
     Debug mode:
-      PLOSTON_DEBUG=1 ploston bridge --url http://localhost:8443
+      PLOSTON_DEBUG=1 ploston bridge --url http://localhost:8022
       tail -f ~/.ploston/bridge.log
     """
     # Setup logging (to file, not stdout)

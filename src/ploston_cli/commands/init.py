@@ -25,11 +25,17 @@ from ploston_cli.init import (
 if TYPE_CHECKING:
     from ploston_cli.init.detector import DetectedConfig, ServerInfo
 
-DEFAULT_CP_URL = "http://localhost:8082"
 DEFAULT_RUNNER_NAME = "local"
 
 # Environment variable to override config base path (for testing)
 ENV_CONFIG_BASE_PATH = "PLOSTON_CONFIG_BASE_PATH"
+
+
+def _get_default_cp_url() -> str:
+    """Get default CP URL from config (env var or config file)."""
+    from ploston_cli.config import load_config
+
+    return load_config().server
 
 
 @click.command("init")
@@ -47,8 +53,9 @@ ENV_CONFIG_BASE_PATH = "PLOSTON_CONFIG_BASE_PATH"
 )
 @click.option(
     "--cp-url",
+    envvar="PLOSTON_SERVER",
     default=None,
-    help=f"Control Plane URL (default: {DEFAULT_CP_URL})",
+    help="Control Plane URL (default: from PLOSTON_SERVER env or config)",
 )
 @click.option(
     "--inject/--no-inject",
@@ -95,7 +102,7 @@ def init_command(
     asyncio.run(
         _run_import_flow(
             source=source,
-            cp_url=cp_url or DEFAULT_CP_URL,
+            cp_url=cp_url or _get_default_cp_url(),
             inject=inject,
             non_interactive=non_interactive,
             runner_name=runner_name,

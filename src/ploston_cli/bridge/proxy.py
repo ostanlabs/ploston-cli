@@ -43,7 +43,7 @@ class BridgeProxy:
         """Initialize BridgeProxy.
 
         Args:
-            url: Control Plane URL (e.g., http://localhost:8080)
+            url: Control Plane URL (e.g., http://localhost:8022)
             token: Optional bearer token for authentication
             timeout: Request timeout in seconds (default: 30)
             insecure: Skip SSL certificate verification (default: False)
