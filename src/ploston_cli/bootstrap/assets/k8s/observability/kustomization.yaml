@@ -1,0 +1,17 @@
+# =============================================================================
+# Kustomization for Observability Stack
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: observability
+
+resources:
+  - namespace.yaml
+  - loki.yaml
+  - tempo.yaml
+  - prometheus.yaml
+  - otel-collector.yaml
+  - grafana-dashboards.yaml
+  - grafana.yaml
+  - ingress.yaml

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import click
 
 from ..bootstrap import (
+    AssetManager,
     AutoChainDetector,
     BootstrapAction,
     BootstrapStateManager,
@@ -32,6 +33,9 @@ from ..bootstrap import (
     StackState,
     VolumeManager,
 )
+from ..bootstrap.builder import BuildError, build_from_source
+from ..bootstrap.image_resolver import ImageConfig, ImageResolverError, resolve_images
+from ..bootstrap.workspace import detect_meta_repo_root
 
 DEFAULT_NETWORK_NAME = "ploston-network"
 
@@ -177,7 +181,13 @@ def _handle_network_conflict(
     default="docker",
     help="Deployment target",
 )
-@click.option("--tag", default="edge", help="Docker image tag")
+@click.option("--image-tag", default=None, help="Docker image tag (e.g., v1.0.0, sha-abc1234)")
+@click.option("--pre-release", is_flag=True, help="Use pre-release/dev images (ploston-dev)")
+@click.option(
+    "--build-from-source",
+    is_flag=True,
+    help="Build images from local source (requires meta-repo)",
+)
 @click.option("--port", default=8022, type=int, help="CP port")
 @click.option(
     "--with-observability",
@@ -185,7 +195,6 @@ def _handle_network_conflict(
     help="Include Prometheus + Grafana + Loki",
 )
 @click.option("--no-import", is_flag=True, help="Skip auto-detection and import chaining")
-@click.option("--no-pull", is_flag=True, help="Skip pulling images (use local images)")
 @click.option("--non-interactive", "-y", is_flag=True, help="Accept all defaults")
 @click.option("--kubeconfig", default=None, help="Kubeconfig path (K8s only)")
 @click.option("--namespace", default="ploston", help="K8s namespace")
@@ -194,11 +203,12 @@ def _handle_network_conflict(
 def bootstrap(
     ctx,
     target,
-    tag,
+    image_tag,
+    pre_release,
+    build_from_source,
     port,
     with_observability,
     no_import,
-    no_pull,
     non_interactive,
     kubeconfig,
     namespace,
@@ -210,34 +220,59 @@ def bootstrap(
     (default) or Kubernetes. It handles prerequisites, generates configuration,
     starts services, and waits for the CP to become healthy.
 
+    Image resolution:
+
+        Default:          ghcr.io/ostanlabs/ploston:latest
+
+        --image-tag TAG:  ghcr.io/ostanlabs/ploston:TAG
+
+        --pre-release:    ghcr.io/ostanlabs/ploston-dev:edge
+
+        --pre-release --image-tag TAG:  ghcr.io/ostanlabs/ploston-dev:TAG
+
+        --build-from-source:  ploston:local (built locally)
+
     Examples:
 
-        # Deploy to Docker Compose (default)
+        # Deploy to Docker Compose (default — release images)
         ploston bootstrap
+
+        # Deploy with specific image tag
+        ploston bootstrap --image-tag v1.0.0
+
+        # Deploy pre-release (dev) images
+        ploston bootstrap --pre-release
+
+        # Build from local source (inside meta-repo)
+        ploston bootstrap --build-from-source
 
         # Deploy with observability stack
         ploston bootstrap --with-observability
 
         # Deploy to Kubernetes
         ploston bootstrap --target k8s --namespace ploston
-
-        # Use specific image tag
-        ploston bootstrap --tag v1.0.0
-
-        # Use a different network name
-        ploston bootstrap --network my-custom-network
     """
     if ctx.invoked_subcommand is not None:
         return  # Subcommand handles it
 
+    # Resolve images early to fail fast on invalid flag combinations
+    try:
+        images = resolve_images(
+            image_tag=image_tag,
+            pre_release=pre_release,
+            build_from_source=build_from_source,
+        )
+    except ImageResolverError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
     asyncio.run(
         _run_bootstrap(
             target=target,
-            tag=tag,
+            images=images,
             port=port,
             with_observability=with_observability,
             skip_import=no_import,
-            skip_pull=no_pull,
             non_interactive=non_interactive,
             kubeconfig=kubeconfig,
             namespace=namespace,
@@ -323,11 +358,10 @@ def restart():
 
 async def _run_bootstrap(
     target: str,
-    tag: str,
+    images: ImageConfig,
     port: int,
     with_observability: bool,
     skip_import: bool,
-    skip_pull: bool,
     non_interactive: bool,
     kubeconfig: str | None = None,
     namespace: str = "ploston",
@@ -441,19 +475,47 @@ async def _run_bootstrap(
         else:
             click.echo(f"  ✓ Will create network: {network_name}")
 
+    # ── Step 4a: Build from source (if requested) ──
+    if images.build_from_source:
+        click.echo("\n📋 Step 4a: Build from Source\n")
+        repo_root = detect_meta_repo_root()
+        if repo_root is None:
+            msg = (
+                "This requires running inside the ploston development workspace "
+                "(agent-execution-layer). Could not find packages/ploston/ + ci/images.yaml "
+                "in any parent directory."
+            )
+            click.echo(f"  ✗ {msg}", err=True)
+            return BootstrapResult(success=False, error=msg)
+
+        click.echo(f"  Meta-repo: {repo_root}")
+        try:
+            ploston_img, native_tools_img = build_from_source(repo_root)
+            click.echo(f"  ✓ Built: {ploston_img}")
+            click.echo(f"  ✓ Built: {native_tools_img}")
+        except BuildError as e:
+            click.echo(f"  ✗ {e}", err=True)
+            return BootstrapResult(success=False, error=str(e))
+
     # ── Step 5: Generate config ──
     click.echo("\n📋 Step 4: Generate Configuration\n")
 
+    click.echo(f"  Images: {images.ploston_image}, {images.native_tools_image}")
+
+    compose_files: list = []  # Track compose files for StackManager
+
     if target == "docker":
         config = ComposeConfig(
-            tag=tag,
             port=port,
             with_observability=with_observability,
+            ploston_image_full=images.ploston_image,
+            native_tools_image_full=images.native_tools_image,
             network_name=network_name,
             network_external=network_external,
         )
         generator = ComposeGenerator()
         compose_file = generator.generate(config)
+        compose_files.append(compose_file)
         click.echo(f"  ✓ Generated: {compose_file}")
 
         # Setup volumes
@@ -463,30 +525,36 @@ async def _run_bootstrap(
         click.echo("  ✓ Created data directories")
 
         if with_observability:
-            volume_manager.setup_observability_directories()
-            volume_manager.generate_prometheus_config()
-            volume_manager.generate_loki_config()
-            click.echo("  ✓ Created observability configs")
+            asset_manager = AssetManager()
+            obs_compose = asset_manager.deploy_observability_docker()
+            compose_files.append(obs_compose)
+            click.echo("  ✓ Deployed observability assets")
     else:
         k8s_config = K8sConfig(
             namespace=namespace,
-            tag=tag,
+            tag=images.ploston_tag,
             port=port,
+            # TODO Phase 3: pass full image references to K8s generator
         )
         k8s_generator = K8sManifestGenerator()
         manifest_dir = k8s_generator.generate(k8s_config)
         click.echo(f"  ✓ Generated manifests: {manifest_dir}")
 
+        if with_observability:
+            asset_manager = AssetManager()
+            obs_k8s_dir = asset_manager.deploy_observability_k8s()
+            click.echo(f"  ✓ Deployed K8s observability manifests: {obs_k8s_dir}")
+
     # ── Step 6: Deploy ──
     click.echo("\n📋 Step 5: Deploy Stack\n")
 
     if target == "docker":
-        stack_manager = StackManager()
-        if not skip_pull:
+        stack_manager = StackManager(compose_files=compose_files if compose_files else None)
+        if images.should_pull:
             click.echo("  Pulling images...")
         else:
-            click.echo("  Using local images (--no-pull)...")
-        success, msg = stack_manager.up(pull=not skip_pull)
+            click.echo("  Using local images...")
+        success, msg = stack_manager.up(pull=images.should_pull)
         if not success:
             click.echo(f"  ✗ {msg}", err=True)
             return BootstrapResult(success=False, error=msg)

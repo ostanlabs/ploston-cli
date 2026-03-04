@@ -1,0 +1,13 @@
+# =============================================================================
+# Grafana Dashboard Provisioning for Ploston Docker Compose
+# =============================================================================
+apiVersion: 1
+providers:
+  - name: 'ploston'
+    orgId: 1
+    folder: 'Ploston'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

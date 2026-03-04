@@ -8,8 +8,11 @@ This package provides the `ploston bootstrap` command which:
 5. Optionally chains to `ploston init --import`
 """
 
+from .asset_manager import AssetManager
+from .builder import BuildError, build_from_source
 from .compose import ComposeConfig, ComposeGenerator, VolumeManager
 from .health import HealthCheckResult, HealthPoller
+from .image_resolver import ImageConfig, ImageResolverError, resolve_images
 from .integration import AutoChainDetector, AutoChainResult, ImportHandoff, RunnerAutoStart
 from .k8s import K8sConfig, K8sHealthCheck, K8sManifestGenerator, KubectlDeployer
 from .network import NetworkConflict, NetworkConflictAction, NetworkInfo, NetworkManager
@@ -25,8 +28,18 @@ from .prerequisites import (
 )
 from .stack import StackManager, StackState, StackStatus
 from .state import BootstrapAction, BootstrapState, BootstrapStateManager
+from .workspace import detect_meta_repo_root
 
 __all__ = [
+    # Asset management
+    "AssetManager",
+    # Image resolution & building
+    "ImageConfig",
+    "ImageResolverError",
+    "resolve_images",
+    "BuildError",
+    "build_from_source",
+    "detect_meta_repo_root",
     # Prerequisites
     "DockerDetector",
     "DockerInfo",
