@@ -35,6 +35,9 @@ class K8sConfig:
     ploston_image: str = DEFAULT_PLOSTON_IMAGE
     native_tools_image: str = DEFAULT_NATIVE_TOOLS_IMAGE
     output_dir: Path | None = None
+    # Full image references (override registry/name/tag if set)
+    ploston_image_full: str | None = None
+    native_tools_image_full: str | None = None
 
 
 class K8sManifestGenerator:
@@ -135,7 +138,10 @@ class K8sManifestGenerator:
 
     def _build_native_tools(self, config: K8sConfig) -> list[dict[str, Any]]:
         """Build native-tools deployment and service."""
-        image = f"{config.registry}/{config.native_tools_image}:{config.tag}"
+        image = (
+            config.native_tools_image_full
+            or f"{config.registry}/{config.native_tools_image}:{config.tag}"
+        )
 
         deployment = {
             "apiVersion": "apps/v1",
@@ -183,7 +189,9 @@ class K8sManifestGenerator:
 
     def _build_ploston(self, config: K8sConfig) -> list[dict[str, Any]]:
         """Build Ploston CP deployment and service."""
-        image = f"{config.registry}/{config.ploston_image}:{config.tag}"
+        image = (
+            config.ploston_image_full or f"{config.registry}/{config.ploston_image}:{config.tag}"
+        )
 
         deployment = {
             "apiVersion": "apps/v1",

@@ -532,9 +532,9 @@ async def _run_bootstrap(
     else:
         k8s_config = K8sConfig(
             namespace=namespace,
-            tag=images.ploston_tag,
             port=port,
-            # TODO Phase 3: pass full image references to K8s generator
+            ploston_image_full=images.ploston_image,
+            native_tools_image_full=images.native_tools_image,
         )
         k8s_generator = K8sManifestGenerator()
         manifest_dir = k8s_generator.generate(k8s_config)
