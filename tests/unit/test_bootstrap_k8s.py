@@ -363,6 +363,55 @@ class TestK8sIngress:
             assert rules[1]["http"]["paths"][0]["path"] == "/api"
 
 
+class TestK8sDomainIngress:
+    """Tests for domain-based ingress (simulates --domain CLI flag)."""
+
+    def test_domain_generates_namespace_dot_domain_host(self):
+        """Test that domain + namespace produces <namespace>.<domain> host."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Simulates: ploston bootstrap --target k8s --domain ostanlabs.homelab --namespace ploston
+            domain = "ostanlabs.homelab"
+            ns = "ploston"
+            config = K8sConfig(
+                output_dir=Path(tmpdir),
+                namespace=ns,
+                ingress_enabled=True,
+                ingress_hosts=[K8sIngressHost(host=f"{ns}.{domain}")],
+            )
+            generator = K8sManifestGenerator()
+            manifest_dir = generator.generate(config)
+
+            docs = list(yaml.safe_load_all((manifest_dir / "ingress.yaml").read_text()))
+            rules = docs[0]["spec"]["rules"]
+            assert len(rules) == 1
+            assert rules[0]["host"] == "ploston.ostanlabs.homelab"
+
+    def test_domain_with_custom_namespace(self):
+        """Test domain with non-default namespace."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            domain = "example.com"
+            ns = "staging"
+            config = K8sConfig(
+                output_dir=Path(tmpdir),
+                namespace=ns,
+                ingress_enabled=True,
+                ingress_hosts=[K8sIngressHost(host=f"{ns}.{domain}")],
+            )
+            generator = K8sManifestGenerator()
+            manifest_dir = generator.generate(config)
+
+            docs = list(yaml.safe_load_all((manifest_dir / "ingress.yaml").read_text()))
+            assert docs[0]["spec"]["rules"][0]["host"] == "staging.example.com"
+
+    def test_no_domain_no_ingress(self):
+        """Test that without domain, no ingress is generated (default)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = K8sConfig(output_dir=Path(tmpdir))
+            generator = K8sManifestGenerator()
+            manifest_dir = generator.generate(config)
+            assert not (manifest_dir / "ingress.yaml").exists()
+
+
 class TestK8sLabels:
     """Tests for app.kubernetes.io/* labels on all resources."""
 

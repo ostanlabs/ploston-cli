@@ -23,6 +23,7 @@ from ..bootstrap import (
     HealthPoller,
     ImportHandoff,
     K8sConfig,
+    K8sIngressHost,
     K8sManifestGenerator,
     KubectlDeployer,
     KubectlDetector,
@@ -194,10 +195,20 @@ def _handle_network_conflict(
     is_flag=True,
     help="Include Prometheus + Grafana + Loki",
 )
+@click.option(
+    "--with-native-tools",
+    is_flag=True,
+    help="Include native-tools MCP server (disabled by default)",
+)
 @click.option("--no-import", is_flag=True, help="Skip auto-detection and import chaining")
 @click.option("--non-interactive", "-y", is_flag=True, help="Accept all defaults")
 @click.option("--kubeconfig", default=None, help="Kubeconfig path (K8s only)")
 @click.option("--namespace", default="ploston", help="K8s namespace")
+@click.option(
+    "--domain",
+    default=None,
+    help="Base domain for K8s ingress (e.g., ostanlabs.homelab → <namespace>.ostanlabs.homelab)",
+)
 @click.option("--network", default=DEFAULT_NETWORK_NAME, help="Docker network name")
 @click.pass_context
 def bootstrap(
@@ -208,10 +219,12 @@ def bootstrap(
     build_from_source,
     port,
     with_observability,
+    with_native_tools,
     no_import,
     non_interactive,
     kubeconfig,
     namespace,
+    domain,
     network,
 ):
     """Deploy the Ploston Control Plane.
@@ -251,6 +264,9 @@ def bootstrap(
 
         # Deploy to Kubernetes
         ploston bootstrap --target k8s --namespace ploston
+
+        # Deploy to K8s with native-tools and ingress
+        ploston bootstrap --target k8s --with-native-tools --domain ostanlabs.homelab
     """
     if ctx.invoked_subcommand is not None:
         return  # Subcommand handles it
@@ -272,10 +288,12 @@ def bootstrap(
             images=images,
             port=port,
             with_observability=with_observability,
+            with_native_tools=with_native_tools,
             skip_import=no_import,
             non_interactive=non_interactive,
             kubeconfig=kubeconfig,
             namespace=namespace,
+            domain=domain,
             network_name=network,
         )
     )
@@ -361,10 +379,12 @@ async def _run_bootstrap(
     images: ImageConfig,
     port: int,
     with_observability: bool,
-    skip_import: bool,
-    non_interactive: bool,
+    with_native_tools: bool = False,
+    skip_import: bool = False,
+    non_interactive: bool = False,
     kubeconfig: str | None = None,
     namespace: str = "ploston",
+    domain: str | None = None,
     network_name: str = DEFAULT_NETWORK_NAME,
 ) -> BootstrapResult:
     """Execute the full bootstrap flow."""
@@ -530,11 +550,19 @@ async def _run_bootstrap(
             compose_files.append(obs_compose)
             click.echo("  ✓ Deployed observability assets")
     else:
+        # Build ingress config from --domain flag
+        ingress_hosts = []
+        if domain:
+            ingress_hosts = [K8sIngressHost(host=f"{namespace}.{domain}")]
+
         k8s_config = K8sConfig(
             namespace=namespace,
             port=port,
             ploston_image_full=images.ploston_image,
             native_tools_image_full=images.native_tools_image,
+            native_tools_enabled=with_native_tools,
+            ingress_enabled=bool(domain),
+            ingress_hosts=ingress_hosts,
         )
         k8s_generator = K8sManifestGenerator()
         manifest_dir = k8s_generator.generate(k8s_config)
