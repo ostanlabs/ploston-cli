@@ -100,6 +100,79 @@ class TestK8sManifestGenerator:
 
             assert port["port"] == 9000
 
+    def test_full_image_override_ploston(self):
+        """Test ploston deployment uses full image reference when provided."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = K8sConfig(
+                output_dir=Path(tmpdir),
+                ploston_image_full="ghcr.io/ostanlabs/ploston:v2.0.0",
+            )
+            generator = K8sManifestGenerator()
+            manifest_dir = generator.generate(config)
+
+            ploston_file = manifest_dir / "ploston.yaml"
+            docs = list(yaml.safe_load_all(ploston_file.read_text()))
+            deployment = next(d for d in docs if d["kind"] == "Deployment")
+            container = deployment["spec"]["template"]["spec"]["containers"][0]
+
+            assert container["image"] == "ghcr.io/ostanlabs/ploston:v2.0.0"
+
+    def test_full_image_override_native_tools(self):
+        """Test native-tools deployment uses full image reference when provided."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = K8sConfig(
+                output_dir=Path(tmpdir),
+                native_tools_image_full="ghcr.io/ostanlabs/native-tools-dev:edge",
+            )
+            generator = K8sManifestGenerator()
+            manifest_dir = generator.generate(config)
+
+            nt_file = manifest_dir / "native-tools.yaml"
+            docs = list(yaml.safe_load_all(nt_file.read_text()))
+            deployment = next(d for d in docs if d["kind"] == "Deployment")
+            container = deployment["spec"]["template"]["spec"]["containers"][0]
+
+            assert container["image"] == "ghcr.io/ostanlabs/native-tools-dev:edge"
+
+    def test_full_image_overrides_both(self):
+        """Test both images use full references when provided."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = K8sConfig(
+                output_dir=Path(tmpdir),
+                ploston_image_full="ploston:local",
+                native_tools_image_full="native-tools:local",
+            )
+            generator = K8sManifestGenerator()
+            manifest_dir = generator.generate(config)
+
+            # Check ploston
+            ploston_file = manifest_dir / "ploston.yaml"
+            docs = list(yaml.safe_load_all(ploston_file.read_text()))
+            deployment = next(d for d in docs if d["kind"] == "Deployment")
+            container = deployment["spec"]["template"]["spec"]["containers"][0]
+            assert container["image"] == "ploston:local"
+
+            # Check native-tools
+            nt_file = manifest_dir / "native-tools.yaml"
+            docs = list(yaml.safe_load_all(nt_file.read_text()))
+            deployment = next(d for d in docs if d["kind"] == "Deployment")
+            container = deployment["spec"]["template"]["spec"]["containers"][0]
+            assert container["image"] == "native-tools:local"
+
+    def test_fallback_to_registry_tag(self):
+        """Test fallback to registry/name:tag when no full override."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = K8sConfig(output_dir=Path(tmpdir), tag="sha-abc1234")
+            generator = K8sManifestGenerator()
+            manifest_dir = generator.generate(config)
+
+            ploston_file = manifest_dir / "ploston.yaml"
+            docs = list(yaml.safe_load_all(ploston_file.read_text()))
+            deployment = next(d for d in docs if d["kind"] == "Deployment")
+            container = deployment["spec"]["template"]["spec"]["containers"][0]
+
+            assert container["image"] == "ghcr.io/ostanlabs/ploston-dev:sha-abc1234"
+
 
 class TestKubectlDeployer:
     """Tests for KubectlDeployer."""
