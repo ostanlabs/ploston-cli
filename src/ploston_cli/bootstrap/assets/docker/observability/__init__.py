@@ -1,0 +1,1 @@
+# Docker observability assets.

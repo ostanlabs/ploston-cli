@@ -1,0 +1,1 @@
+# Kubernetes observability assets.

@@ -39,6 +39,9 @@ class ComposeConfig:
     # Network configuration
     network_name: str = DEFAULT_NETWORK_NAME
     network_external: bool = False  # If True, use existing network
+    # Full image references (override registry/name/tag if set)
+    ploston_image_full: str | None = None
+    native_tools_image_full: str | None = None
 
 
 class ComposeGenerator:
@@ -67,8 +70,14 @@ class ComposeGenerator:
 
     def _build_compose_dict(self, config: ComposeConfig) -> dict[str, Any]:
         """Build the docker-compose structure."""
-        ploston_image = f"{config.registry}/{config.ploston_image}:{config.tag}"
-        native_tools_image = f"{config.registry}/{config.native_tools_image}:{config.tag}"
+        # Use full image references if provided, otherwise construct from parts
+        ploston_image = (
+            config.ploston_image_full or f"{config.registry}/{config.ploston_image}:{config.tag}"
+        )
+        native_tools_image = (
+            config.native_tools_image_full
+            or f"{config.registry}/{config.native_tools_image}:{config.tag}"
+        )
 
         # Note: ploston image runs on port 8022 internally
         # We map host port (config.port) to container port 8022
@@ -157,61 +166,7 @@ class ComposeGenerator:
             "networks": network_config,
         }
 
-        # Add observability services if requested
-        if config.with_observability:
-            self._add_observability_services(compose_data, config)
-
         return compose_data
-
-    def _add_observability_services(
-        self, compose_data: dict[str, Any], config: ComposeConfig
-    ) -> None:
-        """Add Prometheus, Grafana, and Loki services."""
-        services = compose_data["services"]
-
-        services["prometheus"] = {
-            "image": "prom/prometheus:latest",
-            "container_name": "ploston-prometheus",
-            "ports": ["9090:9090"],
-            "volumes": [
-                "./prometheus.yml:/etc/prometheus/prometheus.yml:ro",
-                "./data/prometheus:/prometheus",
-            ],
-            "command": [
-                "--config.file=/etc/prometheus/prometheus.yml",
-                "--storage.tsdb.path=/prometheus",
-                "--web.enable-lifecycle",
-            ],
-            "restart": "unless-stopped",
-        }
-
-        services["grafana"] = {
-            "image": "grafana/grafana:latest",
-            "container_name": "ploston-grafana",
-            "ports": ["3000:3000"],
-            "environment": {
-                "GF_SECURITY_ADMIN_PASSWORD": "admin",
-                "GF_USERS_ALLOW_SIGN_UP": "false",
-            },
-            "volumes": [
-                "./data/grafana:/var/lib/grafana",
-                "./grafana/provisioning:/etc/grafana/provisioning:ro",
-            ],
-            "depends_on": ["prometheus", "loki"],
-            "restart": "unless-stopped",
-        }
-
-        services["loki"] = {
-            "image": "grafana/loki:latest",
-            "container_name": "ploston-loki",
-            "ports": ["3100:3100"],
-            "volumes": [
-                "./loki-config.yaml:/etc/loki/local-config.yaml:ro",
-                "./data/loki:/loki",
-            ],
-            "command": "-config.file=/etc/loki/local-config.yaml",
-            "restart": "unless-stopped",
-        }
 
 
 class VolumeManager:
@@ -234,25 +189,6 @@ class VolumeManager:
         directories = [
             self.base_dir / "data" / "redis",
             self.base_dir / "data" / "ploston",
-        ]
-
-        for directory in directories:
-            directory.mkdir(parents=True, exist_ok=True)
-
-        return directories
-
-    def setup_observability_directories(self) -> list[Path]:
-        """Create directories for observability stack.
-
-        Returns:
-            List of created directory paths.
-        """
-        directories = [
-            self.base_dir / "data" / "prometheus",
-            self.base_dir / "data" / "grafana",
-            self.base_dir / "data" / "loki",
-            self.base_dir / "grafana" / "provisioning" / "datasources",
-            self.base_dir / "grafana" / "provisioning" / "dashboards",
         ]
 
         for directory in directories:
@@ -283,84 +219,5 @@ class VolumeManager:
 
         with open(config_file, "w") as f:
             yaml.dump(seed_config, f, default_flow_style=False, sort_keys=False)
-
-        return config_file
-
-    def generate_prometheus_config(self, overwrite: bool = False) -> Path | None:
-        """Generate prometheus.yml for scraping Ploston metrics.
-
-        Args:
-            overwrite: If True, overwrite existing config.
-
-        Returns:
-            Path to config file, or None if skipped.
-        """
-        config_file = self.base_dir / "prometheus.yml"
-
-        if config_file.exists() and not overwrite:
-            return None
-
-        prometheus_config = {
-            "global": {
-                "scrape_interval": "15s",
-                "evaluation_interval": "15s",
-            },
-            "scrape_configs": [
-                {
-                    "job_name": "ploston",
-                    "static_configs": [{"targets": ["ploston:8022"]}],
-                    "metrics_path": "/metrics",
-                },
-            ],
-        }
-
-        with open(config_file, "w") as f:
-            yaml.dump(prometheus_config, f, default_flow_style=False, sort_keys=False)
-
-        return config_file
-
-    def generate_loki_config(self, overwrite: bool = False) -> Path | None:
-        """Generate loki-config.yaml.
-
-        Args:
-            overwrite: If True, overwrite existing config.
-
-        Returns:
-            Path to config file, or None if skipped.
-        """
-        config_file = self.base_dir / "loki-config.yaml"
-
-        if config_file.exists() and not overwrite:
-            return None
-
-        loki_config = {
-            "auth_enabled": False,
-            "server": {"http_listen_port": 3100},
-            "common": {
-                "path_prefix": "/loki",
-                "storage": {
-                    "filesystem": {
-                        "chunks_directory": "/loki/chunks",
-                        "rules_directory": "/loki/rules",
-                    }
-                },
-                "replication_factor": 1,
-                "ring": {"kvstore": {"store": "inmemory"}},
-            },
-            "schema_config": {
-                "configs": [
-                    {
-                        "from": "2020-10-24",
-                        "store": "boltdb-shipper",
-                        "object_store": "filesystem",
-                        "schema": "v11",
-                        "index": {"prefix": "index_", "period": "24h"},
-                    }
-                ]
-            },
-        }
-
-        with open(config_file, "w") as f:
-            yaml.dump(loki_config, f, default_flow_style=False, sort_keys=False)
 
         return config_file

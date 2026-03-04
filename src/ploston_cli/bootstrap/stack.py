@@ -39,15 +39,55 @@ class StackStatus:
 class StackManager:
     """Manage docker-compose stack."""
 
-    def __init__(self, compose_dir: Path | None = None):
+    def __init__(
+        self,
+        compose_dir: Path | None = None,
+        compose_files: list[Path] | None = None,
+    ):
         """Initialize stack manager.
 
         Args:
             compose_dir: Directory containing docker-compose.yaml.
                         Defaults to ~/.ploston/
+            compose_files: Optional list of compose files to use.
+                          If not provided, uses [compose_dir/docker-compose.yaml].
+                          When multiple files are provided, they are layered
+                          using docker compose -f file1 -f file2.
         """
         self.compose_dir = compose_dir or PLOSTON_DIR
-        self.compose_file = self.compose_dir / "docker-compose.yaml"
+        if compose_files:
+            self._compose_files = compose_files
+        else:
+            self._compose_files = [self.compose_dir / "docker-compose.yaml"]
+
+    @property
+    def compose_file(self) -> Path:
+        """Primary compose file (first in the list).
+
+        Returns:
+            Path to the primary docker-compose.yaml file.
+        """
+        return self._compose_files[0]
+
+    @property
+    def compose_files(self) -> list[Path]:
+        """All compose files in layering order.
+
+        Returns:
+            List of compose file paths.
+        """
+        return list(self._compose_files)
+
+    def _compose_args(self) -> list[str]:
+        """Build the docker compose -f arguments.
+
+        Returns:
+            List of command-line arguments for docker compose.
+        """
+        args: list[str] = ["docker", "compose"]
+        for f in self._compose_files:
+            args.extend(["-f", str(f)])
+        return args
 
     def status(self) -> StackStatus:
         """Get current stack status.
@@ -60,15 +100,7 @@ class StackManager:
 
         try:
             result = subprocess.run(
-                [
-                    "docker",
-                    "compose",
-                    "-f",
-                    str(self.compose_file),
-                    "ps",
-                    "--format",
-                    "json",
-                ],
+                self._compose_args() + ["ps", "--format", "json"],
                 capture_output=True,
                 text=True,
                 cwd=self.compose_dir,
@@ -140,7 +172,7 @@ class StackManager:
             # Pull images first if requested
             if pull:
                 pull_result = subprocess.run(
-                    ["docker", "compose", "-f", str(self.compose_file), "pull"],
+                    self._compose_args() + ["pull"],
                     cwd=self.compose_dir,
                     capture_output=True,
                     text=True,
@@ -149,7 +181,7 @@ class StackManager:
                     return False, f"Failed to pull images: {pull_result.stderr}"
 
             # Start services
-            args = ["docker", "compose", "-f", str(self.compose_file), "up"]
+            args = self._compose_args() + ["up"]
             if detach:
                 args.append("-d")
 
@@ -182,7 +214,7 @@ class StackManager:
             return False, "No docker-compose.yaml found"
 
         try:
-            args = ["docker", "compose", "-f", str(self.compose_file), "down"]
+            args = self._compose_args() + ["down"]
             if remove_volumes:
                 args.append("-v")
 
@@ -233,7 +265,7 @@ class StackManager:
         if not self.compose_file.exists():
             return None
 
-        args = ["docker", "compose", "-f", str(self.compose_file), "logs"]
+        args = self._compose_args() + ["logs"]
         if follow:
             args.append("-f")
         if tail:
@@ -259,7 +291,7 @@ class StackManager:
 
         try:
             result = subprocess.run(
-                ["docker", "compose", "-f", str(self.compose_file), "pull"],
+                self._compose_args() + ["pull"],
                 cwd=self.compose_dir,
                 capture_output=True,
                 text=True,
