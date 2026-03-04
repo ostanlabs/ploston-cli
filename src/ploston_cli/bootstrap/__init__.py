@@ -14,7 +14,7 @@ from .compose import ComposeConfig, ComposeGenerator, VolumeManager
 from .health import HealthCheckResult, HealthPoller
 from .image_resolver import ImageConfig, ImageResolverError, resolve_images
 from .integration import AutoChainDetector, AutoChainResult, ImportHandoff, RunnerAutoStart
-from .k8s import K8sConfig, K8sHealthCheck, K8sManifestGenerator, KubectlDeployer
+from .k8s import K8sConfig, K8sHealthCheck, K8sIngressHost, K8sManifestGenerator, KubectlDeployer
 from .network import NetworkConflict, NetworkConflictAction, NetworkInfo, NetworkManager
 from .prerequisites import (
     DockerDetector,
@@ -76,6 +76,7 @@ __all__ = [
     "RunnerAutoStart",
     # Kubernetes
     "K8sConfig",
+    "K8sIngressHost",
     "K8sManifestGenerator",
     "KubectlDeployer",
     "K8sHealthCheck",

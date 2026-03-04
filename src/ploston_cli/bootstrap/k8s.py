@@ -7,7 +7,7 @@ the Ploston Control Plane stack to a K8s cluster.
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -24,12 +24,22 @@ DEFAULT_NATIVE_TOOLS_IMAGE = "native-tools-dev"
 
 
 @dataclass
+class K8sIngressHost:
+    """Ingress host configuration."""
+
+    host: str
+    path: str = "/"
+    path_type: str = "Prefix"
+
+
+@dataclass
 class K8sConfig:
     """Configuration for K8s deployment."""
 
     namespace: str = "ploston"
     tag: str = "latest"
     port: int = 8022
+    metrics_port: int = 9090
     redis_port: int = 6379
     registry: str = DEFAULT_REGISTRY
     ploston_image: str = DEFAULT_PLOSTON_IMAGE
@@ -38,10 +48,37 @@ class K8sConfig:
     # Full image references (override registry/name/tag if set)
     ploston_image_full: str | None = None
     native_tools_image_full: str | None = None
+    # Native-tools toggle (disabled by default)
+    native_tools_enabled: bool = False
+    # Config file content (empty = CONFIGURATION mode)
+    config_content: str = ""
+    # Redis persistence
+    redis_persistence_enabled: bool = False
+    redis_persistence_size: str = "1Gi"
+    # Ingress configuration
+    ingress_enabled: bool = False
+    ingress_class_name: str | None = None
+    ingress_annotations: dict[str, str] = field(default_factory=dict)
+    ingress_hosts: list[K8sIngressHost] = field(default_factory=list)
 
 
 class K8sManifestGenerator:
     """Generate Kubernetes manifests."""
+
+    def _labels(self, config: K8sConfig, component: str) -> dict[str, str]:
+        """Build standard app.kubernetes.io/* labels."""
+        return {
+            "app.kubernetes.io/name": "ploston",
+            "app.kubernetes.io/instance": config.namespace,
+            "app.kubernetes.io/component": component,
+        }
+
+    def _selector_labels(self, config: K8sConfig, component: str) -> dict[str, str]:
+        """Build selector labels (subset of full labels)."""
+        return {
+            "app.kubernetes.io/name": "ploston",
+            "app.kubernetes.io/component": component,
+        }
 
     def generate(self, config: K8sConfig) -> Path:
         """Generate K8s manifests in ~/.ploston/k8s/
@@ -61,19 +98,36 @@ class K8sManifestGenerator:
             self._build_namespace(config),
         )
 
-        # Generate service manifests
+        # Generate redis
         self._write_manifest(
             output_dir / "redis.yaml",
             self._build_redis(config),
         )
-        self._write_manifest(
-            output_dir / "native-tools.yaml",
-            self._build_native_tools(config),
-        )
+
+        # Generate native-tools (if enabled)
+        if config.native_tools_enabled:
+            self._write_manifest(
+                output_dir / "native-tools.yaml",
+                self._build_native_tools(config),
+            )
+        else:
+            # Remove stale native-tools manifest if it exists
+            nt_path = output_dir / "native-tools.yaml"
+            if nt_path.exists():
+                nt_path.unlink()
+
+        # Generate ploston
         self._write_manifest(
             output_dir / "ploston.yaml",
             self._build_ploston(config),
         )
+
+        # Generate ingress manifest (if enabled)
+        if config.ingress_enabled and config.ingress_hosts:
+            self._write_manifest(
+                output_dir / "ingress.yaml",
+                self._build_ingress(config),
+            )
 
         return output_dir
 
@@ -88,56 +142,147 @@ class K8sManifestGenerator:
             {
                 "apiVersion": "v1",
                 "kind": "Namespace",
-                "metadata": {"name": config.namespace},
+                "metadata": {
+                    "name": config.namespace,
+                    "labels": self._labels(config, "namespace"),
+                },
             }
         ]
 
     def _build_redis(self, config: K8sConfig) -> list[dict[str, Any]]:
-        """Build Redis deployment and service."""
+        """Build Redis ConfigMap, optional PVC, Deployment, and Service."""
+        labels = self._labels(config, "redis")
+        selector = self._selector_labels(config, "redis")
+        manifests: list[dict[str, Any]] = []
+
+        # Redis ConfigMap
+        configmap = {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+                "name": "ploston-redis-config",
+                "namespace": config.namespace,
+                "labels": labels,
+            },
+            "data": {
+                "redis.conf": (
+                    "# Redis configuration for Ploston config store\n"
+                    "appendonly yes\n"
+                    "maxmemory 128mb\n"
+                    "maxmemory-policy allkeys-lru\n"
+                    "# Disable persistence snapshots (AOF is sufficient)\n"
+                    'save ""\n'
+                ),
+            },
+        }
+        manifests.append(configmap)
+
+        # Optional PVC
+        if config.redis_persistence_enabled:
+            pvc = {
+                "apiVersion": "v1",
+                "kind": "PersistentVolumeClaim",
+                "metadata": {
+                    "name": "ploston-redis-pvc",
+                    "namespace": config.namespace,
+                    "labels": labels,
+                },
+                "spec": {
+                    "accessModes": ["ReadWriteOnce"],
+                    "resources": {"requests": {"storage": config.redis_persistence_size}},
+                },
+            }
+            manifests.append(pvc)
+
+        # Volume mounts
+        volume_mounts = [
+            {"name": "redis-config", "mountPath": "/etc/redis"},
+            {"name": "redis-data", "mountPath": "/data"},
+        ]
+
+        # Volumes
+        volumes: list[dict[str, Any]] = [
+            {"name": "redis-config", "configMap": {"name": "ploston-redis-config"}},
+        ]
+        if config.redis_persistence_enabled:
+            volumes.append(
+                {"name": "redis-data", "persistentVolumeClaim": {"claimName": "ploston-redis-pvc"}}
+            )
+        else:
+            volumes.append({"name": "redis-data", "emptyDir": {}})
+
+        # Deployment
         deployment = {
             "apiVersion": "apps/v1",
             "kind": "Deployment",
-            "metadata": {"name": "redis", "namespace": config.namespace},
+            "metadata": {
+                "name": "redis",
+                "namespace": config.namespace,
+                "labels": labels,
+            },
             "spec": {
                 "replicas": 1,
-                "selector": {"matchLabels": {"app": "redis"}},
+                "selector": {"matchLabels": selector},
                 "template": {
-                    "metadata": {"labels": {"app": "redis"}},
+                    "metadata": {"labels": labels},
                     "spec": {
                         "containers": [
                             {
                                 "name": "redis",
                                 "image": "redis:7-alpine",
-                                "ports": [{"containerPort": 6379}],
-                                "command": ["redis-server", "--appendonly", "yes"],
-                                "volumeMounts": [{"name": "data", "mountPath": "/data"}],
+                                "command": ["redis-server", "/etc/redis/redis.conf"],
+                                "ports": [
+                                    {"name": "redis", "containerPort": 6379, "protocol": "TCP"}
+                                ],
+                                "livenessProbe": {
+                                    "exec": {"command": ["redis-cli", "ping"]},
+                                    "initialDelaySeconds": 15,
+                                    "periodSeconds": 20,
+                                },
                                 "readinessProbe": {
                                     "exec": {"command": ["redis-cli", "ping"]},
                                     "initialDelaySeconds": 5,
-                                    "periodSeconds": 5,
+                                    "periodSeconds": 10,
                                 },
+                                "volumeMounts": volume_mounts,
                             }
                         ],
-                        "volumes": [{"name": "data", "emptyDir": {}}],
+                        "volumes": volumes,
                     },
                 },
             },
         }
+        manifests.append(deployment)
 
+        # Service
         service = {
             "apiVersion": "v1",
             "kind": "Service",
-            "metadata": {"name": "redis", "namespace": config.namespace},
+            "metadata": {
+                "name": "redis",
+                "namespace": config.namespace,
+                "labels": labels,
+            },
             "spec": {
-                "selector": {"app": "redis"},
-                "ports": [{"port": 6379, "targetPort": 6379}],
+                "selector": selector,
+                "ports": [
+                    {
+                        "name": "redis",
+                        "port": config.redis_port,
+                        "targetPort": "redis",
+                        "protocol": "TCP",
+                    }
+                ],
             },
         }
+        manifests.append(service)
 
-        return [deployment, service]
+        return manifests
 
     def _build_native_tools(self, config: K8sConfig) -> list[dict[str, Any]]:
         """Build native-tools deployment and service."""
+        labels = self._labels(config, "native-tools")
+        selector = self._selector_labels(config, "native-tools")
         image = (
             config.native_tools_image_full
             or f"{config.registry}/{config.native_tools_image}:{config.tag}"
@@ -146,12 +291,16 @@ class K8sManifestGenerator:
         deployment = {
             "apiVersion": "apps/v1",
             "kind": "Deployment",
-            "metadata": {"name": "native-tools", "namespace": config.namespace},
+            "metadata": {
+                "name": "native-tools",
+                "namespace": config.namespace,
+                "labels": labels,
+            },
             "spec": {
                 "replicas": 1,
-                "selector": {"matchLabels": {"app": "native-tools"}},
+                "selector": {"matchLabels": selector},
                 "template": {
-                    "metadata": {"labels": {"app": "native-tools"}},
+                    "metadata": {"labels": labels},
                     "spec": {
                         "containers": [
                             {
@@ -178,9 +327,13 @@ class K8sManifestGenerator:
         service = {
             "apiVersion": "v1",
             "kind": "Service",
-            "metadata": {"name": "native-tools", "namespace": config.namespace},
+            "metadata": {
+                "name": "native-tools",
+                "namespace": config.namespace,
+                "labels": labels,
+            },
             "spec": {
-                "selector": {"app": "native-tools"},
+                "selector": selector,
                 "ports": [{"port": 8081, "targetPort": 8081}],
             },
         }
@@ -188,58 +341,167 @@ class K8sManifestGenerator:
         return [deployment, service]
 
     def _build_ploston(self, config: K8sConfig) -> list[dict[str, Any]]:
-        """Build Ploston CP deployment and service."""
+        """Build Ploston CP ConfigMap, Deployment, and Service."""
+        labels = self._labels(config, "server")
+        selector = self._selector_labels(config, "server")
         image = (
             config.ploston_image_full or f"{config.registry}/{config.ploston_image}:{config.tag}"
         )
+        manifests: list[dict[str, Any]] = []
 
+        # ConfigMap for ploston-config.yaml
+        configmap = {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+                "name": "ploston-config",
+                "namespace": config.namespace,
+                "labels": labels,
+            },
+            "data": {
+                "ploston-config.yaml": config.config_content if config.config_content else "",
+            },
+        }
+        manifests.append(configmap)
+
+        # Environment variables
+        env: list[dict[str, str]] = [
+            {"name": "PLOSTON_HOST", "value": "0.0.0.0"},
+            {"name": "PLOSTON_PORT", "value": str(config.port)},
+            {"name": "PLOSTON_METRICS_PORT", "value": str(config.metrics_port)},
+            {"name": "REDIS_URL", "value": f"redis://redis:{config.redis_port}/0"},
+            {"name": "CONFIG_PATH", "value": "/app/config/ploston-config.yaml"},
+        ]
+        if config.native_tools_enabled:
+            env.append({"name": "NATIVE_TOOLS_URL", "value": "http://native-tools:8081"})
+
+        # Deployment
         deployment = {
             "apiVersion": "apps/v1",
             "kind": "Deployment",
-            "metadata": {"name": "ploston", "namespace": config.namespace},
+            "metadata": {
+                "name": "ploston",
+                "namespace": config.namespace,
+                "labels": labels,
+            },
             "spec": {
                 "replicas": 1,
-                "selector": {"matchLabels": {"app": "ploston"}},
+                "selector": {"matchLabels": selector},
                 "template": {
-                    "metadata": {"labels": {"app": "ploston"}},
+                    "metadata": {"labels": labels},
                     "spec": {
                         "containers": [
                             {
                                 "name": "ploston",
                                 "image": image,
-                                "ports": [{"containerPort": 8022}],
-                                "env": [
-                                    {"name": "PLOSTON_HOST", "value": "0.0.0.0"},
-                                    {"name": "PLOSTON_PORT", "value": "8022"},
-                                    {"name": "REDIS_URL", "value": "redis://redis:6379/0"},
+                                "ports": [
                                     {
-                                        "name": "NATIVE_TOOLS_URL",
-                                        "value": "http://native-tools:8081",
+                                        "name": "http",
+                                        "containerPort": config.port,
+                                        "protocol": "TCP",
+                                    },
+                                    {
+                                        "name": "metrics",
+                                        "containerPort": config.metrics_port,
+                                        "protocol": "TCP",
                                     },
                                 ],
+                                "env": env,
+                                "volumeMounts": [
+                                    {"name": "config", "mountPath": "/app/config"},
+                                ],
                                 "readinessProbe": {
-                                    "httpGet": {"path": "/health", "port": 8022},
-                                    "initialDelaySeconds": 15,
+                                    "httpGet": {"path": "/health", "port": config.port},
+                                    "initialDelaySeconds": 10,
                                     "periodSeconds": 10,
                                 },
+                                "livenessProbe": {
+                                    "httpGet": {"path": "/health", "port": config.port},
+                                    "initialDelaySeconds": 30,
+                                    "periodSeconds": 30,
+                                },
                             }
+                        ],
+                        "volumes": [
+                            {"name": "config", "configMap": {"name": "ploston-config"}},
                         ],
                     },
                 },
             },
         }
+        manifests.append(deployment)
 
+        # Service
         service = {
             "apiVersion": "v1",
             "kind": "Service",
-            "metadata": {"name": "ploston", "namespace": config.namespace},
+            "metadata": {
+                "name": "ploston",
+                "namespace": config.namespace,
+                "labels": labels,
+            },
             "spec": {
-                "selector": {"app": "ploston"},
-                "ports": [{"port": config.port, "targetPort": 8022}],
+                "selector": selector,
+                "ports": [
+                    {"name": "http", "port": config.port, "targetPort": "http", "protocol": "TCP"},
+                    {
+                        "name": "metrics",
+                        "port": config.metrics_port,
+                        "targetPort": "metrics",
+                        "protocol": "TCP",
+                    },
+                ],
             },
         }
+        manifests.append(service)
 
-        return [deployment, service]
+        return manifests
+
+    def _build_ingress(self, config: K8sConfig) -> list[dict[str, Any]]:
+        """Build Ingress manifest for the Ploston service."""
+        labels = self._labels(config, "ingress")
+        rules = []
+        for host_cfg in config.ingress_hosts:
+            rules.append(
+                {
+                    "host": host_cfg.host,
+                    "http": {
+                        "paths": [
+                            {
+                                "path": host_cfg.path,
+                                "pathType": host_cfg.path_type,
+                                "backend": {
+                                    "service": {
+                                        "name": "ploston",
+                                        "port": {"number": config.port},
+                                    }
+                                },
+                            }
+                        ]
+                    },
+                }
+            )
+
+        metadata: dict[str, Any] = {
+            "name": "ploston",
+            "namespace": config.namespace,
+            "labels": labels,
+        }
+        if config.ingress_annotations:
+            metadata["annotations"] = config.ingress_annotations
+
+        spec: dict[str, Any] = {"rules": rules}
+        if config.ingress_class_name:
+            spec["ingressClassName"] = config.ingress_class_name
+
+        ingress = {
+            "apiVersion": "networking.k8s.io/v1",
+            "kind": "Ingress",
+            "metadata": metadata,
+            "spec": spec,
+        }
+
+        return [ingress]
 
 
 class KubectlDeployer:
