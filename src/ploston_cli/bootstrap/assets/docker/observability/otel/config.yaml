@@ -45,6 +45,13 @@ exporters:
     default_labels_enabled:
       exporter: true
       job: true
+    labels:
+      resource:
+        - service.name
+      attributes:
+        - execution_id
+        - workflow_id
+        - step_id
   otlp/tempo:
     endpoint: "tempo:4317"
     tls:

@@ -41,6 +41,7 @@ def get_insecure(ctx: click.Context) -> bool:
 
 
 @click.group()
+@click.version_option(version=__version__, prog_name="ploston")
 @click.option(
     "-s",
     "--server",
@@ -680,6 +681,166 @@ def tools_refresh(ctx: click.Context, server_name: str | None) -> None:
         click.echo(json.dumps(result, indent=2))
     else:
         print_refresh_result_dict(result)
+
+
+# =============================================================================
+# Execution Commands
+# =============================================================================
+
+_STATUS_COLORS = {
+    "completed": "green",
+    "failed": "red",
+    "running": "yellow",
+    "pending": "white",
+    "cancelled": "white",
+}
+
+
+@cli.group()
+def executions() -> None:
+    """Inspect workflow execution history.
+
+    Shows execution history from TelemetryStore (OSS: 7-day rolling
+    retention). For compliance audit logs see Premium audit logging (F-024).
+    """
+    pass
+
+
+@executions.command("list")
+@click.option("--workflow", help="Filter by workflow name")
+@click.option(
+    "--status",
+    type=click.Choice(["pending", "running", "completed", "failed", "cancelled"]),
+    help="Filter by status",
+)
+@click.option("--since", help="ISO date (e.g. 2026-03-01)")
+@click.option("--limit", default=20, type=int, help="Max results to show")
+@click.pass_context
+def executions_list(
+    ctx: click.Context,
+    workflow: str | None,
+    status: str | None,
+    since: str | None,
+    limit: int,
+) -> None:
+    """List recent executions.
+
+    Shows execution history from TelemetryStore (OSS: 7-day rolling
+    retention). For compliance audit logs see Premium audit logging (F-024).
+    """
+    server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
+
+    async def _list() -> dict[str, Any]:
+        async with PlostClient(server_url, insecure=insecure) as client:
+            return await client.list_executions(
+                workflow=workflow,
+                status=status,
+                since=since,
+                page_size=limit,
+            )
+
+    try:
+        result = asyncio.run(_list())
+    except PlostClientError as e:
+        click.echo(f"Error: {e.message}", err=True)
+        sys.exit(1)
+
+    if ctx.obj["json_output"]:
+        click.echo(json.dumps(result, indent=2, default=str))
+    else:
+        execs = result.get("executions", [])
+        total = result.get("total", len(execs))
+        click.echo(f"Recent executions ({total})\n")
+        if not execs:
+            click.echo("  No executions found.")
+            return
+        for e in execs:
+            e_status = e.get("status", "unknown")
+            color = _STATUS_COLORS.get(e_status, "white")
+            wf = e.get("workflow_id", "—")
+            dur = e.get("duration_ms")
+            dur_str = f"{dur / 1000:.1f}s" if dur else "—"
+            eid = e.get("execution_id", "—")[:7]
+            started = e.get("started_at", "")
+            if started and len(started) >= 16:
+                started = started[:16].replace("T", " ")
+            click.echo(
+                f"  {click.style(e_status.upper().ljust(10), fg=color)}  "
+                f"{wf:<25s}  {dur_str:>6s}   {eid}   {started}"
+            )
+
+
+@executions.command("show")
+@click.argument("execution_id")
+@click.pass_context
+def executions_show(ctx: click.Context, execution_id: str) -> None:
+    """Show execution details with step trace.
+
+    Shows execution history from TelemetryStore (OSS: 7-day rolling
+    retention). For compliance audit logs see Premium audit logging (F-024).
+    """
+    server_url = get_server_url(ctx)
+    insecure = get_insecure(ctx)
+
+    async def _get() -> dict[str, Any]:
+        async with PlostClient(server_url, insecure=insecure) as client:
+            return await client.get_execution(execution_id)
+
+    try:
+        detail = asyncio.run(_get())
+    except PlostClientError as e:
+        click.echo(f"Error: {e.message}", err=True)
+        sys.exit(1)
+
+    if ctx.obj["json_output"]:
+        click.echo(json.dumps(detail, indent=2, default=str))
+    else:
+        e_status = detail.get("status", "unknown")
+        color = _STATUS_COLORS.get(e_status, "white")
+        dur = detail.get("duration_ms")
+        dur_str = f"{dur / 1000:.1f}s" if dur else "—"
+
+        click.echo(f"Execution: {detail.get('execution_id', '—')}")
+        click.echo(f"  Workflow:   {detail.get('workflow_id', '—')}")
+        click.echo(f"  Status:     {click.style(e_status.upper(), fg=color)}")
+        click.echo(f"  Started:    {detail.get('started_at', '—')}")
+        click.echo(f"  Duration:   {dur_str}")
+
+        # Steps
+        steps = detail.get("steps", [])
+        if steps:
+            click.echo("\nSteps:")
+            for i, step in enumerate(steps, 1):
+                s_status = step.get("status", "unknown")
+                s_color = _STATUS_COLORS.get(s_status, "white")
+                s_dur = step.get("duration_ms")
+                s_dur_str = f"{s_dur}ms" if s_dur else "—"
+                s_tool = step.get("tool") or "—"
+                s_type = step.get("type") or "—"
+                click.echo(
+                    f"  {i}. {s_tool:<18s} {s_type:<6s} "
+                    f"{click.style(s_status.upper(), fg=s_color):<12s} {s_dur_str}"
+                )
+
+        # Outputs
+        outputs = detail.get("outputs", {})
+        if outputs:
+            click.echo("\nOutputs:")
+            for key, value in outputs.items():
+                val_str = str(value)
+                if len(val_str) > 80:
+                    val_str = val_str[:77] + "..."
+                click.echo(f"  {key}: {val_str}")
+
+        # Error
+        error = detail.get("error")
+        if error:
+            click.echo(f"\n{click.style('Error:', fg='red')}")
+            if isinstance(error, dict):
+                click.echo(f"  [{error.get('code', '?')}] {error.get('message', '?')}")
+            else:
+                click.echo(f"  {error}")
 
 
 # =============================================================================

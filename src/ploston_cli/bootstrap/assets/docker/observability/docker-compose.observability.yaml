@@ -8,7 +8,8 @@
 # - Tempo: Distributed tracing
 # - OTEL Collector: Telemetry routing
 #
-# Usage: docker compose -f docker-compose.yaml -f docker-compose.observability.yaml up
+# Usage: docker compose -f docker-compose.yaml -f observability/docker-compose.observability.yaml up
+# Volume paths are relative to the project directory (~/.ploston/), not this file.
 # =============================================================================
 
 services:
@@ -27,7 +28,7 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
@@ -50,9 +51,9 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
     volumes:
-      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
@@ -73,7 +74,7 @@ services:
     ports:
       - "3100:3100"
     volumes:
-      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - ./observability/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
       - loki-data:/loki
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3100/ready"]
@@ -94,7 +95,7 @@ services:
       - "4317:4317"   # OTLP gRPC
       - "4318:4318"   # OTLP HTTP
     volumes:
-      - ./tempo/tempo-config.yaml:/etc/tempo/tempo-config.yaml:ro
+      - ./observability/tempo/tempo-config.yaml:/etc/tempo/tempo-config.yaml:ro
       - tempo-data:/var/tempo
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3200/ready"]
@@ -115,7 +116,7 @@ services:
       - "4328:4318"   # OTLP HTTP
       - "8889:8889"   # Prometheus metrics
     volumes:
-      - ./otel/config.yaml:/etc/otel/config.yaml:ro
+      - ./observability/otel/config.yaml:/etc/otel/config.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:13133/"]
       interval: 10s

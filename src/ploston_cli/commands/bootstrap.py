@@ -37,8 +37,56 @@ from ..bootstrap import (
 from ..bootstrap.builder import BuildError, build_from_source
 from ..bootstrap.image_resolver import ImageConfig, ImageResolverError, resolve_images
 from ..bootstrap.workspace import detect_meta_repo_root
+from ..init.detector import ConfigDetector
+from ..init.injector import is_already_injected, list_backups, restore_config_from_backup
 
 DEFAULT_NETWORK_NAME = "ploston-network"
+
+
+def _restore_injected_configs() -> None:
+    """Detect and restore any Claude/Cursor configs that were injected by Ploston.
+
+    Scans for known config files, checks if Ploston bridge entries are present,
+    and restores from the most recent backup automatically.
+    """
+    detector = ConfigDetector()
+    configs = detector.detect_all()
+
+    for config in configs:
+        if not config.path or not config.path.exists():
+            continue
+        if not is_already_injected(config.path):
+            continue
+
+        label = "Claude Desktop" if config.source == "claude_desktop" else "Cursor"
+        backups = list_backups(config.path)
+        if backups:
+            restore_config_from_backup(config.path, backups[0])
+            click.echo(f"  ✓ Restored {label} config from backup")
+        else:
+            click.echo(
+                f"  ⚠ {label} config has Ploston entries but no backup found. "
+                f"Swap '_ploston_imported' back into 'mcpServers' manually."
+            )
+
+
+def _prompt_preserve_telemetry() -> bool:
+    """Prompt the user whether to preserve telemetry data during teardown.
+
+    Returns:
+        True to preserve, False to wipe.
+    """
+    answer = click.prompt(
+        "\n  Preserve telemetry data from previous installation?",
+        default="Y",
+        show_default=True,
+    )
+    preserve = answer.strip().lower() not in ("no", "n")
+    if not preserve:
+        click.echo("  Telemetry data will be cleared.")
+    else:
+        click.echo("  Telemetry data will be preserved.")
+    return preserve
 
 
 @dataclass
@@ -302,6 +350,8 @@ def bootstrap(
 @bootstrap.command()
 def status():
     """Show current stack status."""
+    from ..runner.daemon import is_running as runner_is_running
+
     manager = StackManager()
     stack_status = manager.status()
 
@@ -310,14 +360,54 @@ def status():
         return
 
     click.echo(f"Stack state: {stack_status.state.value}")
-    if stack_status.running_services:
-        click.echo("Running services:")
-        for svc in stack_status.running_services:
-            click.echo(f"  ✓ {svc}")
-    if stack_status.stopped_services:
-        click.echo("Stopped services:")
-        for svc in stack_status.stopped_services:
-            click.echo(f"  ✗ {svc}")
+
+    # ── Service table with ports ──
+    if stack_status.service_details:
+        click.echo("\nServices:")
+        for svc in stack_status.service_details:
+            if svc.state == "running":
+                icon = "✓"
+                health_tag = f" ({svc.health})" if svc.health else ""
+            else:
+                icon = "✗"
+                health_tag = ""
+            ports_str = ", ".join(f":{p}" for p in svc.ports) if svc.ports else ""
+            line = f"  {icon} {svc.name}"
+            if ports_str:
+                line += f"  {ports_str}"
+            line += health_tag
+            click.echo(line)
+    else:
+        # Fallback to simple lists when details aren't available
+        if stack_status.running_services:
+            click.echo("Running services:")
+            for svc in stack_status.running_services:
+                click.echo(f"  ✓ {svc}")
+        if stack_status.stopped_services:
+            click.echo("Stopped services:")
+            for svc in stack_status.stopped_services:
+                click.echo(f"  ✗ {svc}")
+
+    # ── Endpoints summary ──
+    endpoints: list[tuple[str, str]] = []
+    for svc in stack_status.service_details:
+        if svc.state != "running" or not svc.ports:
+            continue
+        for port in svc.ports:
+            endpoints.append((svc.name, f"http://localhost:{port}"))
+
+    if endpoints:
+        click.echo("\nEndpoints:")
+        for name, url in endpoints:
+            click.echo(f"  {name:20s} {url}")
+
+    # ── Runner daemon ──
+    alive, pid = runner_is_running()
+    click.echo("")
+    if alive:
+        click.echo(f"Runner: running (PID {pid})")
+    else:
+        click.echo("Runner: not running")
 
 
 @bootstrap.command()
@@ -331,12 +421,23 @@ def status():
 @click.option("--kubeconfig", default=None)
 def down(volumes, target, namespace, kubeconfig):
     """Stop and remove the Ploston stack."""
+    _restore_injected_configs()
+
     if target == "docker":
-        manager = StackManager()
+        state_manager = BootstrapStateManager()
         if volumes:
             if not click.confirm("This will delete all Ploston data. Continue?"):
                 return
-        success, msg = manager.down(remove_volumes=volumes)
+            # --volumes implies wipe everything including telemetry
+            preserve_telemetry = False
+        else:
+            # Prompt for telemetry data preservation (DEC-150)
+            preserve_telemetry = _prompt_preserve_telemetry()
+
+        success, msg = state_manager.execute_action(
+            BootstrapAction.TEARDOWN,
+            preserve_telemetry=preserve_telemetry,
+        )
         if success:
             click.echo("✓ Ploston stack stopped.")
         else:
@@ -359,7 +460,13 @@ def down(volumes, target, namespace, kubeconfig):
 def logs(follow, service, tail):
     """Show stack logs."""
     manager = StackManager()
-    manager.logs(follow=follow, service=service, tail=tail)
+    proc = manager.logs(follow=follow, service=service, tail=tail)
+    if proc is not None:
+        try:
+            proc.wait()
+        except KeyboardInterrupt:
+            proc.terminate()
+            proc.wait()
 
 
 @bootstrap.command()
@@ -394,44 +501,98 @@ async def _run_bootstrap(
     state_manager = BootstrapStateManager()
     state = state_manager.detect_state()
 
-    if state.stack_running:
-        click.echo("📋 Existing Stack Detected\n")
-        click.echo(f"  Running services: {', '.join(state.running_services or [])}")
+    if state.needs_cleanup:
+        if state.stack_running:
+            click.echo("📋 Existing Stack Detected\n")
+            click.echo(f"  Running services: {', '.join(state.running_services or [])}")
+        else:
+            click.echo("📋 Stale Artifacts Detected\n")
+            for artifact in state.stale_artifacts:
+                click.echo(f"  • {artifact}")
 
         if non_interactive:
-            click.echo("\n  Using existing stack (non-interactive mode)")
-            return BootstrapResult(success=True, port=port)
-
-        click.echo("\nOptions:")
-        click.echo("  [1] Keep running (nothing to do)")
-        click.echo("  [2] Restart stack")
-        click.echo("  [3] Recreate stack (pull latest images)")
-        click.echo("  [4] Tear down")
-
-        choice = click.prompt("Select option", type=click.Choice(["1", "2", "3", "4"]), default="1")
-
-        action_map = {
-            "1": BootstrapAction.KEEP_RUNNING,
-            "2": BootstrapAction.RESTART,
-            "3": BootstrapAction.RECREATE,
-            "4": BootstrapAction.TEARDOWN,
-        }
-        action = action_map[choice]
-
-        if action == BootstrapAction.KEEP_RUNNING:
-            click.echo("\n✓ Stack is running. Nothing to do.")
-            return BootstrapResult(success=True, port=port)
-        elif action == BootstrapAction.TEARDOWN:
-            success, msg = state_manager.execute_action(action)
-            click.echo(f"\n{'✓' if success else '✗'} {msg}")
-            return BootstrapResult(success=success, port=port)
-        else:
-            success, msg = state_manager.execute_action(action)
+            if state.stack_running and not images.build_from_source:
+                click.echo("\n  Using existing stack (non-interactive mode)")
+                return BootstrapResult(success=True, port=port)
+            # Auto-teardown: stack running with --build-from-source, or
+            # stale artifacts with no running stack.
+            # Non-interactive always preserves telemetry data (DEC-150).
+            _restore_injected_configs()
+            click.echo("\n  Cleaning up before fresh bootstrap...")
+            success, msg = state_manager.execute_action(
+                BootstrapAction.TEARDOWN,
+                preserve_telemetry=True,
+            )
             if not success:
                 click.echo(f"\n✗ {msg}", err=True)
                 return BootstrapResult(success=False, error=msg)
-            click.echo(f"\n✓ {msg}")
-            return BootstrapResult(success=True, port=port)
+            click.echo(f"  ✓ {msg}")
+            # Fall through to full bootstrap flow below
+        elif state.stack_running:
+            click.echo("\nOptions:")
+            click.echo("  [1] Keep running (nothing to do)")
+            click.echo("  [2] Restart stack")
+            click.echo("  [3] Recreate stack (pull latest images)")
+            click.echo("  [4] Tear down and re-bootstrap")
+
+            choice = click.prompt(
+                "Select option", type=click.Choice(["1", "2", "3", "4"]), default="1"
+            )
+
+            action_map = {
+                "1": BootstrapAction.KEEP_RUNNING,
+                "2": BootstrapAction.RESTART,
+                "3": BootstrapAction.RECREATE,
+                "4": BootstrapAction.TEARDOWN,
+            }
+            action = action_map[choice]
+
+            if action == BootstrapAction.KEEP_RUNNING:
+                click.echo("\n✓ Stack is running. Nothing to do.")
+                return BootstrapResult(success=True, port=port)
+            elif action == BootstrapAction.TEARDOWN:
+                # Prompt for telemetry data preservation (DEC-150)
+                preserve_telemetry = _prompt_preserve_telemetry()
+                _restore_injected_configs()
+                click.echo("\n  Tearing down existing stack...")
+                success, msg = state_manager.execute_action(
+                    action,
+                    preserve_telemetry=preserve_telemetry,
+                )
+                if not success:
+                    click.echo(f"\n✗ {msg}", err=True)
+                    return BootstrapResult(success=False, error=msg)
+                click.echo(f"  ✓ {msg}")
+                # Fall through to full bootstrap flow below
+            else:
+                success, msg = state_manager.execute_action(action)
+                if not success:
+                    click.echo(f"\n✗ {msg}", err=True)
+                    return BootstrapResult(success=False, error=msg)
+                click.echo(f"\n✓ {msg}")
+                return BootstrapResult(success=True, port=port)
+        else:
+            # Stack not running but artifacts exist — offer cleanup.
+            click.echo("\nOptions:")
+            click.echo("  [1] Clean up and re-bootstrap")
+            click.echo("  [2] Continue without cleaning")
+
+            choice = click.prompt("Select option", type=click.Choice(["1", "2"]), default="1")
+
+            if choice == "1":
+                # Prompt for telemetry data preservation (DEC-150)
+                preserve_telemetry = _prompt_preserve_telemetry()
+                _restore_injected_configs()
+                click.echo("\n  Cleaning up stale artifacts...")
+                success, msg = state_manager.execute_action(
+                    BootstrapAction.TEARDOWN,
+                    preserve_telemetry=preserve_telemetry,
+                )
+                if not success:
+                    click.echo(f"\n✗ {msg}", err=True)
+                    return BootstrapResult(success=False, error=msg)
+                click.echo(f"  ✓ {msg}")
+            # Fall through to full bootstrap flow below
 
     # ── Step 2: Prerequisites ──
     click.echo("📋 Step 1: Prerequisites\n")
@@ -627,10 +788,20 @@ async def _run_bootstrap(
                 click.echo(f"    - {name}")
 
             if non_interactive or click.confirm("\n  Import these configs to CP?", default=True):
+                # Ask whether to inject Ploston into source configs
+                do_inject = False
+                if not non_interactive:
+                    click.echo()
+                    click.echo("  Inject rewrites your Claude/Cursor config so MCP servers")
+                    click.echo("  route through Ploston (a backup is created first).")
+                    do_inject = click.confirm("  Inject Ploston into source config?", default=False)
+
                 handoff = ImportHandoff(cp_url)
-                success, msg = handoff.run_import(interactive=not non_interactive)
+                success, msg = handoff.run_import(interactive=False, inject=do_inject)
                 if success:
                     click.echo("  ✓ Configs imported")
+                    if do_inject:
+                        click.echo("  ✓ Source config updated (backup created)")
 
                     # Offer to start runner
                     if non_interactive or click.confirm("\n  Start local runner?", default=True):

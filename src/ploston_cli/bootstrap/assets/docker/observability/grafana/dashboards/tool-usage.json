@@ -302,7 +302,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Average tool invocation duration by category",
+      "description": "Tool call latency percentiles (p50, p95, p99) filtered by tool and bridge",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -332,24 +332,176 @@
           },
           "unit": "s"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "p50" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "p95" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "p99" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          }
+        ]
       },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
       "id": 7,
       "options": {
-        "legend": { "calcs": ["mean"], "displayMode": "table", "placement": "right", "showLegend": true },
+        "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "right", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum by (tool_source) (rate(ploston_tool_invocation_duration_seconds_sum[5m])) / sum by (tool_source) (rate(ploston_tool_invocation_duration_seconds_count[5m]))",
-          "legendFormat": "{{tool_source}}",
+          "expr": "histogram_quantile(0.50, sum(rate(ploston_tool_invocation_duration_seconds_bucket{tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ploston_tool_invocation_duration_seconds_bucket{tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(ploston_tool_invocation_duration_seconds_bucket{tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "title": "Tool Call Latency Percentiles (p50/p95/p99)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Tool call latency distribution heatmap",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "scheme", "schemeName": "Oranges" },
+          "custom": {
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "scaleDistribution": { "type": "log", "log": 2 }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
+      "id": 9,
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": { "exponent": 0.5, "fill": "dark-orange", "mode": "scheme", "reverse": false, "scale": "exponential", "scheme": "Oranges", "steps": 64 },
+        "exemplars": { "color": "rgba(255,0,255,0.7)" },
+        "filterValues": { "le": 1e-9 },
+        "legend": { "show": true },
+        "rowsFrame": { "layout": "auto" },
+        "tooltip": { "show": true, "yHistogram": true },
+        "yAxis": { "axisPlacement": "left", "reverse": false, "unit": "s" }
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "sum(increase(ploston_tool_invocation_duration_seconds_bucket{tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])) by (le)",
+          "format": "heatmap",
+          "legendFormat": "{{le}}",
           "refId": "A"
         }
       ],
-      "title": "Avg Tool Duration by Category",
-      "type": "timeseries"
+      "title": "Tool Call Latency Heatmap",
+      "type": "heatmap"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Per-tool latency percentiles sorted by p95 descending",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Tool" },
+            "properties": [{ "id": "custom.width", "value": 300 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "p95" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "mode": "gradient", "type": "gauge" } },
+              { "id": "color", "value": { "mode": "continuous-YlRd" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 },
+      "id": 10,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "p95" }]
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (tool_name, le) (rate(ploston_tool_invocation_duration_seconds_bucket{tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (tool_name, le) (rate(ploston_tool_invocation_duration_seconds_bucket{tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (tool_name, le) (rate(ploston_tool_invocation_duration_seconds_bucket{tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "C"
+        }
+      ],
+      "title": "Per-Tool Latency Percentiles",
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "le": true },
+            "indexByName": {},
+            "renameByName": { "Value #A": "p50", "Value #B": "p95", "Value #C": "p99", "tool_name": "Tool" }
+          }
+        }
+      ],
+      "type": "table"
     },
     {
       "datasource": {
@@ -417,7 +569,42 @@
   "schemaVersion": 38,
   "style": "dark",
   "tags": ["ploston", "tools"],
-  "templating": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(ploston_tool_invocations_total, tool_name)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "tool_name",
+        "options": [],
+        "query": { "query": "label_values(ploston_tool_invocations_total, tool_name)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(ploston_tool_invocations_total, bridge_id)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "bridge_id",
+        "options": [],
+        "query": { "query": "label_values(ploston_tool_invocations_total, bridge_id)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
   "time": { "from": "now-6h", "to": "now" },
   "timepicker": {},
   "timezone": "",

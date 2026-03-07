@@ -7,10 +7,15 @@ handoff to the import process.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from dataclasses import dataclass
 
 from ..init.detector import ConfigDetector, DetectedConfig, merge_configs
+from ..init.env_manager import load_env_file
+from ..init.injector import default_runner_name
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -77,6 +82,7 @@ class ImportHandoff:
         source: str | None = None,
         dry_run: bool = False,
         interactive: bool = True,
+        inject: bool = False,
     ) -> tuple[bool, str]:
         """Run the init --import command.
 
@@ -84,6 +90,7 @@ class ImportHandoff:
             source: Specific source to import from (claude_desktop, cursor, or path).
             dry_run: If True, only show what would be imported.
             interactive: If True, prompt for confirmation.
+            inject: If True, inject Ploston into source config files.
 
         Returns:
             Tuple of (success, message).
@@ -98,7 +105,10 @@ class ImportHandoff:
             cmd.append("--dry-run")
 
         if not interactive:
-            cmd.append("--yes")
+            cmd.append("--non-interactive")
+
+        if inject:
+            cmd.append("--inject")
 
         try:
             result = subprocess.run(
@@ -124,12 +134,42 @@ class RunnerAutoStart:
         """Initialize runner auto-start.
 
         Args:
-            cp_url: URL of the Control Plane.
+            cp_url: HTTP URL of the Control Plane (e.g. http://localhost:8022).
         """
         self.cp_url = cp_url
 
+    def _get_ws_url(self) -> str:
+        """Convert HTTP CP URL to WebSocket runner endpoint.
+
+        Returns:
+            WebSocket URL for runner connection (e.g. ws://localhost:8022/api/v1/runner/ws).
+        """
+        return f"{self.cp_url.replace('http', 'ws')}/api/v1/runner/ws"
+
+    def _get_runner_token(self) -> str | None:
+        """Read runner token from ~/.ploston/.env.
+
+        The token is written there by `ploston init --import`.
+
+        Returns:
+            Token string, or None if not found.
+        """
+        env_vars = load_env_file()
+        return env_vars.get("PLOSTON_RUNNER_TOKEN")
+
+    def _get_runner_name(self) -> str:
+        """Get runner name (sanitised hostname).
+
+        Returns:
+            Runner name string.
+        """
+        return default_runner_name()
+
     def start_runner(self, daemon: bool = True) -> tuple[bool, str]:
         """Start the local runner.
+
+        Reads the runner token from ~/.ploston/.env (written by init --import)
+        and uses the machine hostname as the runner name.
 
         Args:
             daemon: If True, start as background daemon.
@@ -137,10 +177,19 @@ class RunnerAutoStart:
         Returns:
             Tuple of (success, message).
         """
-        cmd = ["ploston", "runner", "start", "--cp-url", self.cp_url]
+        token = self._get_runner_token()
+        if not token:
+            return False, "Runner token not found in ~/.ploston/.env (was init --import run?)"
+
+        name = self._get_runner_name()
+        ws_url = self._get_ws_url()
+
+        cmd = ["ploston", "runner", "start", "--cp", ws_url, "--token", token, "--name", name]
 
         if daemon:
             cmd.append("--daemon")
+
+        logger.debug("Starting runner: %s", " ".join(cmd[:6] + ["***", "--name", name]))
 
         try:
             result = subprocess.run(
@@ -152,7 +201,9 @@ class RunnerAutoStart:
             if result.returncode == 0:
                 return True, "Runner started successfully"
             else:
-                return False, result.stderr or "Failed to start runner"
+                # The daemon writes errors to stdout (via print()), not stderr.
+                error = result.stderr.strip() or result.stdout.strip() or "Failed to start runner"
+                return False, error
         except FileNotFoundError:
             return False, "ploston CLI not found"
         except Exception as e:

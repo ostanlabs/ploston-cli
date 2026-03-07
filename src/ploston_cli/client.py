@@ -263,6 +263,58 @@ class PlostClient:
         return await self._request("GET", "/health")
 
     # -------------------------------------------------------------------------
+    # Executions
+    # -------------------------------------------------------------------------
+
+    async def list_executions(
+        self,
+        workflow: str | None = None,
+        status: str | None = None,
+        since: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        """List execution history.
+
+        Shows execution history from TelemetryStore (OSS: 7-day rolling
+        retention). For compliance audit logs see Premium audit logging
+        (F-024).
+
+        Args:
+            workflow: Filter by workflow name
+            status: Filter by status (pending, running, completed, failed, cancelled)
+            since: Filter by start date (ISO 8601)
+            page: Page number (1-based)
+            page_size: Results per page
+
+        Returns:
+            Paginated execution list response
+        """
+        params: dict[str, Any] = {"page": page, "page_size": page_size}
+        if workflow:
+            params["workflow_id"] = workflow
+        if status:
+            params["status"] = status
+        if since:
+            params["since"] = since
+        return await self._request("GET", "/api/v1/executions", params=params)
+
+    async def get_execution(self, execution_id: str) -> dict[str, Any]:
+        """Get execution details.
+
+        Shows execution history from TelemetryStore (OSS: 7-day rolling
+        retention). For compliance audit logs see Premium audit logging
+        (F-024).
+
+        Args:
+            execution_id: Execution ID
+
+        Returns:
+            Execution detail dict with steps, inputs, outputs
+        """
+        return await self._request("GET", f"/api/v1/executions/{execution_id}")
+
+    # -------------------------------------------------------------------------
     # Runners
     # -------------------------------------------------------------------------
 

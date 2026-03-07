@@ -469,7 +469,40 @@
   "style": "dark",
   "tags": ["ploston", "chain-detection"],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(ploston_workflow_executions_total, workflow_id)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "workflow",
+        "options": [],
+        "query": { "query": "label_values(ploston_workflow_executions_total, workflow_id)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(ploston_tool_invocations_total, bridge_id)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "bridge_id",
+        "options": [],
+        "query": { "query": "label_values(ploston_tool_invocations_total, bridge_id)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
   },
   "time": {
     "from": "now-6h",

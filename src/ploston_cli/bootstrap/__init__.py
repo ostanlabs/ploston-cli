@@ -26,7 +26,7 @@ from .prerequisites import (
     PortScanner,
     PortStatus,
 )
-from .stack import StackManager, StackState, StackStatus
+from .stack import ServiceInfo, StackManager, StackState, StackStatus
 from .state import BootstrapAction, BootstrapState, BootstrapStateManager
 from .workspace import detect_meta_repo_root
 
@@ -57,6 +57,7 @@ __all__ = [
     "HealthPoller",
     "HealthCheckResult",
     # Stack management
+    "ServiceInfo",
     "StackManager",
     "StackState",
     "StackStatus",

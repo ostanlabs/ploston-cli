@@ -420,7 +420,40 @@
   "style": "dark",
   "tags": ["ploston", "token-savings"],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(ploston_tokens_saved_total, workflow_name)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "workflow",
+        "options": [],
+        "query": { "query": "label_values(ploston_tokens_saved_total, workflow_name)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(ploston_cost_saved_cents_total, model)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "model",
+        "options": [],
+        "query": { "query": "label_values(ploston_cost_saved_cents_total, model)", "refId": "StandardVariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
   },
   "time": {
     "from": "now-6h",

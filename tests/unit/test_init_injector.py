@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
+import pytest
+
 from ploston_cli.init.injector import (
     SourceConfigInjector,
     default_runner_name,
@@ -15,6 +17,18 @@ from ploston_cli.init.injector import (
     is_already_injected,
     sanitise_runner_name,
 )
+
+# The injector resolves the absolute path to ``ploston`` via shutil.which
+# so that GUI apps (Claude Desktop, Cursor) can find the binary.  In tests
+# we mock this to a fixed path so assertions are deterministic.
+MOCK_PLOSTON_PATH = "/usr/local/bin/ploston"
+
+
+@pytest.fixture(autouse=True)
+def _mock_ploston_which():
+    """Mock shutil.which('ploston') for all tests in this module."""
+    with patch("ploston_cli.init.injector.shutil.which", return_value=MOCK_PLOSTON_PATH):
+        yield
 
 
 class TestInjectPlostIntoConfig:
@@ -85,14 +99,14 @@ class TestInjectPlostIntoConfig:
         # Workflows entry
         assert "ploston" in result["mcpServers"]
         ploston_entry = result["mcpServers"]["ploston"]
-        assert ploston_entry["command"] == "ploston"
+        assert ploston_entry["command"] == MOCK_PLOSTON_PATH
         assert "--expose" in ploston_entry["args"]
         assert "workflows" in ploston_entry["args"]
         assert "http://localhost:8022" in ploston_entry["args"]
         # Per-server bridge entry replaces original
         assert "filesystem" in result["mcpServers"]
         fs_entry = result["mcpServers"]["filesystem"]
-        assert fs_entry["command"] == "ploston"
+        assert fs_entry["command"] == MOCK_PLOSTON_PATH
         assert "--expose" in fs_entry["args"]
         assert "filesystem" in fs_entry["args"]
 
@@ -117,9 +131,9 @@ class TestInjectPlostIntoConfig:
         result = json.loads(config_file.read_text())
         # Imported servers replaced with bridge entries (same keys, new values)
         assert "filesystem" in result["mcpServers"]
-        assert result["mcpServers"]["filesystem"]["command"] == "ploston"
+        assert result["mcpServers"]["filesystem"]["command"] == MOCK_PLOSTON_PATH
         assert "github" in result["mcpServers"]
-        assert result["mcpServers"]["github"]["command"] == "ploston"
+        assert result["mcpServers"]["github"]["command"] == MOCK_PLOSTON_PATH
         # Non-imported server preserved unchanged
         assert "keep_me" in result["mcpServers"]
         assert result["mcpServers"]["keep_me"]["command"] == "other"
@@ -226,7 +240,7 @@ class TestBridgeEntryGeneration:
         result = json.loads(config_file.read_text())
         for name in ["filesystem", "github", "slack"]:
             entry = result["mcpServers"][name]
-            assert entry["command"] == "ploston"
+            assert entry["command"] == MOCK_PLOSTON_PATH
             assert entry["args"] == [
                 "bridge",
                 "--url",
@@ -307,7 +321,7 @@ class TestBridgeEntryGeneration:
         )
         result = json.loads(config_file.read_text())
         assert "my-custom-server" in result["mcpServers"]
-        assert result["mcpServers"]["my-custom-server"]["command"] == "ploston"
+        assert result["mcpServers"]["my-custom-server"]["command"] == MOCK_PLOSTON_PATH
 
     def test_ploston_imported_has_backup_of_originals(self, tmp_path):
         """_ploston_imported preserves original npx-based entries."""
@@ -370,7 +384,7 @@ class TestBridgeEntryGeneration:
         )
         result = json.loads(config_file.read_text())
         # filesystem → bridge entry
-        assert result["mcpServers"]["filesystem"]["command"] == "ploston"
+        assert result["mcpServers"]["filesystem"]["command"] == MOCK_PLOSTON_PATH
         # github NOT selected → preserved unchanged
         assert result["mcpServers"]["github"]["command"] == "npx"
         # keep_me → preserved unchanged
@@ -414,7 +428,7 @@ class TestEdgeCases:
         assert "ploston-original" in result["_ploston_imported"]
         assert result["_ploston_imported"]["ploston-original"]["command"] == "npx"
         # 'other' gets a bridge entry
-        assert result["mcpServers"]["other"]["command"] == "ploston"
+        assert result["mcpServers"]["other"]["command"] == MOCK_PLOSTON_PATH
 
     def test_e17_invalid_chars_in_runner_name(self, tmp_path):
         """E-17: Invalid characters in --runner-name are sanitised."""

@@ -64,11 +64,33 @@ class BridgeProxy:
         self._closed = False
         self._request_id = 0
 
+        # Bridge context propagation (DEC-142).
+        # Set by BridgeLifecycle after construction.
+        self.bridge_id: str | None = None
+        self.bridge_expose: str | None = None
+        self.bridge_session_start: str | None = None
+        self._lifecycle: Any | None = None  # back-ref for queue drops
+
+    def set_lifecycle(self, lifecycle: Any) -> None:
+        """Attach lifecycle for bridge context propagation."""
+        self._lifecycle = lifecycle
+        self.bridge_id = lifecycle.bridge_id
+        self.bridge_session_start = lifecycle.session_start
+
     def _get_headers(self) -> dict[str, str]:
-        """Get HTTP headers including auth if configured."""
+        """Get HTTP headers including auth and bridge context."""
         headers = {"Content-Type": "application/json"}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
+        # Bridge context headers (DEC-142)
+        if self.bridge_id:
+            headers["X-Bridge-ID"] = self.bridge_id
+        if self.bridge_expose:
+            headers["X-Bridge-Expose"] = self.bridge_expose
+        if self._lifecycle:
+            headers["X-Bridge-Queue-Drops"] = str(self._lifecycle._queue_drops_since_connect)
+        if self.bridge_session_start:
+            headers["X-Bridge-Session-Start"] = self.bridge_session_start
         return headers
 
     async def _ensure_client(self) -> httpx.AsyncClient:
