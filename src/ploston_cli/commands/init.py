@@ -1,6 +1,7 @@
 """Init command - Import MCP configurations from Claude Desktop and Cursor.
 
 Implements the `ploston init --import` command per PLOSTON_INIT_IMPORT_SPEC.md.
+--inject behaviour amended per INIT_IMPORT_INJECT_AMENDMENT.md (DEC-141).
 """
 
 from __future__ import annotations
@@ -21,11 +22,10 @@ from ploston_cli.init import (
     merge_configs,
     write_env_file,
 )
+from ploston_cli.init.injector import default_runner_name
 
 if TYPE_CHECKING:
     from ploston_cli.init.detector import DetectedConfig, ServerInfo
-
-DEFAULT_RUNNER_NAME = "local"
 
 # Environment variable to override config base path (for testing)
 ENV_CONFIG_BASE_PATH = "PLOSTON_CONFIG_BASE_PATH"
@@ -60,7 +60,7 @@ def _get_default_cp_url() -> str:
 @click.option(
     "--inject/--no-inject",
     default=False,
-    help="Inject Ploston into source config (comments out imported servers)",
+    help="Inject Ploston into source config (replaces imported servers with bridge entries)",
 )
 @click.option(
     "--non-interactive",
@@ -69,8 +69,11 @@ def _get_default_cp_url() -> str:
 )
 @click.option(
     "--runner-name",
-    default=DEFAULT_RUNNER_NAME,
-    help=f"Name for the local runner (default: {DEFAULT_RUNNER_NAME})",
+    default=None,
+    help=(
+        "Name for the local runner (default: machine hostname). "
+        "Used in --runner args of generated bridge entries."
+    ),
 )
 def init_command(
     do_import: bool,
@@ -78,7 +81,7 @@ def init_command(
     cp_url: str | None,
     inject: bool,
     non_interactive: bool,
-    runner_name: str,
+    runner_name: str | None,
 ) -> None:
     """Initialize Ploston configuration.
 
@@ -105,7 +108,7 @@ def init_command(
             cp_url=cp_url or _get_default_cp_url(),
             inject=inject,
             non_interactive=non_interactive,
-            runner_name=runner_name,
+            runner_name=runner_name,  # None → default_runner_name() applied at inject time
         )
     )
 
@@ -115,7 +118,7 @@ async def _run_import_flow(
     cp_url: str,
     inject: bool,
     non_interactive: bool,
-    runner_name: str,
+    runner_name: str | None,
 ) -> None:
     """Execute the full init --import flow."""
     click.echo("\n🚀 Ploston Init - Import MCP Configuration\n")
@@ -269,7 +272,7 @@ async def _complete_import_flow(
     detected_configs: list[DetectedConfig],
     servers: dict[str, ServerInfo],
     selected_names: list[str],
-    runner_name: str,
+    runner_name: str | None,
     inject: bool,
 ) -> None:
     """Complete the import flow after server selection."""
@@ -311,10 +314,13 @@ async def _complete_import_flow(
             }
         mcp_servers[name] = mcp_entry
 
+    # Resolve effective runner name before CP push so it matches bridge entries
+    effective_runner_name = runner_name if runner_name is not None else default_runner_name()
+
     try:
         async with PlostClient(cp_url) as client:
             await client.push_runner_config(
-                runner_name=runner_name,
+                runner_name=effective_runner_name,
                 mcp_servers=mcp_servers,
                 token=runner_token,
             )
@@ -333,6 +339,7 @@ async def _complete_import_flow(
                         config_path=detected.path,
                         imported_servers=list(selected_servers.keys()),
                         cp_url=cp_url,
+                        runner_name=effective_runner_name,
                     )
                     label = "Claude Desktop" if detected.source == "claude_desktop" else "Cursor"
                     click.echo(f"  ✓ Updated {label} config ({detected.path})")
@@ -344,13 +351,34 @@ async def _complete_import_flow(
     click.echo("✅ Import Complete!")
     click.echo("=" * 60)
     click.echo()
-    click.echo(f"  Runner name: {runner_name}")
+    click.echo(f"  Runner name: {effective_runner_name}")
     click.echo(f"  Servers imported: {len(selected_names)}")
     click.echo(f"  Secrets stored: {env_file}")
     click.echo()
-    click.echo("Next steps:")
-    click.echo("  1. Start the local runner:")
-    click.echo(
-        f"     ploston runner start --daemon --cp {cp_url.replace('http', 'ws')}/api/v1/runner/ws --token {runner_token} --name {runner_name}"
-    )
-    click.echo()
+
+    if inject:
+        click.echo("✓ Claude Desktop config updated with drop-in bridge entries.")
+        click.echo()
+        click.echo("  Each original MCP server is now proxied through Ploston:")
+        for name in selected_names:
+            click.echo(
+                f"    {name:<16}→  ploston bridge --expose {name} --runner {effective_runner_name}"
+            )
+        click.echo()
+        click.echo("  A new 'ploston' entry exposes your Ploston workflows.")
+        click.echo()
+        click.echo("  Next steps:")
+        click.echo("    1. Start the local runner:")
+        click.echo("         ploston runner start --daemon")
+        click.echo("    2. Restart Claude Desktop to apply config changes.")
+        click.echo()
+        click.echo("  To restore original config:")
+        click.echo("    Swap 'mcpServers' with '_ploston_imported' in your Claude Desktop config.")
+    else:
+        click.echo("Next steps:")
+        click.echo("  1. Start the local runner:")
+        click.echo(
+            f"     ploston runner start --daemon --cp {cp_url.replace('http', 'ws')}/api/v1/runner/ws"
+            f" --token {runner_token} --name {effective_runner_name}"
+        )
+        click.echo()
