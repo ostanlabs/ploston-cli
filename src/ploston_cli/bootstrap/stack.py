@@ -14,6 +14,7 @@ from pathlib import Path
 
 # Default paths
 PLOSTON_DIR = Path.home() / ".ploston"
+DEFAULT_NETWORK_NAME = "ploston-network"
 
 
 class StackState(Enum):
@@ -27,12 +28,24 @@ class StackState(Enum):
 
 
 @dataclass
+class ServiceInfo:
+    """Detailed info for a single docker-compose service."""
+
+    name: str
+    state: str  # "running", "exited", …
+    health: str  # "healthy", "unhealthy", "starting", "" (no healthcheck)
+    ports: list[str] = field(default_factory=list)  # e.g. ["8022", "3000"]
+    status: str = ""  # human-readable, e.g. "Up 11 minutes (healthy)"
+
+
+@dataclass
 class StackStatus:
     """Status of the docker-compose stack."""
 
     state: StackState
     running_services: list[str] = field(default_factory=list)
     stopped_services: list[str] = field(default_factory=list)
+    service_details: list[ServiceInfo] = field(default_factory=list)
     message: str = ""
 
 
@@ -128,16 +141,45 @@ class StackManager:
             if not services:
                 return StackStatus(StackState.STOPPED, message="No services found")
 
-            running = [
-                s.get("Service", s.get("Name", "unknown"))
-                for s in services
-                if s.get("State") == "running"
-            ]
-            stopped = [
-                s.get("Service", s.get("Name", "unknown"))
-                for s in services
-                if s.get("State") != "running"
-            ]
+            running: list[str] = []
+            stopped: list[str] = []
+            details: list[ServiceInfo] = []
+
+            for s in services:
+                svc_name = s.get("Service", s.get("Name", "unknown"))
+                svc_state = s.get("State", "")
+                if svc_state == "running":
+                    running.append(svc_name)
+                else:
+                    stopped.append(svc_name)
+
+                # Extract published host ports from Publishers list
+                host_ports: list[str] = []
+                for pub in s.get("Publishers", []):
+                    port = pub.get("PublishedPort", 0)
+                    if port and pub.get("URL") not in ("::", ""):
+                        host_ports.append(str(port))
+                    elif port and pub.get("URL") == "":
+                        # No explicit host binding but port is mapped
+                        host_ports.append(str(port))
+
+                # Deduplicate (IPv4 + IPv6 produce two entries per port)
+                seen: set[str] = set()
+                unique_ports: list[str] = []
+                for p in host_ports:
+                    if p not in seen and p != "0":
+                        seen.add(p)
+                        unique_ports.append(p)
+
+                details.append(
+                    ServiceInfo(
+                        name=svc_name,
+                        state=svc_state,
+                        health=s.get("Health", ""),
+                        ports=unique_ports,
+                        status=s.get("Status", ""),
+                    )
+                )
 
             if len(running) == 0:
                 state = StackState.STOPPED
@@ -146,7 +188,7 @@ class StackManager:
             else:
                 state = StackState.PARTIAL
 
-            return StackStatus(state, running, stopped)
+            return StackStatus(state, running, stopped, details)
         except FileNotFoundError:
             return StackStatus(
                 StackState.NOT_FOUND,
@@ -202,7 +244,7 @@ class StackManager:
             return False, str(e)
 
     def down(self, remove_volumes: bool = False) -> tuple[bool, str]:
-        """Stop stack.
+        """Stop stack and clean up the Docker network.
 
         Args:
             remove_volumes: Whether to remove volumes.
@@ -211,7 +253,11 @@ class StackManager:
             Tuple of (success, message).
         """
         if not self.compose_file.exists():
-            return False, "No docker-compose.yaml found"
+            # No compose file — nothing to `docker compose down`, but the
+            # network may still be lingering from a previous run.  Clean it
+            # up so the next bootstrap starts from a clean slate.
+            self._cleanup_network()
+            return True, "No docker-compose.yaml found; network cleaned up"
 
         try:
             args = self._compose_args() + ["down"]
@@ -228,11 +274,70 @@ class StackManager:
             if result.returncode != 0:
                 return False, f"Failed to stop stack: {result.stderr}"
 
+            # Clean up the Docker network to avoid stale references on next bootstrap.
+            # docker compose down removes containers but may leave the network behind
+            # if other containers or stale references are attached to it.
+            self._cleanup_network()
+
             return True, "Stack stopped successfully"
         except FileNotFoundError:
             return False, "Docker not found. Is Docker installed?"
         except Exception as e:
             return False, str(e)
+
+    def _cleanup_network(self) -> None:
+        """Remove the ploston network if it still exists after compose down.
+
+        Tries to read the network name from the compose file's network config.
+        Falls back to DEFAULT_NETWORK_NAME when the compose file is missing or
+        unparseable.  Force-disconnects any lingering containers before removal.
+        Failures are silently ignored since this is best-effort cleanup.
+        """
+        import yaml
+
+        network_name = None
+        try:
+            content = self.compose_file.read_text()
+            compose_data = yaml.safe_load(content)
+            networks = compose_data.get("networks", {})
+            default_net = networks.get("default", {})
+            network_name = default_net.get("name")
+        except Exception:
+            pass
+
+        if not network_name:
+            network_name = DEFAULT_NETWORK_NAME
+
+        # Force-disconnect any containers still attached to the network.
+        # This handles the case where `docker compose down` didn't run
+        # (no compose file) or left orphan containers behind.
+        try:
+            inspect = subprocess.run(
+                [
+                    "docker",
+                    "network",
+                    "inspect",
+                    network_name,
+                    "--format",
+                    "{{range .Containers}}{{.Name}} {{end}}",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if inspect.returncode == 0 and inspect.stdout.strip():
+                for container in inspect.stdout.strip().split():
+                    subprocess.run(
+                        ["docker", "network", "disconnect", "-f", network_name, container],
+                        capture_output=True,
+                    )
+        except Exception:
+            pass
+
+        # Best-effort removal — ignore errors (network may already be gone)
+        subprocess.run(
+            ["docker", "network", "rm", network_name],
+            capture_output=True,
+        )
 
     def restart(self) -> tuple[bool, str]:
         """Restart stack.

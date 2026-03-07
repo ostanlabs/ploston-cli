@@ -109,42 +109,58 @@ class ComposeGenerator:
                 },
                 "restart": "unless-stopped",
             },
-            "native-tools": {
-                "image": native_tools_image,
-                "container_name": "ploston-native-tools",
-                "environment": {
-                    "NATIVE_TOOLS_HOST": "0.0.0.0",
-                    "NATIVE_TOOLS_PORT": "8081",
-                    "REDIS_URL": "redis://redis:6379/0",
-                    "FIRECRAWL_API_KEY": config.firecrawl_key or "",
-                },
-                "depends_on": {
-                    "redis": {"condition": "service_healthy"},
-                },
-                "healthcheck": {
-                    "test": ["CMD", "curl", "-f", "http://localhost:8081/health"],
-                    "interval": "10s",
-                    "timeout": "5s",
-                    "retries": 5,
-                    "start_period": "10s",
-                },
-                "restart": "unless-stopped",
-            },
-            "redis": {
-                "image": "redis:7-alpine",
-                "container_name": "ploston-redis",
-                "ports": [f"{config.redis_port}:6379"],
-                "volumes": ["./data/redis:/data"],
-                "command": "redis-server --appendonly yes --appendfsync everysec",
-                "healthcheck": {
-                    "test": ["CMD", "redis-cli", "ping"],
-                    "interval": "5s",
-                    "timeout": "3s",
-                    "retries": 5,
-                },
-                "restart": "unless-stopped",
-            },
         }
+
+        # When observability is enabled, inject OTEL env vars so the
+        # ploston container forwards logs/traces to the collector (DEC-149).
+        if config.with_observability:
+            services["ploston"]["environment"].update(
+                {
+                    "PLOSTON_LOGS_ENABLED": "true",
+                    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel-collector:4317",
+                    "OTEL_EXPORTER_OTLP_INSECURE": "true",
+                }
+            )
+
+        services.update(
+            {
+                "native-tools": {
+                    "image": native_tools_image,
+                    "container_name": "ploston-native-tools",
+                    "environment": {
+                        "NATIVE_TOOLS_HOST": "0.0.0.0",
+                        "NATIVE_TOOLS_PORT": "8081",
+                        "REDIS_URL": "redis://redis:6379/0",
+                        "FIRECRAWL_API_KEY": config.firecrawl_key or "",
+                    },
+                    "depends_on": {
+                        "redis": {"condition": "service_healthy"},
+                    },
+                    "healthcheck": {
+                        "test": ["CMD", "curl", "-f", "http://localhost:8081/health"],
+                        "interval": "10s",
+                        "timeout": "5s",
+                        "retries": 5,
+                        "start_period": "10s",
+                    },
+                    "restart": "unless-stopped",
+                },
+                "redis": {
+                    "image": "redis:7-alpine",
+                    "container_name": "ploston-redis",
+                    "ports": [f"{config.redis_port}:6379"],
+                    "volumes": ["./data/redis:/data"],
+                    "command": "redis-server --appendonly yes --appendfsync everysec",
+                    "healthcheck": {
+                        "test": ["CMD", "redis-cli", "ping"],
+                        "interval": "5s",
+                        "timeout": "3s",
+                        "retries": 5,
+                    },
+                    "restart": "unless-stopped",
+                },
+            }
+        )
 
         # Build network configuration
         if config.network_external:

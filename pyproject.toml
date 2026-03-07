@@ -57,6 +57,10 @@ Repository = "https://github.com/ostanlabs/ploston-cli"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ploston_cli"]
 
+[tool.hatch.build]
+# _version.py is in .gitignore (auto-generated) but must be included in builds
+artifacts = ["src/ploston_cli/_version.py"]
+
 
 [tool.ruff]
 line-length = 100
@@ -69,6 +73,12 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+filterwarnings = [
+    # CPython 3.12 bug: _UnixReadPipeTransport.__del__ references _closing
+    # which doesn't exist.  Triggered during async test teardown.
+    # https://github.com/python/cpython/issues/114914
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+]
 markers = [
     "bridge: marks tests as bridge tests",
     "bridge_unit: marks tests as bridge unit tests",

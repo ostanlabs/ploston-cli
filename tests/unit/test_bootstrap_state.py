@@ -58,8 +58,11 @@ class TestBootstrapStateManager:
     def test_detect_fresh_install(self):
         """Test detecting fresh install state."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            manager = BootstrapStateManager(base_dir=Path(tmpdir))
-            state = manager.detect_state()
+            with patch("subprocess.run") as mock_run:
+                # No running services, no network
+                mock_run.return_value = MagicMock(returncode=1, stdout="")
+                manager = BootstrapStateManager(base_dir=Path(tmpdir))
+                state = manager.detect_state()
 
             assert state.has_compose_file is False
             assert state.stack_running is False
@@ -110,18 +113,69 @@ class TestBootstrapStateManager:
         assert BootstrapAction.TEARDOWN in actions
 
     def test_execute_action_teardown(self):
-        """Test executing teardown action."""
+        """Test executing teardown action removes generated files and dirs."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            compose_file = Path(tmpdir) / "docker-compose.yaml"
-            compose_file.write_text("version: '3'\nservices: {}")
+            base = Path(tmpdir)
+            # Generated files
+            (base / "docker-compose.yaml").write_text("version: '3'\nservices: {}")
+            (base / "ploston-config.yaml").write_text("port: 8022")
+            (base / ".env").write_text("FOO=bar")
+            # Observability dir (deployed by AssetManager)
+            obs = base / "observability" / "prometheus"
+            obs.mkdir(parents=True)
+            (obs / "prometheus.yml").write_text("global: {}")
+            # Stale Docker-created dirs (directories where files should be)
+            stale = base / "prometheus" / "prometheus.yml"
+            stale.mkdir(parents=True)
+            # Redis bind-mount data (should be wiped)
+            redis_data = base / "data" / "redis"
+            redis_data.mkdir(parents=True)
+            (redis_data / "appendonly.aof").write_text("redis-aof-data")
+            # User state that must survive
+            (base / "runner.pid").write_text("12345")
+            (base / "runner.log").write_text("log")
+            tokens = base / "tokens"
+            tokens.mkdir()
+            (tokens / "tok.json").write_text("{}")
+            # Other data dirs that should survive
+            ploston_data = base / "data" / "ploston"
+            ploston_data.mkdir(parents=True, exist_ok=True)
+            (ploston_data / "app.db").write_text("")
 
-            with patch("subprocess.run") as mock_run:
+            with (
+                patch("subprocess.run") as mock_run,
+                patch(
+                    "ploston_cli.bootstrap.state.runner_is_running",
+                    return_value=(True, 9999),
+                ) as mock_is_running,
+                patch(
+                    "ploston_cli.bootstrap.state.stop_runner",
+                ) as mock_stop,
+            ):
                 mock_run.return_value = MagicMock(returncode=0)
 
-                manager = BootstrapStateManager(base_dir=Path(tmpdir))
+                manager = BootstrapStateManager(base_dir=base)
                 success, msg = manager.execute_action(BootstrapAction.TEARDOWN)
 
                 assert success is True
+                # Runner daemon stopped before teardown
+                mock_is_running.assert_called_once()
+                mock_stop.assert_called_once()
+                # Generated files removed
+                assert not (base / "docker-compose.yaml").exists()
+                assert not (base / "ploston-config.yaml").exists()
+                assert not (base / ".env").exists()
+                # Generated dirs removed
+                assert not (base / "observability").exists()
+                assert not (base / "prometheus").exists()
+                # Redis data wiped
+                assert not (base / "data" / "redis").exists()
+                # User state preserved
+                assert (base / "runner.pid").exists()
+                assert (base / "runner.log").exists()
+                assert (base / "tokens" / "tok.json").exists()
+                # Other data dirs preserved
+                assert (base / "data" / "ploston" / "app.db").exists()
 
     def test_execute_action_restart(self):
         """Test executing restart action."""

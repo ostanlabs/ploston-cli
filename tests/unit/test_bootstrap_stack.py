@@ -72,20 +72,54 @@ class TestStackManager:
             assert status.state == StackState.NOT_FOUND
 
     def test_status_with_running_services(self):
-        """Test status with running services."""
+        """Test status with running services including port and health info."""
         with tempfile.TemporaryDirectory() as tmpdir:
             compose_file = Path(tmpdir) / "docker-compose.yaml"
             compose_file.write_text("version: '3'\nservices:\n  ploston:\n    image: test")
 
+            ps_json = (
+                '{"Service":"ploston","State":"running","Health":"healthy","Status":"Up 5m (healthy)",'
+                '"Publishers":[{"URL":"0.0.0.0","TargetPort":8022,"PublishedPort":8022,"Protocol":"tcp"},'
+                '{"URL":"::","TargetPort":8022,"PublishedPort":8022,"Protocol":"tcp"}]}\n'
+                '{"Service":"redis","State":"running","Health":"healthy","Status":"Up 5m (healthy)",'
+                '"Publishers":[{"URL":"0.0.0.0","TargetPort":6379,"PublishedPort":6379,"Protocol":"tcp"},'
+                '{"URL":"::","TargetPort":6379,"PublishedPort":6379,"Protocol":"tcp"}]}\n'
+            )
+
             with patch("subprocess.run") as mock_run:
-                mock_run.return_value = MagicMock(
-                    returncode=0,
-                    stdout='{"Service":"ploston","State":"running"}\n{"Service":"redis","State":"running"}\n',
-                )
+                mock_run.return_value = MagicMock(returncode=0, stdout=ps_json)
                 manager = StackManager(compose_dir=Path(tmpdir))
                 status = manager.status()
 
-                assert status.state in [StackState.RUNNING, StackState.PARTIAL]
+                assert status.state == StackState.RUNNING
+                assert len(status.service_details) == 2
+
+                ploston_svc = status.service_details[0]
+                assert ploston_svc.name == "ploston"
+                assert ploston_svc.health == "healthy"
+                assert "8022" in ploston_svc.ports
+                # IPv4+IPv6 duplicates should be deduplicated
+                assert ploston_svc.ports.count("8022") == 1
+
+    def test_status_service_without_published_ports(self):
+        """Test service with no published ports (e.g. internal-only)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            compose_file = Path(tmpdir) / "docker-compose.yaml"
+            compose_file.write_text("version: '3'\nservices:\n  worker:\n    image: test")
+
+            ps_json = (
+                '{"Service":"worker","State":"running","Health":"",'
+                '"Publishers":[{"URL":"","TargetPort":8081,"PublishedPort":0,"Protocol":"tcp"}]}\n'
+            )
+
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0, stdout=ps_json)
+                manager = StackManager(compose_dir=Path(tmpdir))
+                status = manager.status()
+
+                assert status.state == StackState.RUNNING
+                worker = status.service_details[0]
+                assert worker.ports == []  # PublishedPort=0 means not exposed
 
     def test_up_success(self):
         """Test starting the stack."""
@@ -142,9 +176,10 @@ class TestStackManager:
                 success, msg = manager.down(remove_volumes=True)
 
                 assert success is True
-                # Check that -v flag was passed
-                call_args = mock_run.call_args[0][0]
-                assert "-v" in call_args
+                # Check that -v flag was passed in the compose down call
+                # (first call; subsequent calls are network cleanup)
+                compose_call_args = mock_run.call_args_list[0][0][0]
+                assert "-v" in compose_call_args
 
     def test_restart(self):
         """Test restarting the stack."""

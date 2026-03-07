@@ -11,6 +11,8 @@ Handles:
 import asyncio
 import logging
 import signal
+import uuid
+from datetime import datetime, timezone
 from queue import Full, Queue
 from typing import TYPE_CHECKING, Optional
 
@@ -59,6 +61,14 @@ class BridgeLifecycle:
         self._cp_server_info: Optional[dict] = None
         self._sse_task: Optional[asyncio.Task] = None
         self._request_queue: Queue = Queue(maxsize=max_queue_size)
+
+        # Bridge context propagation (DEC-142)
+        self.bridge_id: str = str(uuid.uuid4())
+        self.session_start: str = datetime.now(timezone.utc).isoformat()
+        self._queue_drops_since_connect: int = 0
+
+        # Wire bridge context into proxy headers
+        self.proxy.set_lifecycle(self)
 
     @property
     def is_running(self) -> bool:
@@ -214,6 +224,7 @@ class BridgeLifecycle:
             logger.debug(f"Queued request {request.get('id')}")
             return True
         except Full:
+            self._queue_drops_since_connect += 1
             logger.warning("Request queue full, rejecting request")
             return False
 

@@ -57,12 +57,14 @@ class TestComposeGenerator:
     def test_generate_without_observability_services(self):
         """Test that base compose does NOT include observability services.
 
-        Observability is now handled by a separate compose overlay via AssetManager.
+        Observability services are handled by a separate compose overlay via
+        AssetManager. The flag only injects OTEL env vars into the ploston
+        service.
         """
         with tempfile.TemporaryDirectory() as tmpdir:
             config = ComposeConfig(
                 output_dir=Path(tmpdir),
-                with_observability=True,  # Flag is still accepted but ignored by generator
+                with_observability=True,
             )
             generator = ComposeGenerator()
             compose_file = generator.generate(config)
@@ -77,6 +79,38 @@ class TestComposeGenerator:
             assert "ploston" in content["services"]
             assert "redis" in content["services"]
             assert "native-tools" in content["services"]
+
+    def test_observability_injects_otel_env_vars(self):
+        """Test that with_observability=True injects OTEL env vars (DEC-149)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = ComposeConfig(
+                output_dir=Path(tmpdir),
+                with_observability=True,
+            )
+            generator = ComposeGenerator()
+            compose_file = generator.generate(config)
+
+            content = yaml.safe_load(compose_file.read_text())
+            env = content["services"]["ploston"]["environment"]
+            assert env["PLOSTON_LOGS_ENABLED"] == "true"
+            assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://otel-collector:4317"
+            assert env["OTEL_EXPORTER_OTLP_INSECURE"] == "true"
+
+    def test_no_observability_no_otel_env_vars(self):
+        """Test that with_observability=False does NOT inject OTEL env vars."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = ComposeConfig(
+                output_dir=Path(tmpdir),
+                with_observability=False,
+            )
+            generator = ComposeGenerator()
+            compose_file = generator.generate(config)
+
+            content = yaml.safe_load(compose_file.read_text())
+            env = content["services"]["ploston"]["environment"]
+            assert "PLOSTON_LOGS_ENABLED" not in env
+            assert "OTEL_EXPORTER_OTLP_ENDPOINT" not in env
+            assert "OTEL_EXPORTER_OTLP_INSECURE" not in env
 
     def test_generate_custom_port(self):
         """Test generating compose with custom port."""

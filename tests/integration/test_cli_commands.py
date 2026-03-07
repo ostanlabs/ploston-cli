@@ -24,6 +24,18 @@ class TestCLIBasicCommands:
         # Should contain version info
         assert "ploston" in result.stdout.lower() or "version" in result.stdout.lower()
 
+    def test_cli_001b_version_flag(self):
+        """CLI-001b: --version flag prints version and exits."""
+        from click.testing import CliRunner
+
+        from ploston_cli.main import cli
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["--version"])
+        assert result.exit_code == 0
+        assert "ploston" in result.output.lower()
+        assert "version" in result.output.lower()
+
     def test_cli_002_help(self):
         """CLI-002: Help command works."""
         result = subprocess.run(

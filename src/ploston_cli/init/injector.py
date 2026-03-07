@@ -53,6 +53,20 @@ def sanitise_runner_name(name: str, warn: bool = True) -> str:
     return sanitised
 
 
+def _resolve_ploston_command() -> str:
+    """Resolve the absolute path to the ``ploston`` binary.
+
+    GUI applications (Claude Desktop, Cursor) use a minimal PATH that
+    typically excludes pyenv shims, virtualenvs, and other shell-injected
+    directories.  Using the absolute path ensures the bridge command is
+    found regardless of the caller's PATH.
+
+    Falls back to the bare ``"ploston"`` name if ``shutil.which`` cannot
+    locate the binary (e.g. running in a test environment).
+    """
+    return shutil.which("ploston") or "ploston"
+
+
 def _bridge_entry(cp_url: str, expose: str, runner_name: str | None) -> dict:
     """Build a single mcpServers entry for a ploston bridge command.
 
@@ -67,7 +81,7 @@ def _bridge_entry(cp_url: str, expose: str, runner_name: str | None) -> dict:
     args: list[str] = ["bridge", "--url", cp_url, "--expose", expose]
     if runner_name:
         args += ["--runner", runner_name]
-    return {"command": "ploston", "args": args}
+    return {"command": _resolve_ploston_command(), "args": args}
 
 
 def inject_ploston_into_config(

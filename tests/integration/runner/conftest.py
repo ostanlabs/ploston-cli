@@ -11,7 +11,7 @@ import threading
 from collections.abc import Generator
 
 import pytest
-from websockets.server import serve as ws_serve
+from websockets.asyncio.server import serve as ws_serve
 
 
 class MockControlPlane:

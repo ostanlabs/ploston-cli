@@ -10,8 +10,10 @@ build/
 .hypothesis/
 .venv/
 
+# Auto-generated version file (stamped by make install-cli-from-source)
+src/ploston_cli/_version.py
+
 # Coverage
 .coverage
 coverage.xml
 htmlcov/
-
