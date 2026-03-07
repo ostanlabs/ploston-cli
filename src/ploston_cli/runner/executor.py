@@ -227,7 +227,7 @@ class WorkflowExecutor:
             Response dict with tool call result
         """
         tool_name = params.get("tool", "unknown")
-        tool_args = params.get("args", {})
+        tool_args = params.get("arguments", {})
 
         logger.info(f"Received tool call request: {tool_name}")
         logger.debug(f"Tool call params: tool={tool_name} args={tool_args}")
