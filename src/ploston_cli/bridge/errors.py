@@ -18,6 +18,7 @@ JSONRPC_SERVER_ERROR = -32000  # -32000 to -32099 reserved for implementation-de
 BRIDGE_AUTH_ERROR = -32001
 BRIDGE_CONNECTION_ERROR = -32002
 BRIDGE_TIMEOUT_ERROR = -32003
+BRIDGE_EXPOSE_AMBIGUITY_ERROR = -32004
 
 
 @dataclass
@@ -35,6 +36,15 @@ class BridgeError(Exception):
         if self.data:
             error["data"] = self.data
         return error
+
+
+@dataclass
+class ExposeAmbiguityError(BridgeError):
+    """Ambiguous --expose: server found on multiple runners."""
+
+    code: int = BRIDGE_EXPOSE_AMBIGUITY_ERROR
+    message: str = "Ambiguous expose target"
+    retryable: bool = False
 
 
 @dataclass

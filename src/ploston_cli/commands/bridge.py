@@ -140,6 +140,18 @@ def setup_logging(log_level: str, log_file: str | None) -> None:
     default="all",
     help="Which tools to expose to the agent: all (default), local (runner only), native (native-tools only)",
 )
+@click.option(
+    "--expose",
+    envvar="PLOSTON_EXPOSE",
+    default=None,
+    help="Inline tool filter: MCP server name or 'workflows'. Mutually exclusive with --tools.",
+)
+@click.option(
+    "--runner",
+    envvar="PLOSTON_RUNNER",
+    default=None,
+    help="Runner name (required when --expose targets a runner-hosted server with ambiguity)",
+)
 def bridge_command(
     url: str,
     token: str | None,
@@ -150,6 +162,8 @@ def bridge_command(
     retry_delay: float,
     insecure: bool,
     tools: str,
+    expose: str | None,
+    runner: str | None,
 ) -> None:
     """Start MCP bridge to Control Plane.
 
@@ -169,6 +183,11 @@ def bridge_command(
       native - Native tools only (filesystem, kafka, etc.)
 
     \b
+    Inline expose (--expose):
+      <server>   - Expose tools from this MCP server only (e.g. filesystem, github)
+      workflows  - Expose only workflow tools (workflow_ prefix)
+
+    \b
     Environment variables:
       PLOSTON_URL       - Control Plane URL
       PLOSTON_TOKEN     - Bearer token
@@ -177,6 +196,8 @@ def bridge_command(
       PLOSTON_LOG_FILE  - Log file path
       PLOSTON_INSECURE  - Skip SSL verification
       PLOSTON_TOOLS     - Tool filter (all, local, native)
+      PLOSTON_EXPOSE    - Inline tool filter (server name or 'workflows')
+      PLOSTON_RUNNER    - Runner name for disambiguation
       PLOSTON_DEBUG     - Enable debug logging (set to 1)
 
     \b
@@ -184,16 +205,27 @@ def bridge_command(
       PLOSTON_DEBUG=1 ploston bridge --url http://localhost:8022
       tail -f ~/.ploston/bridge.log
     """
+    # Validate mutual exclusivity of --expose and --tools
+    if expose and tools != "all":
+        raise click.UsageError("--expose and --tools are mutually exclusive.")
+
     # Setup logging (to file, not stdout)
     setup_logging(log_level, log_file)
 
     effective_log_level = "debug" if DEBUG_MODE else log_level
 
     logger.info(f"Starting bridge to {url}")
-    logger.info(f"Debug mode: {DEBUG_MODE}, Log level: {effective_log_level}, Tools: {tools}")
+    logger.info(
+        f"Debug mode: {DEBUG_MODE}, Log level: {effective_log_level}, "
+        f"Tools: {tools}, Expose: {expose}, Runner: {runner}"
+    )
 
     try:
-        asyncio.run(run_bridge(url, token, timeout, retry_attempts, retry_delay, insecure, tools))
+        asyncio.run(
+            run_bridge(
+                url, token, timeout, retry_attempts, retry_delay, insecure, tools, expose, runner
+            )
+        )
     except KeyboardInterrupt:
         logger.info("Bridge interrupted by user")
         sys.exit(0)
@@ -213,10 +245,12 @@ async def run_bridge(
     retry_delay: float,
     insecure: bool = False,
     tools_filter: str = "all",
+    expose: str | None = None,
+    runner: str | None = None,
 ) -> None:
     """Run the bridge main loop."""
     proxy = BridgeProxy(url=url, token=token, timeout=timeout, insecure=insecure)
-    server = BridgeServer(proxy=proxy, tools_filter=tools_filter)
+    server = BridgeServer(proxy=proxy, tools_filter=tools_filter, expose=expose, runner=runner)
 
     # Startup health check with retry
     for attempt in range(retry_attempts):
