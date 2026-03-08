@@ -31,6 +31,11 @@ def tools_with_runner():
         {"name": "python_exec", "description": "Execute Python", "inputSchema": {}},
         {"name": "slack_post", "description": "Post to Slack", "inputSchema": {}},
         {"name": "workflow_deploy_pipeline", "description": "Deploy pipeline", "inputSchema": {}},
+        {
+            "name": "ploston:workflow_schema",
+            "description": "Get workflow YAML schema",
+            "inputSchema": {},
+        },
     ]
 
 
@@ -403,8 +408,10 @@ class TestExposeWorkflows:
         response = await server.handle_request(request)
 
         tools = response["result"]["tools"]
-        assert len(tools) == 1
-        assert tools[0]["name"] == "workflow_deploy_pipeline"
+        tool_names = [t["name"] for t in tools]
+        assert len(tools) == 2
+        assert "workflow_deploy_pipeline" in tool_names
+        assert "ploston:workflow_schema" in tool_names
 
     @pytest.mark.asyncio
     async def test_no_stripping_applied(self, mock_proxy, tools_with_runner):
@@ -418,8 +425,9 @@ class TestExposeWorkflows:
         request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
         response = await server.handle_request(request)
 
-        tools = response["result"]["tools"]
-        assert tools[0]["name"] == "workflow_deploy_pipeline"  # Not stripped
+        tool_names = [t["name"] for t in response["result"]["tools"]]
+        assert "workflow_deploy_pipeline" in tool_names  # Not stripped
+        assert "ploston:workflow_schema" in tool_names  # Not stripped
 
     @pytest.mark.asyncio
     async def test_non_workflow_tools_excluded(self, mock_proxy, tools_with_runner):
@@ -452,4 +460,4 @@ class TestExposeWorkflows:
         request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
         response = await server.handle_request(request)
 
-        assert len(response["result"]["tools"]) == 1
+        assert len(response["result"]["tools"]) == 2
