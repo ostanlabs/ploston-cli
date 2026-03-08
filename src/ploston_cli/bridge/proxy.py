@@ -64,11 +64,12 @@ class BridgeProxy:
         self._closed = False
         self._request_id = 0
 
-        # Bridge context propagation (DEC-142).
+        # Bridge context propagation (DEC-142, DEC-157).
         # Set by BridgeLifecycle after construction.
         self.bridge_id: str | None = None
         self.bridge_expose: str | None = None
         self.bridge_session_start: str | None = None
+        self.bridge_runner: str | None = None  # DEC-157: runner name for tool resolution
         self._lifecycle: Any | None = None  # back-ref for queue drops
 
     def set_lifecycle(self, lifecycle: Any) -> None:
@@ -91,6 +92,9 @@ class BridgeProxy:
             headers["X-Bridge-Queue-Drops"] = str(self._lifecycle._queue_drops_since_connect)
         if self.bridge_session_start:
             headers["X-Bridge-Session-Start"] = self.bridge_session_start
+        # DEC-157: Runner name for workflow tool resolution
+        if self.bridge_runner:
+            headers["X-Bridge-Runner"] = self.bridge_runner
         return headers
 
     async def _ensure_client(self) -> httpx.AsyncClient:

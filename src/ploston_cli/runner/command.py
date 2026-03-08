@@ -44,6 +44,14 @@ def run_runner(cp: str, token: str, name: str) -> None:
         # Create availability reporter (monitors MCPs and reports to CP)
         availability = AvailabilityReporter(connection=conn)
 
+        # Wire reconnection callback to re-report MCP availability after reconnect
+        async def on_reconnect() -> None:
+            """Re-report availability after successful reconnection."""
+            logger.info("Re-reporting MCP availability after reconnect")
+            await availability._report_availability()
+
+        conn._on_reconnect = on_reconnect
+
         # Create tool proxy (for proxying unavailable tools to CP)
         tool_proxy = ToolProxy(connection=conn, availability_reporter=availability)
 

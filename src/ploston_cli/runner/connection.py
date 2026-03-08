@@ -48,6 +48,7 @@ class RunnerConnection:
         on_workflow_execute: MessageHandler | None = None,
         on_tool_call: MessageHandler | None = None,
         on_disconnect: Callable[[], Awaitable[None]] | None = None,
+        on_reconnect: Callable[[], Awaitable[None]] | None = None,
     ):
         """Initialize runner connection.
 
@@ -56,7 +57,8 @@ class RunnerConnection:
             on_config_push: Handler for config/push messages
             on_workflow_execute: Handler for workflow/execute messages
             on_tool_call: Handler for tool/call messages
-            on_disconnect: Callback when connection is lost (runner will exit)
+            on_disconnect: Callback when all reconnect attempts are exhausted
+            on_reconnect: Callback after successful reconnection (e.g. re-report availability)
         """
         self._config = config
         self._ws: ClientConnection | None = None
@@ -68,6 +70,7 @@ class RunnerConnection:
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._receive_task: asyncio.Task[None] | None = None
         self._on_disconnect = on_disconnect
+        self._on_reconnect = on_reconnect
 
         # Message handlers
         self._handlers: dict[str, MessageHandler] = {}
@@ -368,20 +371,109 @@ class RunnerConnection:
     async def _handle_disconnect(self) -> None:
         """Handle unexpected disconnection.
 
-        Instead of reconnecting, we exit the runner. This is the expected behavior
-        because the runner should be managed by a process supervisor (systemd, etc.)
-        that will restart it if needed.
+        Attempts to reconnect with exponential backoff. If all attempts
+        are exhausted, signals the runner to exit and calls the
+        on_disconnect callback.
         """
         if not self._should_run:
             return
 
-        self._status = RunnerConnectionStatus.DISCONNECTED
-        logger.error("Connection to Control Plane lost. Runner will exit.")
+        self._status = RunnerConnectionStatus.RECONNECTING
+        logger.warning("Connection to Control Plane lost. Attempting to reconnect...")
 
-        # Signal that we should stop running
+        # Cancel heartbeat during reconnection (no websocket to send on)
+        if self._heartbeat_task:
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            self._heartbeat_task = None
+
+        # Close stale websocket
+        if self._ws:
+            try:
+                await self._ws.close()
+            except Exception:
+                pass
+            self._ws = None
+
+        # Fail all pending requests
+        for future in self._pending_requests.values():
+            if not future.done():
+                future.set_exception(ConnectionError("Connection lost during reconnection"))
+        self._pending_requests.clear()
+
+        # Reconnection loop with exponential backoff
+        delay = self._config.reconnect_delay
+        max_attempts = self._config.max_reconnect_attempts
+
+        for attempt in range(1, max_attempts + 1):
+            if not self._should_run:
+                return
+
+            logger.info(f"Reconnecting to Control Plane (attempt {attempt}/{max_attempts})...")
+
+            try:
+                await asyncio.sleep(delay)
+
+                # Attempt to establish a fresh connection
+                self._ws = await websockets.connect(
+                    self._config.control_plane_url,
+                    additional_headers={"Authorization": f"Bearer {self._config.auth_token}"},
+                )
+
+                # Start receive loop before auth
+                self._receive_task = asyncio.create_task(self._receive_loop())
+
+                # Re-authenticate
+                await self._authenticate()
+
+                self._status = RunnerConnectionStatus.CONNECTED
+                self._reconnect_delay = self._config.reconnect_delay  # Reset delay
+
+                # Restart heartbeat
+                self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+
+                logger.info(
+                    f"Reconnected to Control Plane as '{self._config.runner_name}' "
+                    f"(attempt {attempt}/{max_attempts})"
+                )
+
+                # Notify caller (e.g. re-report availability)
+                if self._on_reconnect:
+                    try:
+                        await self._on_reconnect()
+                    except Exception as e:
+                        logger.error(f"Error in reconnect callback: {e}")
+
+                return  # Success — back to run() awaiting receive_task
+
+            except Exception as e:
+                logger.warning(f"Reconnection attempt {attempt}/{max_attempts} failed: {e}")
+                # Close any partially-opened websocket
+                if self._ws:
+                    try:
+                        await self._ws.close()
+                    except Exception:
+                        pass
+                    self._ws = None
+                # Cancel receive task if it was started
+                if self._receive_task:
+                    self._receive_task.cancel()
+                    try:
+                        await self._receive_task
+                    except asyncio.CancelledError:
+                        pass
+                    self._receive_task = None
+
+                delay = min(delay * 2, self._config.max_reconnect_delay)
+
+        # All attempts exhausted
+        self._status = RunnerConnectionStatus.DISCONNECTED
+        logger.error(f"All {max_attempts} reconnection attempts exhausted. Runner will exit.")
         self._should_run = False
 
-        # Call the disconnect callback if set
         if self._on_disconnect:
             try:
                 await self._on_disconnect()
@@ -389,9 +481,23 @@ class RunnerConnection:
                 logger.error(f"Error in disconnect callback: {e}")
 
     async def run(self) -> None:
-        """Run the connection (connect and maintain)."""
+        """Run the connection (connect and maintain).
+
+        Connects to the CP and waits for the receive loop. If the connection
+        drops, _handle_disconnect will attempt to reconnect. This method
+        only returns when reconnection is exhausted or disconnect is requested.
+        """
         await self.connect()
 
-        # Wait for tasks to complete (they run until disconnect)
-        if self._receive_task:
-            await self._receive_task
+        # Wait for receive task; it may be replaced during reconnection
+        while self._should_run:
+            if self._receive_task:
+                await self._receive_task
+                # If we're reconnecting, _handle_disconnect will set a new
+                # receive_task. Loop back to await it.
+                if self._status == RunnerConnectionStatus.RECONNECTING:
+                    # Wait for reconnection to complete
+                    while self._should_run and self._status == RunnerConnectionStatus.RECONNECTING:
+                        await asyncio.sleep(0.1)
+                    continue
+            break
