@@ -224,6 +224,12 @@ class StackManager:
 
             # Start services
             args = self._compose_args() + ["up"]
+            if not pull:
+                # When using pre-built local images (e.g. --build-from-source),
+                # pass --no-build to prevent Docker Compose V2 from attempting
+                # to build services that have no build context, which causes a
+                # "No services to build" warning and non-zero exit code.
+                args.append("--no-build")
             if detach:
                 args.append("-d")
 
