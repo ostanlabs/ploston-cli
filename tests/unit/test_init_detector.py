@@ -65,6 +65,88 @@ class TestConfigDetector:
         # ServerInfo has env as a dict attribute
         assert result.servers["github"].env["GITHUB_TOKEN"] == "ghp_xxx"
 
+    def test_literal_secret_marked_as_available(self, detector, tmp_path):
+        """Literal secrets in Claude config should be marked as available.
+
+        When a token value like 'ghp_abc123...' is present directly in the
+        config (not as a ${VAR} reference), the env var should show as
+        available because the value will be extracted into .env during import.
+        """
+        config_file = tmp_path / "claude_desktop_config.json"
+        config_data = {
+            "mcpServers": {
+                "github": {
+                    "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-github"],
+                    "env": {"GITHUB_TOKEN": "ghp_abcdefghijklmnopqrstuvwxyz1234567890"},
+                },
+            }
+        }
+        config_file.write_text(json.dumps(config_data))
+
+        # Ensure GITHUB_TOKEN is NOT in os.environ
+        with (
+            patch.object(detector, "get_config_path", return_value=config_file),
+            patch.dict("os.environ", {}, clear=True),
+        ):
+            result = detector.detect_source("claude_desktop")
+
+        github = result.servers["github"]
+        assert "GITHUB_TOKEN" in github.env_vars_required
+        # Literal value is present in config → should be marked available
+        assert github.env_vars_available["GITHUB_TOKEN"] is True
+        assert github.all_env_vars_set is True
+
+    def test_env_var_ref_checked_against_os_environ(self, detector, tmp_path):
+        """${VAR} references should still be checked against os.environ."""
+        config_file = tmp_path / "claude_desktop_config.json"
+        config_data = {
+            "mcpServers": {
+                "github": {
+                    "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-github"],
+                    "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+                },
+            }
+        }
+        config_file.write_text(json.dumps(config_data))
+
+        # ${VAR} ref with the var NOT in os.environ → should be unavailable
+        with (
+            patch.object(detector, "get_config_path", return_value=config_file),
+            patch.dict("os.environ", {}, clear=True),
+        ):
+            result = detector.detect_source("claude_desktop")
+
+        github = result.servers["github"]
+        assert "GITHUB_TOKEN" in github.env_vars_required
+        assert github.env_vars_available["GITHUB_TOKEN"] is False
+        assert github.all_env_vars_set is False
+
+    def test_env_var_ref_available_when_set(self, detector, tmp_path):
+        """${VAR} references should be available when set in os.environ."""
+        config_file = tmp_path / "claude_desktop_config.json"
+        config_data = {
+            "mcpServers": {
+                "github": {
+                    "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-github"],
+                    "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+                },
+            }
+        }
+        config_file.write_text(json.dumps(config_data))
+
+        with (
+            patch.object(detector, "get_config_path", return_value=config_file),
+            patch.dict("os.environ", {"GITHUB_TOKEN": "ghp_from_env"}, clear=True),
+        ):
+            result = detector.detect_source("claude_desktop")
+
+        github = result.servers["github"]
+        assert github.env_vars_available["GITHUB_TOKEN"] is True
+        assert github.all_env_vars_set is True
+
     def test_detect_cursor_not_found(self, detector, tmp_path):
         """Test detection when Cursor config doesn't exist."""
         with patch.object(detector, "get_config_path", return_value=tmp_path / "nonexistent"):

@@ -528,6 +528,50 @@ def restart_runner():
         sys.exit(1)
 
 
+@bootstrap.command()
+def rollback():
+    """Restore Claude Desktop and Cursor configs to their pre-injection state.
+
+    Scans for configs that were modified by ``ploston init --import --inject``
+    and restores them from the most recent backup.  If no backup is found,
+    prints instructions for manual restoration.
+
+    \b
+    This is safe to run at any time — if no injection is detected the command
+    is a no-op.
+    """
+    detector = ConfigDetector()
+    configs = detector.detect_all()
+
+    restored = 0
+    for config in configs:
+        if not config.path or not config.path.exists():
+            continue
+        if not is_already_injected(config.path):
+            continue
+
+        label = "Claude Desktop" if config.source == "claude_desktop" else "Cursor"
+        backups = list_backups(config.path)
+        if backups:
+            restore_config_from_backup(config.path, backups[0])
+            click.echo(f"  ✓ Restored {label} config from backup ({backups[0].name})")
+            restored += 1
+        else:
+            click.echo(
+                f"  ⚠ {label} config has Ploston entries but no backup found.\n"
+                f"    Swap '_ploston_imported' back into 'mcpServers' manually in:\n"
+                f"    {config.path}"
+            )
+
+    if restored:
+        click.echo(f"\n✓ {restored} config(s) restored. Restart Claude Desktop / Cursor to apply.")
+    elif not any(
+        config.path and config.path.exists() and is_already_injected(config.path)
+        for config in configs
+    ):
+        click.echo("No injected configs found — nothing to roll back.")
+
+
 async def _run_bootstrap(
     target: str,
     images: ImageConfig,
