@@ -56,12 +56,12 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_chain_links_total[24h]))",
-          "legendFormat": "Chain Links (24h)",
+          "expr": "sum(increase(ploston_chain_links_total{bridge_id=~\"$bridge_id\"}[$__range]))",
+          "legendFormat": "Chain Links",
           "refId": "A"
         }
       ],
-      "title": "Chain Links Detected (24h)",
+      "title": "Chain Links Detected",
       "type": "stat"
     },
     {
@@ -111,7 +111,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "count(count by (from_tool, to_tool) (ploston_chain_links_total))",
+          "expr": "count(count by (from_tool, to_tool)(increase(ploston_chain_links_total{bridge_id=~\"$bridge_id\"}[$__range]) > 0))",
           "legendFormat": "Unique Chains",
           "refId": "A"
         }
@@ -166,12 +166,12 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_chain_links_total[24h])) * 1500",
-          "legendFormat": "Potential Savings",
+          "expr": "sum(increase(ploston_tokens_saved_total[$__range]))",
+          "legendFormat": "Token Savings",
           "refId": "A"
         }
       ],
-      "title": "Potential Token Savings",
+      "title": "Token Savings",
       "type": "stat"
     },
     {
@@ -250,12 +250,12 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "topk(10, sum by (from_tool, to_tool) (increase(ploston_chain_links_total[24h])))",
+          "expr": "topk(10, sum by (from_tool, to_tool) (increase(ploston_chain_links_total{bridge_id=~\"$bridge_id\"}[$__range])))",
           "legendFormat": "{{from_tool}} → {{to_tool}}",
           "refId": "A"
         }
       ],
-      "title": "Top Tool Chains (24h)",
+      "title": "Top Tool Chains",
       "type": "barchart"
     },
     {
@@ -335,7 +335,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(ploston_chain_links_total[5m])) * 60",
+          "expr": "sum(rate(ploston_chain_links_total{bridge_id=~\"$bridge_id\"}[5m])) * 60",
           "legendFormat": "Chains/min",
           "refId": "A"
         }
@@ -395,7 +395,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum by (from_tool) (increase(ploston_chain_links_total[24h]))",
+          "expr": "sum by (from_tool) (increase(ploston_chain_links_total{bridge_id=~\"$bridge_id\"}[$__range]))",
           "legendFormat": "{{from_tool}}",
           "refId": "A"
         }
@@ -455,7 +455,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum by (to_tool) (increase(ploston_chain_links_total[24h]))",
+          "expr": "sum by (to_tool) (increase(ploston_chain_links_total{bridge_id=~\"$bridge_id\"}[$__range]))",
           "legendFormat": "{{to_tool}}",
           "refId": "A"
         }
@@ -473,29 +473,13 @@
       {
         "current": { "selected": true, "text": "All", "value": "$__all" },
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(ploston_workflow_executions_total, workflow_id)",
-        "hide": 0,
-        "includeAll": true,
-        "multi": true,
-        "name": "workflow",
-        "options": [],
-        "query": { "query": "label_values(ploston_workflow_executions_total, workflow_id)", "refId": "StandardVariableQuery" },
-        "refresh": 2,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
-      },
-      {
-        "current": { "selected": true, "text": "All", "value": "$__all" },
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(ploston_tool_invocations_total, bridge_id)",
+        "definition": "label_values(ploston_chain_links_total, bridge_id)",
         "hide": 0,
         "includeAll": true,
         "multi": true,
         "name": "bridge_id",
         "options": [],
-        "query": { "query": "label_values(ploston_tool_invocations_total, bridge_id)", "refId": "StandardVariableQuery" },
+        "query": { "query": "label_values(ploston_chain_links_total, bridge_id)", "refId": "StandardVariableQuery" },
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
