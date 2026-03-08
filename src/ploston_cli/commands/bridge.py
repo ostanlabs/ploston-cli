@@ -263,6 +263,9 @@ async def run_bridge(
     # Propagate --expose value so CP can see which filter this bridge uses
     if expose:
         proxy.bridge_expose = expose
+    # DEC-157: Propagate runner name for workflow tool resolution
+    if runner:
+        proxy.bridge_runner = runner
 
     server = BridgeServer(proxy=proxy, tools_filter=tools_filter, expose=expose, runner=runner)
 

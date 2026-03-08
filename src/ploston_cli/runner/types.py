@@ -123,6 +123,7 @@ class RunnerConfig:
     runner_name: str
     reconnect_delay: float = 5.0
     max_reconnect_delay: float = 60.0
+    max_reconnect_attempts: int = 10
     heartbeat_interval: float = 30.0
     health_check_interval: float = 30.0
 

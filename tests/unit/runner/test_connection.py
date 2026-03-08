@@ -203,3 +203,152 @@ class TestConnectionStatus:
         assert RunnerConnectionStatus.CONNECTING.value == "connecting"
         assert RunnerConnectionStatus.CONNECTED.value == "connected"
         assert RunnerConnectionStatus.RECONNECTING.value == "reconnecting"
+
+
+@pytest.mark.runner_unit
+class TestReconnection:
+    """Tests for automatic reconnection on disconnect."""
+
+    @pytest.fixture
+    def reconnect_config(self):
+        """Config with fast reconnection for tests."""
+        return RunnerConfig(
+            control_plane_url="wss://cp.example.com/runner",
+            auth_token="test-token",
+            runner_name="test-runner",
+            reconnect_delay=0.01,  # Very fast for tests
+            max_reconnect_delay=0.05,
+            max_reconnect_attempts=3,
+            heartbeat_interval=10.0,
+        )
+
+    @pytest.mark.asyncio
+    async def test_reconnect_success_on_second_attempt(self, reconnect_config):
+        """Reconnection succeeds on 2nd attempt after disconnect."""
+        from unittest.mock import patch
+
+        import websockets
+
+        connection = RunnerConnection(config=reconnect_config)
+        connection._should_run = True
+        connection._status = RunnerConnectionStatus.CONNECTED
+
+        # Track reconnect callback
+        reconnect_called = False
+
+        async def on_reconnect():
+            nonlocal reconnect_called
+            reconnect_called = True
+
+        connection._on_reconnect = on_reconnect
+
+        # Mock websocket that succeeds on 2nd attempt
+        attempt_count = 0
+
+        async def mock_connect(*args, **kwargs):
+            nonlocal attempt_count
+            attempt_count += 1
+            if attempt_count == 1:
+                raise ConnectionError("Connection refused")
+            mock_ws = AsyncMock()
+            mock_ws.recv = AsyncMock(side_effect=asyncio.CancelledError)
+            return mock_ws
+
+        # Mock authenticate to succeed
+        connection._authenticate = AsyncMock()
+
+        with patch.object(websockets, "connect", side_effect=mock_connect):
+            await connection._handle_disconnect()
+
+        assert connection._status == RunnerConnectionStatus.CONNECTED
+        assert reconnect_called is True
+        assert attempt_count == 2
+
+    @pytest.mark.asyncio
+    async def test_reconnect_exhausted_calls_on_disconnect(self, reconnect_config):
+        """All reconnect attempts exhausted → runner exits, on_disconnect called."""
+        from unittest.mock import patch
+
+        import websockets
+
+        disconnect_called = False
+
+        async def on_disconnect():
+            nonlocal disconnect_called
+            disconnect_called = True
+
+        connection = RunnerConnection(
+            config=reconnect_config,
+            on_disconnect=on_disconnect,
+        )
+        connection._should_run = True
+        connection._status = RunnerConnectionStatus.CONNECTED
+
+        with patch.object(websockets, "connect", side_effect=ConnectionError("Connection refused")):
+            await connection._handle_disconnect()
+
+        assert connection._status == RunnerConnectionStatus.DISCONNECTED
+        assert connection._should_run is False
+        assert disconnect_called is True
+
+    @pytest.mark.asyncio
+    async def test_reconnect_fails_pending_requests(self, reconnect_config):
+        """Pending requests are failed with ConnectionError during disconnect."""
+        connection = RunnerConnection(config=reconnect_config)
+        connection._should_run = True
+        connection._status = RunnerConnectionStatus.CONNECTED
+        connection._config = RunnerConfig(
+            control_plane_url="wss://cp.example.com/runner",
+            auth_token="test-token",
+            runner_name="test-runner",
+            reconnect_delay=0.01,
+            max_reconnect_delay=0.05,
+            max_reconnect_attempts=0,  # No retries — just fail pending
+        )
+
+        # Add pending requests
+        future1: asyncio.Future = asyncio.Future()
+        future2: asyncio.Future = asyncio.Future()
+        connection._pending_requests[1] = future1
+        connection._pending_requests[2] = future2
+
+        await connection._handle_disconnect()
+
+        assert future1.done()
+        assert future2.done()
+        with pytest.raises(ConnectionError):
+            future1.result()
+        with pytest.raises(ConnectionError):
+            future2.result()
+
+    @pytest.mark.asyncio
+    async def test_reconnect_cancels_heartbeat(self, reconnect_config):
+        """Heartbeat is cancelled during reconnection."""
+        from unittest.mock import patch
+
+        import websockets
+
+        connection = RunnerConnection(config=reconnect_config)
+        connection._should_run = True
+        connection._status = RunnerConnectionStatus.CONNECTED
+
+        # Create a heartbeat task
+        heartbeat_task = asyncio.create_task(asyncio.sleep(100))
+        connection._heartbeat_task = heartbeat_task
+
+        with patch.object(websockets, "connect", side_effect=ConnectionError("Connection refused")):
+            await connection._handle_disconnect()
+
+        assert heartbeat_task.cancelled()
+
+    @pytest.mark.asyncio
+    async def test_reconnect_not_called_when_should_run_false(self, reconnect_config):
+        """No reconnection when _should_run is already False (graceful disconnect)."""
+        connection = RunnerConnection(config=reconnect_config)
+        connection._should_run = False
+        connection._status = RunnerConnectionStatus.CONNECTED
+
+        await connection._handle_disconnect()
+
+        # Status should remain whatever it was — not changed to RECONNECTING
+        assert connection._status == RunnerConnectionStatus.CONNECTED

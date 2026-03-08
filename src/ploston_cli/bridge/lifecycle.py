@@ -161,18 +161,41 @@ class BridgeLifecycle:
         return True
 
     async def _run_sse_subscription(self) -> None:
-        """Run SSE subscription in background.
+        """Run SSE subscription in background with unlimited reconnection.
 
         Dispatches ``mcp/unavailable`` events: if the affected MCP matches
         our ``--expose`` target, print error to stderr and exit.
+
+        On SSE connection loss, retries with exponential backoff (capped at 30s)
+        indefinitely until the bridge is shut down. Logs degraded→recovered
+        transitions.
         """
-        try:
-            async for event in self.proxy.subscribe_notifications():
-                logger.debug(f"SSE event: {event}")
-                self._dispatch_sse_event(event)
-        except Exception as e:
-            logger.warning(f"SSE subscription failed: {e}")
-            self._is_degraded = True
+        delay = 1.0
+        max_delay = 30.0
+
+        while self._is_running:
+            try:
+                async for event in self.proxy.subscribe_notifications():
+                    logger.debug(f"SSE event: {event}")
+                    self._dispatch_sse_event(event)
+
+                    # If we were degraded, we've recovered
+                    if self._is_degraded:
+                        logger.info("SSE connection recovered")
+                        self._is_degraded = False
+                        delay = 1.0  # Reset backoff on success
+
+            except Exception as e:
+                if not self._is_running:
+                    break
+                if not self._is_degraded:
+                    logger.warning(f"SSE subscription lost: {e}")
+                    self._is_degraded = True
+                else:
+                    logger.debug(f"SSE reconnection attempt failed: {e}")
+
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, max_delay)
 
     def _dispatch_sse_event(self, event: dict) -> None:
         """Handle a single SSE event.
