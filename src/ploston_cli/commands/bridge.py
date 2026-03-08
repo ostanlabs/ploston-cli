@@ -26,6 +26,7 @@ from urllib.parse import urlparse
 
 import click
 
+from ..bridge.lifecycle import BridgeLifecycle
 from ..bridge.proxy import BridgeProxy, BridgeProxyError
 from ..bridge.server import BridgeServer
 
@@ -250,6 +251,19 @@ async def run_bridge(
 ) -> None:
     """Run the bridge main loop."""
     proxy = BridgeProxy(url=url, token=token, timeout=timeout, insecure=insecure)
+
+    # Wire BridgeLifecycle to propagate bridge_id via X-Bridge-ID header (DEC-142)
+    # Use --expose value as human-readable bridge name (e.g. "obsidian-mcp", "workflows")
+    BridgeLifecycle(
+        proxy=proxy,
+        retry_attempts=retry_attempts,
+        retry_delay=retry_delay,
+        bridge_name=expose,
+    )
+    # Propagate --expose value so CP can see which filter this bridge uses
+    if expose:
+        proxy.bridge_expose = expose
+
     server = BridgeServer(proxy=proxy, tools_filter=tools_filter, expose=expose, runner=runner)
 
     # Startup health check with retry
@@ -267,6 +281,28 @@ async def run_bridge(
                     code=e.code,
                     message=f"Failed to connect to CP after {retry_attempts} attempts: {e.message}",
                 )
+
+    # ── Pre-flight: check expose target MCP health ─────────────
+    if expose and runner:
+        try:
+            mcp_status = await proxy.get_mcp_status(runner, expose)
+            if mcp_status.get("status") == "unavailable":
+                error_msg = mcp_status.get("error", "unknown error")
+                # Print to stderr so the agent IDE sees it
+                print(
+                    f"ERROR: MCP '{expose}' on runner '{runner}' is unavailable.\n"
+                    f"Reason: {error_msg}\n"
+                    f"Check runner logs for details.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            logger.info(f"Pre-flight OK: MCP '{expose}' is available on runner '{runner}'")
+        except BridgeProxyError as e:
+            # 404 = MCP not found / runner not found — warn but don't block
+            if "404" in str(e.code) or "not found" in e.message.lower():
+                logger.warning(f"Pre-flight check skipped: {e.message}")
+            else:
+                logger.warning(f"Pre-flight check failed: {e.message}")
 
     # Setup signal handlers for graceful shutdown
     shutdown_event = asyncio.Event()
@@ -324,6 +360,29 @@ def _format_request_for_log(request: dict) -> str:
     return f"[{request_id}] {method}"
 
 
+def _extract_mcp_extra(result: dict) -> dict | None:
+    """Extract non-standard fields from an MCP tools/call result.
+
+    MCP spec defines ``content`` and ``isError`` as the standard result
+    fields for tools/call responses.  Anything else (``_meta``,
+    ``structuredContent``, server-specific keys, …) is captured here so
+    it is never silently dropped by log truncation.
+
+    Only applies to tool-call-shaped results (those containing a
+    ``content`` key).  Other result shapes (e.g. tools/list) are
+    returned as-is without extraction.
+
+    Returns:
+        Dict of extra fields, or None if there are none.
+    """
+    # Only extract from tool-call-shaped results
+    if "content" not in result:
+        return None
+    _standard_keys = {"content", "isError"}
+    extra = {k: v for k, v in result.items() if k not in _standard_keys}
+    return extra or None
+
+
 def _format_response_for_log(response: dict) -> str:
     """Format response for debug logging (truncate large payloads)."""
     request_id = response.get("id", "?")
@@ -333,10 +392,15 @@ def _format_response_for_log(response: dict) -> str:
         return f"[{request_id}] ERROR: {error.get('code')} - {error.get('message')}"
 
     result = response.get("result", {})
+
+    # Surface any extra MCP fields so they are never lost to truncation
+    mcp_extra = _extract_mcp_extra(result) if isinstance(result, dict) else None
+    extra_suffix = f" mcp_extra={json.dumps(mcp_extra)}" if mcp_extra else ""
+
     result_str = json.dumps(result)
     if len(result_str) > 500:
         result_str = result_str[:500] + "..."
-    return f"[{request_id}] OK: {result_str}"
+    return f"[{request_id}] OK: {result_str}{extra_suffix}"
 
 
 async def stdio_loop(server: BridgeServer, shutdown_event: asyncio.Event) -> None:

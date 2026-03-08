@@ -30,7 +30,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=\"ploston\", execution_id=\"$execution_id\", step_id=~\"$step_id\"} | json | level=~\"$level\"",
+          "expr": "{job=~\"ploston.*\", source=\"workflow\", execution_id=\"$execution_id\", step_id=~\"$step_id\"} | json | level=~\"$level\"",
           "refId": "A"
         }
       ],
@@ -66,7 +66,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum by (step_id) (count_over_time({job=\"ploston\", execution_id=\"$execution_id\"}[$__interval]))",
+          "expr": "sum by (step_id) (count_over_time({job=~\"ploston.*\", source=\"workflow\", execution_id=\"$execution_id\"}[$__interval]))",
           "refId": "A"
         }
       ],
@@ -94,7 +94,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=\"ploston\", execution_id=\"$execution_id\"} | json | level=\"ERROR\"",
+          "expr": "{job=~\"ploston.*\", source=\"workflow\", execution_id=\"$execution_id\"} | json | level=\"ERROR\"",
           "refId": "A"
         }
       ],
@@ -110,25 +110,41 @@
       {
         "current": {},
         "datasource": { "type": "loki", "uid": "loki" },
-        "definition": "label_values({job=\"ploston\"}, execution_id)",
+        "definition": "label_values({job=~\"ploston.*\", source=\"workflow\"}, execution_id)",
+        "hide": 0,
         "includeAll": false,
         "label": "Execution ID",
         "multi": false,
         "name": "execution_id",
-        "query": "label_values({job=\"ploston\"}, execution_id)",
+        "options": [],
+        "query": {
+          "query": "label_values({job=~\"ploston.*\", source=\"workflow\"}, execution_id)",
+          "refId": "StandardVariableQuery"
+        },
         "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
         "type": "query"
       },
       {
         "current": {},
         "datasource": { "type": "loki", "uid": "loki" },
-        "definition": "label_values({job=\"ploston\", execution_id=\"$execution_id\"}, step_id)",
+        "definition": "label_values({job=~\"ploston.*\", source=\"workflow\", execution_id=\"$execution_id\"}, step_id)",
+        "hide": 0,
         "includeAll": true,
         "label": "Step",
         "multi": true,
         "name": "step_id",
-        "query": "label_values({job=\"ploston\", execution_id=\"$execution_id\"}, step_id)",
+        "options": [],
+        "query": {
+          "query": "label_values({job=~\"ploston.*\", source=\"workflow\", execution_id=\"$execution_id\"}, step_id)",
+          "refId": "StandardVariableQuery"
+        },
         "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
         "type": "query"
       },
       {
@@ -151,7 +167,7 @@
   "time": { "from": "now-6h", "to": "now" },
   "timepicker": {},
   "timezone": "",
-  "title": "Ploston Execution Logs",
-  "uid": "ploston-execution-logs",
+  "title": "Workflow Execution Logs",
+  "uid": "ploston-workflow-execution-logs",
   "version": 1
 }

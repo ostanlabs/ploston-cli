@@ -14,6 +14,9 @@ PID_FILE = PLOSTON_DIR / "runner.pid"
 # Log directory (same as base for simplicity)
 LOG_DIR = PLOSTON_DIR
 
+# MCP server log directory
+MCP_LOG_DIR = PLOSTON_DIR / "logs"
+
 # Token storage directory
 TOKENS_DIR = PLOSTON_DIR / "tokens"
 
@@ -34,6 +37,7 @@ def ensure_dirs() -> None:
     PLOSTON_DIR.mkdir(mode=0o700, exist_ok=True)
     TOKENS_DIR.mkdir(mode=0o700, exist_ok=True)
     CA_DIR.mkdir(mode=0o700, exist_ok=True)
+    MCP_LOG_DIR.mkdir(mode=0o700, exist_ok=True)
 
 
 def get_log_file(name: str = "runner") -> Path:
@@ -46,6 +50,19 @@ def get_log_file(name: str = "runner") -> Path:
         Path to the log file
     """
     return LOG_DIR / f"{name}.log"
+
+
+def mcp_log_path(mcp_name: str) -> Path:
+    """Return the log file path for a named MCP server.
+
+    Args:
+        mcp_name: MCP server name
+
+    Returns:
+        Path to the MCP server log file (~/.ploston/logs/<name>.log)
+    """
+    MCP_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    return MCP_LOG_DIR / f"{mcp_name}.log"
 
 
 def get_token_file(source: str) -> Path:

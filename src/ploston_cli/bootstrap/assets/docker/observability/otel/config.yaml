@@ -31,6 +31,19 @@ processors:
       - key: service.namespace
         value: ploston
         action: upsert
+  # Hint processors for Loki label promotion.
+  # The loki exporter reads these hint attributes to decide which
+  # resource/log attributes to promote to Loki index labels.
+  resource/loki_hints:
+    attributes:
+      - key: loki.resource.labels
+        value: service.name, service.namespace
+        action: upsert
+  attributes/loki_hints:
+    actions:
+      - key: loki.attribute.labels
+        value: execution_id, workflow_id, step_id, source, bridge, tool_name, runner_id
+        action: insert
 
 exporters:
   prometheus:
@@ -45,19 +58,49 @@ exporters:
     default_labels_enabled:
       exporter: true
       job: true
-    labels:
-      resource:
-        - service.name
-      attributes:
-        - execution_id
-        - workflow_id
-        - step_id
   otlp/tempo:
     endpoint: "tempo:4317"
     tls:
       insecure: true
   debug:
     verbosity: basic
+
+  # =========================================================================
+  # ENTERPRISE LOG EXPORT STUBS (F-068 / DEC-156)
+  # Activate by uncommenting the appropriate exporter and adding its name
+  # to the logs pipeline exporters list alongside 'loki'.
+  #
+  # SECURITY: Only Ploston-generated structured events are exported.
+  # MCP server process logs stay local on the runner machine and are
+  # never included in any export pipeline.
+  # =========================================================================
+
+  # Generic OTLP forward — works with any OTLP-compatible backend
+  # (OpenSearch Data Prepper, Grafana Cloud, Honeycomb, Signoz, etc.)
+  # otlp/enterprise:
+  #   endpoint: "https://your-collector.corp.com:4317"
+  #   tls:
+  #     insecure: false
+  #   headers:
+  #     Authorization: "Bearer ${ENTERPRISE_OTLP_TOKEN}"
+
+  # Elasticsearch / OpenSearch direct exporter
+  # elasticsearch:
+  #   endpoints: ["https://elasticsearch.corp.com:9200"]
+  #   index: "ploston-logs"
+  #   api_key: "${ELASTICSEARCH_API_KEY}"
+
+  # Splunk HEC
+  # splunk_hec/logs:
+  #   endpoint: "https://splunk.corp.com:8088/services/collector/event"
+  #   token: "${SPLUNK_HEC_TOKEN}"
+  #   source: "ploston"
+  #   sourcetype: "ploston:execution"
+
+  # Datadog
+  # datadog:
+  #   api:
+  #     key: "${DD_API_KEY}"
 
 extensions:
   health_check:
@@ -72,8 +115,9 @@ service:
       exporters: [prometheus]
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource]
+      processors: [memory_limiter, batch, resource, resource/loki_hints, attributes/loki_hints]
       exporters: [loki]
+      # Enterprise: add your exporter here, e.g.: exporters: [loki, otlp/enterprise]
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch, resource]

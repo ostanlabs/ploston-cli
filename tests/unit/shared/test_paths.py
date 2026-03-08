@@ -41,6 +41,12 @@ class TestPaths:
 
         assert CA_DIR == PLOSTON_DIR / "ca"
 
+    def test_mcp_log_dir_location(self):
+        """Test MCP_LOG_DIR is in PLOSTON_DIR."""
+        from ploston_cli.shared.paths import MCP_LOG_DIR, PLOSTON_DIR
+
+        assert MCP_LOG_DIR == PLOSTON_DIR / "logs"
+
 
 @pytest.mark.cli_unit
 class TestEnsureDirs:
@@ -54,10 +60,13 @@ class TestEnsureDirs:
             test_tokens_dir = test_ploston_dir / "tokens"
             test_ca_dir = test_ploston_dir / "ca"
 
+            test_mcp_log_dir = test_ploston_dir / "logs"
+
             with (
                 patch("ploston_cli.shared.paths.PLOSTON_DIR", test_ploston_dir),
                 patch("ploston_cli.shared.paths.TOKENS_DIR", test_tokens_dir),
                 patch("ploston_cli.shared.paths.CA_DIR", test_ca_dir),
+                patch("ploston_cli.shared.paths.MCP_LOG_DIR", test_mcp_log_dir),
             ):
                 from ploston_cli.shared.paths import ensure_dirs
 
@@ -65,6 +74,7 @@ class TestEnsureDirs:
                 assert not test_ploston_dir.exists()
                 assert not test_tokens_dir.exists()
                 assert not test_ca_dir.exists()
+                assert not test_mcp_log_dir.exists()
 
                 ensure_dirs()
 
@@ -72,6 +82,7 @@ class TestEnsureDirs:
                 assert test_ploston_dir.exists()
                 assert test_tokens_dir.exists()
                 assert test_ca_dir.exists()
+                assert test_mcp_log_dir.exists()
 
     def test_ensure_dirs_sets_secure_permissions(self):
         """Test ensure_dirs sets 0o700 permissions."""
@@ -80,10 +91,13 @@ class TestEnsureDirs:
             test_tokens_dir = test_ploston_dir / "tokens"
             test_ca_dir = test_ploston_dir / "ca"
 
+            test_mcp_log_dir = test_ploston_dir / "logs"
+
             with (
                 patch("ploston_cli.shared.paths.PLOSTON_DIR", test_ploston_dir),
                 patch("ploston_cli.shared.paths.TOKENS_DIR", test_tokens_dir),
                 patch("ploston_cli.shared.paths.CA_DIR", test_ca_dir),
+                patch("ploston_cli.shared.paths.MCP_LOG_DIR", test_mcp_log_dir),
             ):
                 from ploston_cli.shared.paths import ensure_dirs
 
@@ -93,6 +107,7 @@ class TestEnsureDirs:
                 assert (test_ploston_dir.stat().st_mode & 0o777) == 0o700
                 assert (test_tokens_dir.stat().st_mode & 0o777) == 0o700
                 assert (test_ca_dir.stat().st_mode & 0o777) == 0o700
+                assert (test_mcp_log_dir.stat().st_mode & 0o777) == 0o700
 
     def test_ensure_dirs_idempotent(self):
         """Test ensure_dirs can be called multiple times."""
@@ -101,10 +116,13 @@ class TestEnsureDirs:
             test_tokens_dir = test_ploston_dir / "tokens"
             test_ca_dir = test_ploston_dir / "ca"
 
+            test_mcp_log_dir = test_ploston_dir / "logs"
+
             with (
                 patch("ploston_cli.shared.paths.PLOSTON_DIR", test_ploston_dir),
                 patch("ploston_cli.shared.paths.TOKENS_DIR", test_tokens_dir),
                 patch("ploston_cli.shared.paths.CA_DIR", test_ca_dir),
+                patch("ploston_cli.shared.paths.MCP_LOG_DIR", test_mcp_log_dir),
             ):
                 from ploston_cli.shared.paths import ensure_dirs
 
@@ -114,6 +132,7 @@ class TestEnsureDirs:
                 ensure_dirs()
 
                 assert test_ploston_dir.exists()
+                assert test_mcp_log_dir.exists()
 
 
 @pytest.mark.cli_unit
@@ -126,6 +145,27 @@ class TestHelperFunctions:
 
         assert get_log_file() == LOG_DIR / "runner.log"
         assert get_log_file("custom") == LOG_DIR / "custom.log"
+
+    def test_mcp_log_path(self):
+        """Test mcp_log_path returns correct path and creates dir."""
+        with TemporaryDirectory() as tmpdir:
+            test_mcp_log_dir = Path(tmpdir) / "logs"
+            with patch("ploston_cli.shared.paths.MCP_LOG_DIR", test_mcp_log_dir):
+                from ploston_cli.shared.paths import mcp_log_path
+
+                path = mcp_log_path("obsidian-mcp")
+                assert path == test_mcp_log_dir / "obsidian-mcp.log"
+                assert test_mcp_log_dir.exists()
+
+    def test_mcp_log_path_different_names(self):
+        """Test mcp_log_path with different MCP server names."""
+        with TemporaryDirectory() as tmpdir:
+            test_mcp_log_dir = Path(tmpdir) / "logs"
+            with patch("ploston_cli.shared.paths.MCP_LOG_DIR", test_mcp_log_dir):
+                from ploston_cli.shared.paths import mcp_log_path
+
+                assert mcp_log_path("github").name == "github.log"
+                assert mcp_log_path("slack-mcp").name == "slack-mcp.log"
 
     def test_get_token_file(self):
         """Test get_token_file returns correct path."""

@@ -14,7 +14,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Total tool invocations by source category",
+      "description": "Total tool invocations by bridge",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -23,68 +23,7 @@
           "mappings": [],
           "unit": "short"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "native"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "local"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "system"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "configured"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "purple",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 8,
@@ -115,12 +54,12 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum by (tool_source) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\"}[$__range]))",
-          "legendFormat": "{{tool_source}}",
+          "expr": "sum by (bridge_id) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range]))",
+          "legendFormat": "{{bridge_id}}",
           "refId": "A"
         }
       ],
-      "title": "Tool Calls by Category",
+      "title": "Tool Calls by Bridge",
       "type": "piechart"
     },
     {
@@ -172,7 +111,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\"}[$__range]))",
+          "expr": "sum(increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range]))",
           "legendFormat": "Total",
           "refId": "A"
         }
@@ -237,7 +176,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "100 * sum(rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", status=\"success\"}[$__range])) / sum(rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\"}[$__range]))",
+          "expr": "100 * sum(rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", status=\"success\"}[$__range])) / sum(rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range]))",
           "legendFormat": "Success Rate",
           "refId": "A"
         }
@@ -302,7 +241,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "100 * sum by (tool_source) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", status=\"success\"}[$__range])) / sum by (tool_source) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\"}[$__range]))",
+          "expr": "100 * sum by (tool_source) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", status=\"success\"}[$__range])) / sum by (tool_source) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range]))",
           "legendFormat": "{{tool_source}}",
           "refId": "A"
         }
@@ -363,68 +302,7 @@
           },
           "unit": "short"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "native"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "local"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "system"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "configured"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "purple",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 8,
@@ -450,12 +328,12 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum by (tool_source) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\"}[5m]))",
-          "legendFormat": "{{tool_source}}",
+          "expr": "sum by (bridge_id) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[5m]))",
+          "legendFormat": "{{bridge_id}}",
           "refId": "A"
         }
       ],
-      "title": "Tool Calls Over Time by Category",
+      "title": "Tool Calls Over Time by Bridge",
       "type": "timeseries"
     },
     {
@@ -508,12 +386,27 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "topk(10, sum by (tool_name) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\"}[$__range])))",
+          "expr": "topk(10, sum by (tool_name) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range])))",
           "legendFormat": "{{tool_name}}",
+          "instant": true,
           "refId": "A"
         }
       ],
       "title": "Top 10 Tools",
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Value",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
       "type": "bargauge"
     },
     {
@@ -967,7 +860,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum by (tool_name, tool_source) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\"}[$__range])) > 0",
+          "expr": "sum by (tool_name, tool_source) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range])) > 0",
           "format": "table",
           "instant": true,
           "legendFormat": "",
@@ -1056,7 +949,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (status) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\"}[$__range]))",
+          "expr": "sum by (status) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range]))",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
@@ -1131,9 +1024,9 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "definition": "label_values(ploston_tool_invocations_total{tool_source=\"local\"}, runner_id)",
+        "definition": "label_values(ploston_tool_invocations_total, runner_id)",
         "query": {
-          "query": "label_values(ploston_tool_invocations_total{tool_source=\"local\"}, runner_id)",
+          "query": "label_values(ploston_tool_invocations_total, runner_id)",
           "refId": "StandardVariableQuery"
         },
         "multi": true,

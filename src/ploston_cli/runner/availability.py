@@ -15,6 +15,7 @@ from ploston_core.config.models import MCPServerDefinition
 from ploston_core.mcp import MCPClientManager
 from ploston_core.types import ConnectionStatus
 
+from ..shared.paths import MCP_LOG_DIR, mcp_log_path
 from .types import MCPAvailability, MCPConfig, MCPStatus, RunnerMCPConfig, ToolInfo
 
 if TYPE_CHECKING:
@@ -117,6 +118,20 @@ class AvailabilityReporter:
                 transport=MCPTransport.STDIO,
             )
 
+    @staticmethod
+    def _rotate_mcp_log(mcp_name: str) -> None:
+        """Rotate log file for an MCP server before reconnection.
+
+        Renames ``<name>.log`` → ``<name>.log.1`` (removing any existing
+        ``.log.1`` first).  Keeps at most 2 files (current + previous).
+        """
+        log_path = mcp_log_path(mcp_name)
+        if log_path.exists():
+            rotated = log_path.with_suffix(".log.1")
+            if rotated.exists():
+                rotated.unlink()
+            log_path.rename(rotated)
+
     async def initialize_mcps(self, config: RunnerMCPConfig) -> None:
         """Initialize MCPs from configuration and test availability.
 
@@ -124,6 +139,10 @@ class AvailabilityReporter:
             config: MCP configuration from CP
         """
         logger.info(f"Initializing {len(config.mcps)} MCPs")
+
+        # Rotate logs before first connect attempt per MCP
+        for name in config.mcps:
+            self._rotate_mcp_log(name)
 
         from ploston_core.config.models import ToolsConfig
 
@@ -133,7 +152,10 @@ class AvailabilityReporter:
         }
 
         tools_config = ToolsConfig(mcp_servers=mcp_servers)
-        self._mcp_manager = MCPClientManager(config=tools_config)
+        self._mcp_manager = MCPClientManager(
+            config=tools_config,
+            log_dir=MCP_LOG_DIR,
+        )
 
         await self._test_all_mcps()
         await self._report_availability()
@@ -204,7 +226,13 @@ class AvailabilityReporter:
                         }
                     )
             else:
-                unavailable.append(mcp_name)
+                unavailable.append(
+                    {
+                        "name": mcp_name,
+                        "error": avail.error or "unavailable",
+                        "log_path": str(mcp_log_path(mcp_name)),
+                    }
+                )
 
         logger.info(
             f"Reporting {len(available)} available tools, {len(unavailable)} unavailable MCPs"

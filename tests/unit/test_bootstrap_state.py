@@ -120,6 +120,7 @@ class TestBootstrapStateManager:
             (base / "docker-compose.yaml").write_text("version: '3'\nservices: {}")
             (base / "ploston-config.yaml").write_text("port: 8022")
             (base / ".env").write_text("FOO=bar")
+            (base / ".stack-config").write_text(str(base / "docker-compose.yaml") + "\n")
             # Observability dir (deployed by AssetManager)
             obs = base / "observability" / "prometheus"
             obs.mkdir(parents=True)
@@ -165,6 +166,7 @@ class TestBootstrapStateManager:
                 assert not (base / "docker-compose.yaml").exists()
                 assert not (base / "ploston-config.yaml").exists()
                 assert not (base / ".env").exists()
+                assert not (base / ".stack-config").exists()
                 # Generated dirs removed
                 assert not (base / "observability").exists()
                 assert not (base / "prometheus").exists()
@@ -176,6 +178,63 @@ class TestBootstrapStateManager:
                 assert (base / "tokens" / "tok.json").exists()
                 # Other data dirs preserved
                 assert (base / "data" / "ploston" / "app.db").exists()
+
+    def test_execute_action_teardown_wipes_volumes_when_telemetry_not_preserved(self):
+        """Test that teardown passes remove_volumes=True when preserve_telemetry=False."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            (base / "docker-compose.yaml").write_text("version: '3'\nservices: {}")
+
+            with (
+                patch("subprocess.run") as mock_run,
+                patch(
+                    "ploston_cli.bootstrap.state.runner_is_running",
+                    return_value=(False, None),
+                ),
+            ):
+                mock_run.return_value = MagicMock(returncode=0)
+
+                manager = BootstrapStateManager(base_dir=base)
+                success, msg = manager.execute_action(
+                    BootstrapAction.TEARDOWN,
+                    preserve_telemetry=False,
+                )
+
+                assert success is True
+                # Verify docker compose down was called with -v flag
+                down_calls = [c for c in mock_run.call_args_list if "down" in str(c)]
+                assert len(down_calls) >= 1
+                down_args = down_calls[0][0][0]  # first positional arg
+                assert "-v" in down_args, (
+                    "docker compose down should include -v when preserve_telemetry=False"
+                )
+
+    def test_execute_action_teardown_preserves_volumes_by_default(self):
+        """Test that teardown does NOT pass -v when preserve_telemetry=True (default)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            (base / "docker-compose.yaml").write_text("version: '3'\nservices: {}")
+
+            with (
+                patch("subprocess.run") as mock_run,
+                patch(
+                    "ploston_cli.bootstrap.state.runner_is_running",
+                    return_value=(False, None),
+                ),
+            ):
+                mock_run.return_value = MagicMock(returncode=0)
+
+                manager = BootstrapStateManager(base_dir=base)
+                success, msg = manager.execute_action(BootstrapAction.TEARDOWN)
+
+                assert success is True
+                # Verify docker compose down was called WITHOUT -v flag
+                down_calls = [c for c in mock_run.call_args_list if "down" in str(c)]
+                assert len(down_calls) >= 1
+                down_args = down_calls[0][0][0]
+                assert "-v" not in down_args, (
+                    "docker compose down should NOT include -v when preserve_telemetry=True"
+                )
 
     def test_execute_action_restart(self):
         """Test executing restart action."""

@@ -16,7 +16,7 @@ from pathlib import Path
 from ..runner.daemon import is_running as runner_is_running
 from ..runner.daemon import stop_daemon as stop_runner
 from .compose import PLOSTON_DIR
-from .stack import DEFAULT_NETWORK_NAME, StackManager, StackState
+from .stack import DEFAULT_NETWORK_NAME, STACK_CONFIG_FILE, StackManager, StackState
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,7 @@ _GENERATED_ARTIFACTS: list[tuple[str, str]] = [
     ("docker-compose.yaml", "file"),
     ("ploston-config.yaml", "file"),
     (".env", "file"),
+    (STACK_CONFIG_FILE, "file"),
     ("observability", "dir"),
     # Stale directories auto-created by Docker when bind-mount sources
     # didn't exist (old overlay had wrong relative paths).
@@ -215,7 +216,9 @@ class BootstrapStateManager:
                 logger.info("Stopping runner daemon (PID %s) before teardown", pid)
                 stop_runner()
 
-            success, msg = self.stack_manager.down()
+            success, msg = self.stack_manager.down(
+                remove_volumes=not preserve_telemetry,
+            )
             if not success:
                 return False, msg
             self._cleanup_generated_files(preserve_telemetry=preserve_telemetry)

@@ -7,14 +7,102 @@ including start, stop, status, and logs.
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from . import bootstrap_log as blog
+
+logger = logging.getLogger(__name__)
+
 # Default paths
 PLOSTON_DIR = Path.home() / ".ploston"
 DEFAULT_NETWORK_NAME = "ploston-network"
+STACK_CONFIG_FILE = ".stack-config"
+
+# Docker Compose V2 progress prefixes that are not errors
+_COMPOSE_PROGRESS_PREFIXES = (
+    " Network ",
+    " Volume ",
+    " Container ",
+)
+
+
+def _extract_docker_error(stderr: str) -> str:
+    """Extract actual error lines from Docker Compose V2 stderr.
+
+    Docker Compose V2 writes all progress output (Creating, Starting, etc.)
+    to stderr.  This function filters out progress lines and returns only
+    the lines that indicate an actual error.
+
+    Args:
+        stderr: Raw stderr from docker compose.
+
+    Returns:
+        Filtered error message, or the full stderr if no error lines found.
+    """
+    lines = stderr.splitlines()
+    error_lines = [
+        line
+        for line in lines
+        if line.strip()
+        and not any(
+            line.strip().startswith(prefix.strip()) for prefix in _COMPOSE_PROGRESS_PREFIXES
+        )
+    ]
+    if error_lines:
+        return "\n".join(line.strip() for line in error_lines)
+    # No recognizable error lines — return the last few non-empty lines as context
+    non_empty = [line.strip() for line in lines if line.strip()]
+    return "\n".join(non_empty[-5:]) if non_empty else stderr
+
+
+def save_stack_config(
+    compose_files: list[Path],
+    base_dir: Path | None = None,
+) -> Path:
+    """Persist the list of compose files used to deploy the stack.
+
+    Writes one absolute path per line to ``{base_dir}/.stack-config``.
+    This file is the single source of truth for which compose files
+    the current stack was deployed with.
+
+    Args:
+        compose_files: Ordered list of compose file paths.
+        base_dir: Base directory (default ``~/.ploston``).
+
+    Returns:
+        Path to the written ``.stack-config`` file.
+    """
+    base = base_dir or PLOSTON_DIR
+    config_path = base / STACK_CONFIG_FILE
+    config_path.write_text("\n".join(str(f.resolve()) for f in compose_files) + "\n")
+    logger.debug("Saved stack config: %s", config_path)
+    return config_path
+
+
+def load_stack_config(base_dir: Path | None = None) -> list[Path] | None:
+    """Load the compose file list from ``.stack-config``.
+
+    Args:
+        base_dir: Base directory (default ``~/.ploston``).
+
+    Returns:
+        Ordered list of compose file paths, or ``None`` if the
+        config file does not exist.
+    """
+    base = base_dir or PLOSTON_DIR
+    config_path = base / STACK_CONFIG_FILE
+    if not config_path.is_file():
+        return None
+    lines = config_path.read_text().strip().splitlines()
+    paths = [Path(line.strip()) for line in lines if line.strip()]
+    if not paths:
+        return None
+    logger.debug("Loaded stack config: %s", paths)
+    return paths
 
 
 class StackState(Enum):
@@ -63,7 +151,10 @@ class StackManager:
             compose_dir: Directory containing docker-compose.yaml.
                         Defaults to ~/.ploston/
             compose_files: Optional list of compose files to use.
-                          If not provided, uses [compose_dir/docker-compose.yaml].
+                          If not provided, reads from ``.stack-config``
+                          (the single source of truth written at deploy time).
+                          Falls back to ``[compose_dir/docker-compose.yaml]``
+                          if ``.stack-config`` does not exist.
                           When multiple files are provided, they are layered
                           using docker compose -f file1 -f file2.
         """
@@ -71,7 +162,11 @@ class StackManager:
         if compose_files:
             self._compose_files = compose_files
         else:
-            self._compose_files = [self.compose_dir / "docker-compose.yaml"]
+            persisted = load_stack_config(self.compose_dir)
+            if persisted:
+                self._compose_files = persisted
+            else:
+                self._compose_files = [self.compose_dir / "docker-compose.yaml"]
 
     @property
     def compose_file(self) -> Path:
@@ -211,18 +306,40 @@ class StackManager:
             return False, "No docker-compose.yaml found"
 
         try:
+            blog.step("StackManager.up — pre-deploy state")
+            blog.info("pull", str(pull))
+            blog.info("detach", str(detach))
+            blog.info("compose_dir", str(self.compose_dir))
+            blog.info("compose_files", str([str(f) for f in self._compose_files]))
+
+            # Log compose file contents so we can see exactly what is being deployed
+            for cf in self._compose_files:
+                blog.log_file_contents(cf)
+
+            # Snapshot Docker state before we touch anything
+            blog.log_docker_state("pre-deploy docker state")
+
+            # Clean up any stale network references before starting.
+            blog.step("StackManager.up — network cleanup")
+            self._cleanup_network()
+
+            # Snapshot after cleanup
+            blog.log_docker_state("post-cleanup docker state")
+
             # Pull images first if requested
             if pull:
-                pull_result = subprocess.run(
-                    self._compose_args() + ["pull"],
+                blog.step("StackManager.up — pull images")
+                pull_args = self._compose_args() + ["pull"]
+                pull_result = blog.log_subprocess(
+                    pull_args,
                     cwd=self.compose_dir,
-                    capture_output=True,
-                    text=True,
+                    label="docker compose pull",
                 )
                 if pull_result.returncode != 0:
                     return False, f"Failed to pull images: {pull_result.stderr}"
 
             # Start services
+            blog.step("StackManager.up — compose up")
             args = self._compose_args() + ["up"]
             if not pull:
                 # When using pre-built local images (e.g. --build-from-source),
@@ -233,20 +350,28 @@ class StackManager:
             if detach:
                 args.append("-d")
 
-            result = subprocess.run(
+            result = blog.log_subprocess(
                 args,
                 cwd=self.compose_dir,
-                capture_output=True,
-                text=True,
+                label="docker compose up",
             )
 
+            # Snapshot Docker state after compose up (regardless of success)
+            blog.log_docker_state("post-up docker state")
+
             if result.returncode != 0:
-                return False, f"Failed to start stack: {result.stderr}"
+                # Docker Compose V2 writes all progress to stderr.  Extract
+                # only the actual error lines so the user sees what went wrong
+                # instead of a wall of "Container X Creating" messages.
+                error_detail = _extract_docker_error(result.stderr)
+                blog.detail(f"EXTRACTED ERROR: {error_detail}")
+                return False, f"Failed to start stack: {error_detail}"
 
             return True, "Stack started successfully"
         except FileNotFoundError:
             return False, "Docker not found. Is Docker installed?"
         except Exception as e:
+            blog.detail(f"EXCEPTION in up(): {e}")
             return False, str(e)
 
     def down(self, remove_volumes: bool = False) -> tuple[bool, str]:
@@ -266,15 +391,16 @@ class StackManager:
             return True, "No docker-compose.yaml found; network cleaned up"
 
         try:
-            args = self._compose_args() + ["down"]
+            args = self._compose_args() + ["down", "--remove-orphans"]
             if remove_volumes:
                 args.append("-v")
 
-            result = subprocess.run(
+            blog.step("StackManager.down")
+            blog.info("compose_files", str([str(f) for f in self._compose_files]))
+            result = blog.log_subprocess(
                 args,
                 cwd=self.compose_dir,
-                capture_output=True,
-                text=True,
+                label="docker compose down",
             )
 
             if result.returncode != 0:
@@ -314,11 +440,11 @@ class StackManager:
         if not network_name:
             network_name = DEFAULT_NETWORK_NAME
 
+        blog.info("cleanup_network", network_name)
+
         # Force-disconnect any containers still attached to the network.
-        # This handles the case where `docker compose down` didn't run
-        # (no compose file) or left orphan containers behind.
         try:
-            inspect = subprocess.run(
+            inspect = blog.log_subprocess(
                 [
                     "docker",
                     "network",
@@ -327,22 +453,21 @@ class StackManager:
                     "--format",
                     "{{range .Containers}}{{.Name}} {{end}}",
                 ],
-                capture_output=True,
-                text=True,
+                label=f"network inspect {network_name}",
             )
             if inspect.returncode == 0 and inspect.stdout.strip():
                 for container in inspect.stdout.strip().split():
-                    subprocess.run(
+                    blog.log_subprocess(
                         ["docker", "network", "disconnect", "-f", network_name, container],
-                        capture_output=True,
+                        label=f"network disconnect {container}",
                     )
         except Exception:
             pass
 
         # Best-effort removal — ignore errors (network may already be gone)
-        subprocess.run(
+        blog.log_subprocess(
             ["docker", "network", "rm", network_name],
-            capture_output=True,
+            label=f"network rm {network_name}",
         )
 
     def restart(self) -> tuple[bool, str]:

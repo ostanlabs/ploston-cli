@@ -21,7 +21,6 @@ from ..bootstrap import (
     ComposeGenerator,
     DockerDetector,
     HealthPoller,
-    ImportHandoff,
     K8sConfig,
     K8sIngressHost,
     K8sManifestGenerator,
@@ -33,10 +32,13 @@ from ..bootstrap import (
     StackManager,
     StackState,
     VolumeManager,
+    save_stack_config,
 )
+from ..bootstrap import bootstrap_log as blog
 from ..bootstrap.builder import BuildError, build_from_source
 from ..bootstrap.image_resolver import ImageConfig, ImageResolverError, resolve_images
 from ..bootstrap.workspace import detect_meta_repo_root
+from ..init import ServerSelector
 from ..init.detector import ConfigDetector
 from ..init.injector import is_already_injected, list_backups, restore_config_from_backup
 
@@ -481,6 +483,51 @@ def restart():
         sys.exit(1)
 
 
+@bootstrap.command("restart-runner")
+def restart_runner():
+    """Restart the local runner daemon.
+
+    Stops the running runner and starts it again, forcing all MCP child
+    processes to be respawned.  This picks up any changes you made to
+    local MCP server files (e.g. JS/Python scripts) without having to
+    manually stop/start or remember the connection flags.
+
+    The runner credentials (CP URL, token, name) are read from
+    ~/.ploston/.env which was written by ``ploston init --import``.
+    """
+    from ..runner.daemon import is_running, stop_daemon
+
+    # ── 1. Stop if running ──
+    alive, pid = is_running()
+    if alive:
+        click.echo(f"Stopping runner (PID {pid})...")
+        stop_daemon()
+    else:
+        click.echo("Runner is not running.")
+
+    # ── 2. Re-read credentials from ~/.ploston/.env ──
+    runner = RunnerAutoStart()  # defaults to http://localhost:8022
+    token = runner._get_runner_token()
+    if not token:
+        click.echo(
+            "✗ Runner token not found in ~/.ploston/.env. Run 'ploston init --import' first.",
+            err=True,
+        )
+        sys.exit(1)
+
+    name = runner._get_runner_name()
+    ws_url = runner._get_ws_url()
+
+    click.echo(f"Starting runner '{name}'...")
+    success, msg = runner.start_runner(daemon=True)
+    if success:
+        click.echo(f"✓ Runner restarted (name={name}, cp={ws_url}).")
+        click.echo("  All MCP child processes have been respawned.")
+    else:
+        click.echo(f"✗ Failed to restart runner: {msg}", err=True)
+        sys.exit(1)
+
+
 async def _run_bootstrap(
     target: str,
     images: ImageConfig,
@@ -495,11 +542,33 @@ async def _run_bootstrap(
     network_name: str = DEFAULT_NETWORK_NAME,
 ) -> BootstrapResult:
     """Execute the full bootstrap flow."""
+    # ── Initialise file-based debug log ──
+    log_path = blog.init()
+    click.echo(f"\n📝 Debug log: {log_path}")
+
+    blog.section("Bootstrap Parameters")
+    blog.info("target", target)
+    blog.info("images.ploston_image", images.ploston_image)
+    blog.info("images.native_tools_image", images.native_tools_image)
+    blog.info("images.should_pull", str(images.should_pull))
+    blog.info("images.build_from_source", str(images.build_from_source))
+    blog.info("port", str(port))
+    blog.info("with_observability", str(with_observability))
+    blog.info("with_native_tools", str(with_native_tools))
+    blog.info("skip_import", str(skip_import))
+    blog.info("non_interactive", str(non_interactive))
+    blog.info("network_name", network_name)
+
     click.echo("\n🚀 Ploston Bootstrap\n")
 
     # ── Step 1: Check existing state ──
+    blog.step("Step 0: Detect existing state")
     state_manager = BootstrapStateManager()
     state = state_manager.detect_state()
+    blog.info("needs_cleanup", str(state.needs_cleanup))
+    blog.info("stack_running", str(state.stack_running))
+    blog.info("running_services", str(state.running_services))
+    blog.info("stale_artifacts", str(state.stale_artifacts))
 
     if state.needs_cleanup:
         if state.stack_running:
@@ -595,6 +664,7 @@ async def _run_bootstrap(
             # Fall through to full bootstrap flow below
 
     # ── Step 2: Prerequisites ──
+    blog.step("Step 1: Prerequisites")
     click.echo("📋 Step 1: Prerequisites\n")
 
     if target == "docker":
@@ -621,6 +691,7 @@ async def _run_bootstrap(
             return BootstrapResult(success=False, error="No K8s cluster available")
 
     # ── Step 3: Port check ──
+    blog.step("Step 2: Port Check")
     click.echo("\n📋 Step 2: Port Check\n")
     scanner = PortScanner()
     port_status = scanner.check_ports({port: "ploston", 6379: "redis"})
@@ -639,6 +710,7 @@ async def _run_bootstrap(
                     return BootstrapResult(success=False, error=f"Port {status.port} in use")
 
     # ── Step 4: Network check (Docker only) ──
+    blog.step("Step 3: Network Check")
     network_external = False
     if target == "docker":
         click.echo("\n📋 Step 3: Network Check\n")
@@ -658,6 +730,7 @@ async def _run_bootstrap(
 
     # ── Step 4a: Build from source (if requested) ──
     if images.build_from_source:
+        blog.step("Step 4a: Build from Source")
         click.echo("\n📋 Step 4a: Build from Source\n")
         repo_root = detect_meta_repo_root()
         if repo_root is None:
@@ -679,6 +752,7 @@ async def _run_bootstrap(
             return BootstrapResult(success=False, error=str(e))
 
     # ── Step 5: Generate config ──
+    blog.step("Step 4: Generate Configuration")
     click.echo("\n📋 Step 4: Generate Configuration\n")
 
     click.echo(f"  Images: {images.ploston_image}, {images.native_tools_image}")
@@ -734,7 +808,13 @@ async def _run_bootstrap(
             obs_k8s_dir = asset_manager.deploy_observability_k8s()
             click.echo(f"  ✓ Deployed K8s observability manifests: {obs_k8s_dir}")
 
+    # Persist the compose file list so that every StackManager() instance
+    # (status, down, restart, logs) uses the same set of files.
+    if target == "docker" and compose_files:
+        save_stack_config(compose_files)
+
     # ── Step 6: Deploy ──
+    blog.step("Step 5: Deploy Stack")
     click.echo("\n📋 Step 5: Deploy Stack\n")
 
     if target == "docker":
@@ -743,9 +823,13 @@ async def _run_bootstrap(
             click.echo("  Pulling images...")
         else:
             click.echo("  Using local images...")
+        click.echo(f"  Compose files: {[str(f) for f in stack_manager.compose_files]}")
+        click.echo(f"  Pull: {images.should_pull}")
         success, msg = stack_manager.up(pull=images.should_pull)
         if not success:
+            blog.finish(success=False, message=msg)
             click.echo(f"  ✗ {msg}", err=True)
+            click.echo(f"  📝 Full debug log: {log_path}", err=True)
             return BootstrapResult(success=False, error=msg)
         click.echo("  ✓ Stack started")
     else:
@@ -757,6 +841,7 @@ async def _run_bootstrap(
         click.echo("  ✓ Manifests applied")
 
     # ── Step 7: Wait for health ──
+    blog.step("Step 6: Wait for CP Health")
     click.echo("\n📋 Step 6: Wait for CP Health\n")
 
     cp_url = f"http://localhost:{port}"
@@ -773,12 +858,14 @@ async def _run_bootstrap(
             f"  ✓ CP healthy (v{health.version or 'unknown'}) in {health.elapsed_seconds:.1f}s"
         )
     else:
+        blog.finish(success=False, message=health.error or "health check failed")
         click.echo(f"  ✗ {health.error}", err=True)
+        click.echo(f"  📝 Full debug log: {log_path}", err=True)
         return BootstrapResult(success=False, error=health.error)
 
     # ── Step 8: Auto-chain to import ──
     if not skip_import:
-        click.echo("\n📋 Step 7: Detect MCP Configs\n")
+        click.echo("\n📋 Step 7: Detect & Import MCP Configs\n")
         chain_detector = AutoChainDetector()
         chain_result = chain_detector.detect()
 
@@ -787,39 +874,61 @@ async def _run_bootstrap(
             for name in chain_result.server_names or []:
                 click.echo(f"    - {name}")
 
-            if non_interactive or click.confirm("\n  Import these configs to CP?", default=True):
-                # Ask whether to inject Ploston into source configs
-                do_inject = False
+            # ── Server selection ──
+            selector = ServerSelector()
+            server_list = list(chain_result.servers.values())
+
+            if non_interactive:
+                selected_names = selector.select_all(server_list)
+                click.echo(
+                    f"\n  📦 Importing all {len(selected_names)} servers (non-interactive mode).\n"
+                )
+            else:
+                click.echo()
+                selected_names = await selector.prompt_selection(server_list)
+                click.echo(f"\n  📦 {len(selected_names)} servers selected for import\n")
+
+            if selected_names:
+                # ── Import selected servers to CP ──
+                from ..commands.init import _complete_import_flow
+
+                # Determine inject: confirmation prompt (default=Yes) in interactive,
+                # always inject in non-interactive.
+                do_inject = True
                 if not non_interactive:
-                    click.echo()
-                    click.echo("  Inject rewrites your Claude/Cursor config so MCP servers")
-                    click.echo("  route through Ploston (a backup is created first).")
-                    do_inject = click.confirm("  Inject Ploston into source config?", default=False)
+                    click.echo("  Selected servers will be injected into your Claude/Cursor config")
+                    click.echo(
+                        "  so MCP servers route through Ploston (a backup is created first)."
+                    )
+                    do_inject = click.confirm("  Proceed with injection?", default=True)
 
-                handoff = ImportHandoff(cp_url)
-                success, msg = handoff.run_import(interactive=False, inject=do_inject)
+                await _complete_import_flow(
+                    cp_url=cp_url,
+                    detected_configs=chain_result.detected_configs,
+                    servers=chain_result.servers,
+                    selected_names=selected_names,
+                    runner_name=None,
+                    inject=do_inject,
+                )
+
+                # ── Always start local runner ──
+                runner = RunnerAutoStart(cp_url)
+                success, msg = runner.start_runner(daemon=True)
                 if success:
-                    click.echo("  ✓ Configs imported")
-                    if do_inject:
-                        click.echo("  ✓ Source config updated (backup created)")
-
-                    # Offer to start runner
-                    if non_interactive or click.confirm("\n  Start local runner?", default=True):
-                        runner = RunnerAutoStart(cp_url)
-                        success, msg = runner.start_runner(daemon=True)
-                        if success:
-                            click.echo("  ✓ Runner started")
-                        else:
-                            click.echo(f"  ⚠ {msg}")
+                    click.echo("  ✓ Runner started")
                 else:
-                    click.echo(f"  ⚠ Import failed: {msg}")
+                    click.echo(f"  ⚠ {msg}")
+            else:
+                click.echo("  No servers selected — skipping import.")
         else:
             click.echo("  No Claude/Cursor configs found")
 
     # ── Done ──
+    blog.finish(success=True, message=f"CP healthy at {cp_url}")
     click.echo("\n" + "=" * 50)
     click.echo("✓ Bootstrap complete!")
     click.echo(f"\n  CP URL: {cp_url}")
+    click.echo(f"  Debug log: {log_path}")
     click.echo("  Status: ploston bootstrap status")
     click.echo("  Logs:   ploston bootstrap logs -f")
     click.echo("  Stop:   ploston bootstrap down")

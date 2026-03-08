@@ -11,6 +11,7 @@ Handles:
 import asyncio
 import logging
 import signal
+import sys
 import uuid
 from datetime import datetime, timezone
 from queue import Full, Queue
@@ -38,6 +39,7 @@ class BridgeLifecycle:
         retry_delay: float = DEFAULT_RETRY_DELAY,
         drain_timeout: float = DEFAULT_DRAIN_TIMEOUT,
         max_queue_size: int = DEFAULT_MAX_QUEUE_SIZE,
+        bridge_name: str | None = None,
     ):
         """Initialize BridgeLifecycle.
 
@@ -47,12 +49,15 @@ class BridgeLifecycle:
             retry_delay: Delay between retries (seconds)
             drain_timeout: Max time to wait for in-flight requests (seconds)
             max_queue_size: Max requests to queue during reconnection
+            bridge_name: Human-readable bridge name (e.g. the --expose value).
+                Falls back to a UUID if not provided.
         """
         self.proxy = proxy
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
         self.drain_timeout = drain_timeout
         self.max_queue_size = max_queue_size
+        self._expose: str | None = bridge_name  # e.g. the --expose MCP name
 
         self._is_running = False
         self._is_degraded = False
@@ -63,7 +68,7 @@ class BridgeLifecycle:
         self._request_queue: Queue = Queue(maxsize=max_queue_size)
 
         # Bridge context propagation (DEC-142)
-        self.bridge_id: str = str(uuid.uuid4())
+        self.bridge_id: str = bridge_name or str(uuid.uuid4())
         self.session_start: str = datetime.now(timezone.utc).isoformat()
         self._queue_drops_since_connect: int = 0
 
@@ -156,13 +161,42 @@ class BridgeLifecycle:
         return True
 
     async def _run_sse_subscription(self) -> None:
-        """Run SSE subscription in background."""
+        """Run SSE subscription in background.
+
+        Dispatches ``mcp/unavailable`` events: if the affected MCP matches
+        our ``--expose`` target, print error to stderr and exit.
+        """
         try:
             async for event in self.proxy.subscribe_notifications():
                 logger.debug(f"SSE event: {event}")
+                self._dispatch_sse_event(event)
         except Exception as e:
             logger.warning(f"SSE subscription failed: {e}")
             self._is_degraded = True
+
+    def _dispatch_sse_event(self, event: dict) -> None:
+        """Handle a single SSE event.
+
+        Recognised event types:
+        - ``mcp/unavailable``: If ``mcp_name`` matches our expose target,
+          print error to stderr and request shutdown.
+        """
+        event_type = event.get("type")
+        if event_type != "mcp/unavailable":
+            return
+
+        mcp_name = event.get("mcp_name", "")
+        if self._expose and mcp_name == self._expose:
+            error = event.get("error", "unknown error")
+            print(
+                f"ERROR: MCP '{mcp_name}' became unavailable.\n"
+                f"Reason: {error}\n"
+                f"Shutting down bridge.",
+                file=sys.stderr,
+            )
+            logger.error(f"Expose target '{mcp_name}' unavailable: {error}")
+            # Schedule graceful shutdown
+            asyncio.get_event_loop().call_soon(lambda: asyncio.ensure_future(self.shutdown()))
 
     async def shutdown(self, sig: Optional[signal.Signals] = None) -> None:
         """Perform graceful shutdown."""
