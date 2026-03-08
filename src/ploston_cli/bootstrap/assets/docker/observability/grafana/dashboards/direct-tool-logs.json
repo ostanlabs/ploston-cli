@@ -1,0 +1,131 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Direct Tool Call Logs",
+      "description": "All direct tool call events. Filter by Level, Tool, Runner, or type anything in Search to match against any field in the log line (regex). Sorted oldest-first for chronological session reading. Expand any line to see full JSON fields.",
+      "type": "logs",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"h": 16, "w": 24, "x": 0, "y": 0},
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "sortOrder": "Ascending",
+        "wrapLogMessage": true,
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false
+      },
+      "targets": [{
+        "expr": "{job=~\"ploston.*\", source=\"tool\"} | json | level=~\"($level)\" | bridge=~\"($bridge|)\" | tool_name=~\"($tool_name|)\" | runner_id=~\"($runner|)\" |~ \"$search\"",
+        "refId": "A"
+      }]
+    },
+    {
+      "id": 2,
+      "title": "Errors — always shown (not affected by Level filter)",
+      "description": "Hardcoded to ERROR level. Remains visible even when Level is set to INFO or WARN. Shows direct_tool_failed events with error and error_type. Search filter still applies.",
+      "type": "logs",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true,
+        "showTime": true
+      },
+      "targets": [{
+        "expr": "{job=~\"ploston.*\", source=\"tool\"} | json | level=\"ERROR\" | bridge=~\"($bridge|)\" | tool_name=~\"($tool_name|)\" | runner_id=~\"($runner|)\" |~ \"$search\"",
+        "refId": "A"
+      }]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["ploston", "logs", "loki", "tools"],
+  "templating": {
+    "list": [
+      {
+        "name": "level",
+        "type": "custom",
+        "query": "DEBUG,INFO,WARN,ERROR",
+        "multi": true,
+        "includeAll": true,
+        "current": {"selected": true, "text": "All", "value": "$__all"},
+        "label": "Level",
+        "hide": 0
+      },
+      {
+        "name": "bridge",
+        "type": "query",
+        "datasource": {"type": "loki", "uid": "loki"},
+        "definition": "label_values({job=~\"ploston.*\", source=\"tool\"}, bridge)",
+        "query": {
+          "query": "label_values({job=~\"ploston.*\", source=\"tool\"}, bridge)",
+          "refId": "StandardVariableQuery"
+        },
+        "multi": true,
+        "includeAll": true,
+        "label": "Bridge",
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0
+      },
+      {
+        "name": "tool_name",
+        "type": "query",
+        "datasource": {"type": "loki", "uid": "loki"},
+        "definition": "label_values({job=~\"ploston.*\", source=\"tool\"}, tool_name)",
+        "query": {
+          "query": "label_values({job=~\"ploston.*\", source=\"tool\"}, tool_name)",
+          "refId": "StandardVariableQuery"
+        },
+        "multi": true,
+        "includeAll": true,
+        "label": "Tool",
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0
+      },
+      {
+        "name": "runner",
+        "type": "query",
+        "datasource": {"type": "loki", "uid": "loki"},
+        "definition": "label_values({job=~\"ploston.*\", source=\"tool\"}, runner_id)",
+        "query": {
+          "query": "label_values({job=~\"ploston.*\", source=\"tool\"}, runner_id)",
+          "refId": "StandardVariableQuery"
+        },
+        "multi": true,
+        "includeAll": true,
+        "label": "Runner",
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0
+      },
+      {
+        "name": "search",
+        "type": "textbox",
+        "label": "Search",
+        "current": {"value": ""},
+        "hide": 0
+      }
+    ]
+  },
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Direct Tool Logs",
+  "uid": "ploston-direct-tool-logs",
+  "version": 1
+}

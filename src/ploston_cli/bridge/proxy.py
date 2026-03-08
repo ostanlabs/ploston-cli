@@ -194,11 +194,23 @@ class BridgeProxy:
                 err = result["error"]
                 logger.debug(f"CP returned error: {err.get('code')} - {err.get('message')}")
             else:
+                inner = result.get("result", {})
+                # Surface non-standard MCP fields (e.g. _meta, structuredContent)
+                # so they are never silently lost to log truncation.
+                # Only applies to tool-call-shaped results (those with a "content" key).
+                _standard_keys = {"content", "isError"}
+                mcp_extra = (
+                    {k: v for k, v in inner.items() if k not in _standard_keys}
+                    if isinstance(inner, dict) and "content" in inner
+                    else None
+                ) or None
+                extra_suffix = f" mcp_extra={json.dumps(mcp_extra)}" if mcp_extra else ""
+
                 # Truncate large results for logging
-                result_preview = json.dumps(result.get("result", {}))
+                result_preview = json.dumps(inner)
                 if len(result_preview) > 300:
                     result_preview = result_preview[:300] + "..."
-                logger.debug(f"CP returned result: {result_preview}")
+                logger.debug(f"CP returned result: {result_preview}{extra_suffix}")
 
             return result
 
@@ -286,6 +298,38 @@ class BridgeProxy:
         """
         client = await self._ensure_client()
         url = f"{self.url}/health"
+
+        try:
+            response = await client.get(url)
+            if response.status_code >= 400:
+                error = map_http_error(response.status_code, response.text)
+                raise BridgeProxyError(
+                    code=error.code,
+                    message=error.message,
+                    retryable=error.retryable,
+                )
+            return response.json()
+        except httpx.ConnectError as e:
+            error = map_connection_error(str(e), url)
+            raise BridgeProxyError(
+                code=error.code,
+                message=error.message,
+                retryable=True,
+            ) from e
+
+    async def get_mcp_status(self, runner_name: str, mcp_name: str) -> dict[str, Any]:
+        """Query CP for the status of a single MCP on a runner.
+
+        Calls ``GET /api/v1/runners/{runner}/mcps/{mcp}/status``.
+
+        Returns:
+            Status dict with ``mcp_name``, ``status``, ``error`` (if any).
+
+        Raises:
+            BridgeProxyError: On connection or HTTP error
+        """
+        client = await self._ensure_client()
+        url = f"{self.url}/api/v1/runners/{runner_name}/mcps/{mcp_name}/status"
 
         try:
             response = await client.get(url)

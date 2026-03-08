@@ -9,9 +9,22 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import questionary
-from questionary import Choice
+from questionary import Choice, Style
 
 from .detector import ServerInfo
+
+# Custom style: avoid full-row color inversion on the highlighted item.
+# Only the pointer (») and selected indicator (●) get colored; the rest
+# of the row stays in the default text colour.
+_CHECKBOX_STYLE = Style(
+    [
+        ("highlighted", "noinherit"),  # pointed-at + unchecked: no inverse
+        ("selected", "noinherit fg:#FF9D00"),  # pointed-at + checked: amber text
+        ("pointer", "fg:#FF9D00 bold"),  # » pointer
+        ("text", ""),  # normal text
+        ("answer", "fg:#FF9D00 bold"),  # final answer echo
+    ]
+)
 
 if TYPE_CHECKING:
     from ploston_core.config.secrets import SecretDetector
@@ -64,6 +77,7 @@ class ServerSelector:
         selected = await questionary.checkbox(
             "Select servers to import (↑↓ navigate, Space toggle, Enter confirm):",
             choices=choices,
+            style=_CHECKBOX_STYLE,
         ).ask_async()
 
         if selected is None:

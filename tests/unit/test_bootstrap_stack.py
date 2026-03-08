@@ -6,7 +6,13 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ploston_cli.bootstrap import StackManager, StackState, StackStatus
+from ploston_cli.bootstrap import (
+    StackManager,
+    StackState,
+    StackStatus,
+    load_stack_config,
+    save_stack_config,
+)
 
 
 class TestStackState:
@@ -63,6 +69,44 @@ class TestStackManager:
             compose_file.write_text("version: '3'\nservices: {}")
             manager = StackManager(compose_dir=Path(tmpdir))
             assert manager.compose_file == compose_file
+
+    def test_loads_from_stack_config(self):
+        """Test that StackManager reads .stack-config when no compose_files given."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            compose = base / "docker-compose.yaml"
+            obs = base / "observability" / "docker-compose.observability.yaml"
+            compose.write_text("version: '3'\nservices: {}")
+            obs.parent.mkdir(parents=True)
+            obs.write_text("version: '3'\nservices: {}")
+
+            save_stack_config([compose, obs], base_dir=base)
+            manager = StackManager(compose_dir=base)
+
+            assert len(manager.compose_files) == 2
+            assert manager.compose_files[0] == compose.resolve()
+            assert manager.compose_files[1] == obs.resolve()
+
+    def test_falls_back_without_stack_config(self):
+        """Test fallback to default when .stack-config doesn't exist."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = StackManager(compose_dir=Path(tmpdir))
+            assert len(manager.compose_files) == 1
+            assert "docker-compose.yaml" in str(manager.compose_files[0])
+
+    def test_explicit_compose_files_override_stack_config(self):
+        """Test that explicit compose_files arg takes precedence over .stack-config."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            compose = base / "docker-compose.yaml"
+            compose.write_text("version: '3'\nservices: {}")
+            # Write a .stack-config with two files
+            save_stack_config([compose, base / "extra.yaml"], base_dir=base)
+
+            # But pass explicit single file
+            manager = StackManager(compose_dir=base, compose_files=[compose])
+            assert len(manager.compose_files) == 1
+            assert manager.compose_files[0] == compose
 
     def test_status_not_found(self):
         """Test status when compose file doesn't exist."""
@@ -206,3 +250,37 @@ class TestStackManager:
                 success, msg = manager.pull()
 
                 assert success is True
+
+
+class TestStackConfig:
+    """Tests for save_stack_config / load_stack_config."""
+
+    def test_roundtrip(self):
+        """Test save then load returns the same paths."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            files = [base / "a.yaml", base / "b.yaml"]
+            for f in files:
+                f.write_text("")
+
+            save_stack_config(files, base_dir=base)
+            loaded = load_stack_config(base_dir=base)
+
+            assert loaded is not None
+            assert len(loaded) == 2
+            assert loaded[0] == files[0].resolve()
+            assert loaded[1] == files[1].resolve()
+
+    def test_load_returns_none_when_missing(self):
+        """Test load returns None when .stack-config doesn't exist."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = load_stack_config(base_dir=Path(tmpdir))
+            assert result is None
+
+    def test_load_returns_none_for_empty_file(self):
+        """Test load returns None when .stack-config is empty."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            (base / ".stack-config").write_text("")
+            result = load_stack_config(base_dir=base)
+            assert result is None

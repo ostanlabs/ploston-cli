@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import logging
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from ..init.detector import ConfigDetector, DetectedConfig, merge_configs
+from ..init.detector import ConfigDetector, DetectedConfig, ServerInfo, merge_configs
 from ..init.env_manager import load_env_file
 from ..init.injector import default_runner_name
 
@@ -27,6 +27,10 @@ class AutoChainResult:
     cursor_config: DetectedConfig | None = None
     total_servers: int = 0
     server_names: list[str] | None = None
+    # Merged servers dict for direct use by bootstrap (avoids re-detection)
+    servers: dict[str, ServerInfo] = field(default_factory=dict)
+    # All detected configs (for injection step)
+    detected_configs: list[DetectedConfig] = field(default_factory=list)
 
 
 class AutoChainDetector:
@@ -46,12 +50,15 @@ class AutoChainDetector:
 
         claude_config = None
         cursor_config = None
+        found_configs = []
 
         for config in configs:
             if config.source == "claude_desktop":
                 claude_config = config
             elif config.source == "cursor":
                 cursor_config = config
+            if config.found:
+                found_configs.append(config)
 
         # Merge and count servers
         merged = merge_configs(configs)
@@ -63,6 +70,8 @@ class AutoChainDetector:
             cursor_config=cursor_config,
             total_servers=len(merged),
             server_names=server_names,
+            servers=merged,
+            detected_configs=found_configs,
         )
 
 
