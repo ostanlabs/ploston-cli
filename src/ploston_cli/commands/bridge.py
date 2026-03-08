@@ -288,13 +288,23 @@ async def run_bridge(
             mcp_status = await proxy.get_mcp_status(runner, expose)
             if mcp_status.get("status") == "unavailable":
                 error_msg = mcp_status.get("error", "unknown error")
+                crash_snapshot = mcp_status.get("crash_snapshot", "")
+                log_path = mcp_status.get("log_path", "")
                 # Print to stderr so the agent IDE sees it
-                print(
-                    f"ERROR: MCP '{expose}' on runner '{runner}' is unavailable.\n"
-                    f"Reason: {error_msg}\n"
-                    f"Check runner logs for details.",
-                    file=sys.stderr,
-                )
+                lines = [
+                    f"ERROR: MCP '{expose}' on runner '{runner}' is unavailable.",
+                    f"Reason: {error_msg}",
+                ]
+                if crash_snapshot:
+                    lines.append("")
+                    lines.append("--- MCP stderr (last 200 lines) ---")
+                    lines.append(crash_snapshot)
+                    lines.append("--- end stderr ---")
+                if log_path:
+                    lines.append(f"\nFull log: {log_path}")
+                else:
+                    lines.append("\nCheck runner logs for details.")
+                print("\n".join(lines), file=sys.stderr)
                 sys.exit(1)
             logger.info(f"Pre-flight OK: MCP '{expose}' is available on runner '{runner}'")
         except BridgeProxyError as e:

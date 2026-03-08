@@ -188,12 +188,21 @@ class BridgeLifecycle:
         mcp_name = event.get("mcp_name", "")
         if self._expose and mcp_name == self._expose:
             error = event.get("error", "unknown error")
-            print(
-                f"ERROR: MCP '{mcp_name}' became unavailable.\n"
-                f"Reason: {error}\n"
-                f"Shutting down bridge.",
-                file=sys.stderr,
-            )
+            crash_snapshot = event.get("crash_snapshot", "")
+            log_path = event.get("log_path", "")
+            lines = [
+                f"ERROR: MCP '{mcp_name}' became unavailable.",
+                f"Reason: {error}",
+            ]
+            if crash_snapshot:
+                lines.append("")
+                lines.append("--- MCP stderr (last 200 lines) ---")
+                lines.append(crash_snapshot)
+                lines.append("--- end stderr ---")
+            if log_path:
+                lines.append(f"\nFull log: {log_path}")
+            lines.append("Shutting down bridge.")
+            print("\n".join(lines), file=sys.stderr)
             logger.error(f"Expose target '{mcp_name}' unavailable: {error}")
             # Schedule graceful shutdown
             asyncio.get_event_loop().call_soon(lambda: asyncio.ensure_future(self.shutdown()))

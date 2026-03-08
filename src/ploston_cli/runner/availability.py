@@ -226,11 +226,20 @@ class AvailabilityReporter:
                         }
                     )
             else:
+                log_file = mcp_log_path(mcp_name)
+                crash_snapshot = ""
+                if log_file.exists():
+                    try:
+                        lines = log_file.read_text(errors="replace").splitlines()
+                        crash_snapshot = "\n".join(lines[-200:])
+                    except OSError:
+                        crash_snapshot = ""
                 unavailable.append(
                     {
                         "name": mcp_name,
                         "error": avail.error or "unavailable",
-                        "log_path": str(mcp_log_path(mcp_name)),
+                        "log_path": str(log_file),
+                        "crash_snapshot": crash_snapshot,
                     }
                 )
 
