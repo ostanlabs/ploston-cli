@@ -288,6 +288,9 @@ class ConfigDetector:
 
         # Extract required env vars (those using ${VAR} syntax or detected as secrets)
         env_vars_required: list[str] = []
+        # Track vars that have literal values in the config — these are already
+        # available and will be extracted into .env during import.
+        literal_secret_vars: set[str] = set()
         for key, value in env.items():
             if isinstance(value, str):
                 # Check for ${VAR} references
@@ -299,10 +302,16 @@ class ConfigDetector:
                     detection = self.secret_detector.detect(key, value)
                     if detection:
                         env_vars_required.append(detection.suggested_env_var)
+                        literal_secret_vars.add(detection.suggested_env_var)
 
-        # Check availability of env vars
+        # Check availability of env vars.
+        # Literal secrets found in the config are always considered available
+        # since their values will be written to .env during import.
         env_vars_available = {
-            var: self.secret_detector.check_env_var_set(var) for var in env_vars_required
+            var: (
+                True if var in literal_secret_vars else self.secret_detector.check_env_var_set(var)
+            )
+            for var in env_vars_required
         }
 
         return ServerInfo(
