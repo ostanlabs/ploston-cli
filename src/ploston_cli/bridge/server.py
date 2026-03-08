@@ -159,7 +159,11 @@ class BridgeServer:
         all_tools = cp_response.get("result", {}).get("tools", [])
 
         if self.expose == "workflows":
-            filtered_tools = [t for t in all_tools if t["name"].startswith("workflow_")]
+            filtered_tools = [
+                t
+                for t in all_tools
+                if t["name"].startswith("workflow_") or t["name"] == "ploston:workflow_schema"
+            ]
         else:
             # --expose <server_name>: filter runner tools + strip prefix
             filtered_tools = self._filter_by_expose(all_tools, self.expose, self.runner)
