@@ -149,15 +149,15 @@
         },
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "MCP Servers"},
+            "matcher": {"id": "byName", "options": "MCP Server Tools"},
             "properties": [{"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}]
           },
           {
-            "matcher": {"id": "byName", "options": "System"},
+            "matcher": {"id": "byName", "options": "System Tools"},
             "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]
           },
           {
-            "matcher": {"id": "byName", "options": "Local Runners"},
+            "matcher": {"id": "byName", "options": "Runner Tools"},
             "properties": [{"id": "color", "value": {"fixedColor": "orange", "mode": "fixed"}}]
           },
           {
@@ -189,17 +189,17 @@
       "targets": [
         {
           "expr": "sum(ploston_tools_by_source{source=\"mcp\"})",
-          "legendFormat": "MCP Servers",
+          "legendFormat": "MCP Server Tools",
           "refId": "A"
         },
         {
           "expr": "sum(ploston_tools_by_source{source=\"system\"})",
-          "legendFormat": "System",
+          "legendFormat": "System Tools",
           "refId": "B"
         },
         {
           "expr": "sum(ploston_tools_by_source{source=\"runner\"})",
-          "legendFormat": "Local Runners",
+          "legendFormat": "Runner Tools",
           "refId": "C"
         },
         {
