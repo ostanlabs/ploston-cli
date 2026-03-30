@@ -142,6 +142,10 @@ class TestBootstrapStateManager:
             ploston_data = base / "data" / "ploston"
             ploston_data.mkdir(parents=True, exist_ok=True)
             (ploston_data / "app.db").write_text("")
+            # Workflow data that should survive teardown
+            workflows_data = base / "data" / "workflows"
+            workflows_data.mkdir(parents=True, exist_ok=True)
+            (workflows_data / "my-workflow.yaml").write_text("name: my-workflow")
 
             with (
                 patch("subprocess.run") as mock_run,
@@ -178,6 +182,8 @@ class TestBootstrapStateManager:
                 assert (base / "tokens" / "tok.json").exists()
                 # Other data dirs preserved
                 assert (base / "data" / "ploston" / "app.db").exists()
+                # Workflow data preserved
+                assert (base / "data" / "workflows" / "my-workflow.yaml").exists()
 
     def test_execute_action_teardown_wipes_volumes_when_telemetry_not_preserved(self):
         """Test that teardown passes remove_volumes=True when preserve_telemetry=False."""

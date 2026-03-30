@@ -54,7 +54,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum by (bridge_id) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range]))",
+          "expr": "sum by (bridge_id) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[$__range]))",
           "legendFormat": "{{bridge_id}}",
           "refId": "A"
         }
@@ -111,7 +111,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range]))",
+          "expr": "sum(increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[$__range]))",
           "legendFormat": "Total",
           "refId": "A"
         }
@@ -176,7 +176,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "100 * sum(rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", status=\"success\"}[$__range])) / sum(rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range]))",
+          "expr": "100 * sum(rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\", status=\"success\"}[$__range])) / sum(rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[$__range]))",
           "legendFormat": "Success Rate",
           "refId": "A"
         }
@@ -241,7 +241,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "100 * sum by (tool_source) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", status=\"success\"}[$__range])) / sum by (tool_source) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range]))",
+          "expr": "100 * sum by (tool_source) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\", status=\"success\"}[$__range])) / sum by (tool_source) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[$__range]))",
           "legendFormat": "{{tool_source}}",
           "refId": "A"
         }
@@ -328,7 +328,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum by (bridge_id) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[5m]))",
+          "expr": "sum by (bridge_id) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[5m]))",
           "legendFormat": "{{bridge_id}}",
           "refId": "A"
         }
@@ -549,7 +549,7 @@
           "refId": "C"
         }
       ],
-      "title": "Tool Call Latency Percentiles (p50/p95/p99)",
+      "title": "Aggregate Latency Percentiles (p50/p95/p99)",
       "type": "timeseries"
     },
     {
@@ -949,7 +949,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (status) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\"}[$__range]))",
+          "expr": "sum by (status) (increase(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[$__range]))",
           "legendFormat": "{{status}}",
           "refId": "A"
         }
@@ -981,10 +981,7 @@
         "multi": true,
         "name": "tool_name",
         "options": [],
-        "query": {
-          "query": "label_values(ploston_tool_invocations_total, tool_name)",
-          "refId": "StandardVariableQuery"
-        },
+        "query": "label_values(ploston_tool_invocations_total, tool_name)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -1007,10 +1004,7 @@
         "multi": true,
         "name": "bridge_id",
         "options": [],
-        "query": {
-          "query": "label_values(ploston_tool_invocations_total, bridge_id)",
-          "refId": "StandardVariableQuery"
-        },
+        "query": "label_values(ploston_tool_invocations_total, bridge_id)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -1025,10 +1019,7 @@
           "uid": "prometheus"
         },
         "definition": "label_values(ploston_tool_invocations_total, runner_id)",
-        "query": {
-          "query": "label_values(ploston_tool_invocations_total, runner_id)",
-          "refId": "StandardVariableQuery"
-        },
+        "query": "label_values(ploston_tool_invocations_total, runner_id)",
         "multi": true,
         "includeAll": true,
         "current": {

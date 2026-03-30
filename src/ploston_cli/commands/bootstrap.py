@@ -73,21 +73,21 @@ def _restore_injected_configs() -> None:
 
 
 def _prompt_preserve_telemetry() -> bool:
-    """Prompt the user whether to preserve telemetry data during teardown.
+    """Prompt the user whether to preserve telemetry and workflow data during teardown.
 
     Returns:
         True to preserve, False to wipe.
     """
     answer = click.prompt(
-        "\n  Preserve telemetry data from previous installation?",
+        "\n  Preserve telemetry data and registered workflows from previous installation?",
         default="Y",
         show_default=True,
     )
     preserve = answer.strip().lower() not in ("no", "n")
     if not preserve:
-        click.echo("  Telemetry data will be cleared.")
+        click.echo("  Telemetry data and registered workflows will be cleared.")
     else:
-        click.echo("  Telemetry data will be preserved.")
+        click.echo("  Telemetry data and registered workflows will be preserved.")
     return preserve
 
 
@@ -853,9 +853,25 @@ async def _run_bootstrap(
 
         if with_observability:
             asset_manager = AssetManager()
-            obs_compose = asset_manager.deploy_observability_docker()
+            obs_compose = asset_manager.deploy_observability_docker(overwrite=True)
             compose_files.append(obs_compose)
             click.echo("  ✓ Deployed observability assets")
+
+            # Inject OTEL env vars into ~/.ploston/.env so the local runner
+            # (which loads this file via _load_ploston_env) forwards logs and
+            # traces to the collector running on localhost (DEC-149).
+            from ..init.env_manager import merge_env_file
+
+            merge_env_file(
+                {
+                    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4327",
+                    "OTEL_EXPORTER_OTLP_INSECURE": "true",
+                    "PLOSTON_LOGS_ENABLED": "true",
+                    "PLOSTON_TRACES_ENABLED": "true",
+                },
+                section="Observability",
+            )
+            click.echo("  ✓ OTEL env vars written to ~/.ploston/.env")
     else:
         # Build ingress config from --domain flag
         ingress_hosts = []
@@ -877,7 +893,7 @@ async def _run_bootstrap(
 
         if with_observability:
             asset_manager = AssetManager()
-            obs_k8s_dir = asset_manager.deploy_observability_k8s()
+            obs_k8s_dir = asset_manager.deploy_observability_k8s(overwrite=True)
             click.echo(f"  ✓ Deployed K8s observability manifests: {obs_k8s_dir}")
 
     # Persist the compose file list so that every StackManager() instance

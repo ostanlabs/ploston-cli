@@ -42,7 +42,7 @@ processors:
   attributes/loki_hints:
     actions:
       - key: loki.attribute.labels
-        value: execution_id, workflow_id, step_id, source, bridge, tool_name, runner_id
+        value: ael_execution_id, ael_workflow_id, ael_step_id, ael_source, ael_bridge, ael_tool_name, ael_runner_id
         action: insert
 
 exporters:

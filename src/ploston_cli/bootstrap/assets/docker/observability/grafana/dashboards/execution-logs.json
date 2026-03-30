@@ -30,7 +30,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=~\"ploston.*\", source=\"workflow\", execution_id=\"$execution_id\", step_id=~\"$step_id\"} | json | level=~\"$level\"",
+          "expr": "{job=\"ploston/ael\", ael_source=\"workflow\", ael_execution_id=~\"${execution_id:regex}\"} | json | ael_step_id=~\"${step_id:regex}\" | level=~\"$level\"",
           "refId": "A"
         }
       ],
@@ -66,7 +66,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum by (step_id) (count_over_time({job=~\"ploston.*\", source=\"workflow\", execution_id=\"$execution_id\"}[$__interval]))",
+          "expr": "sum by (ael_step_id) (count_over_time({job=\"ploston/ael\", ael_source=\"workflow\", ael_execution_id=~\"${execution_id:regex}\"}[$__interval]))",
           "refId": "A"
         }
       ],
@@ -94,7 +94,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=~\"ploston.*\", source=\"workflow\", execution_id=\"$execution_id\"} | json | level=\"ERROR\"",
+          "expr": "{job=\"ploston/ael\", ael_source=\"workflow\", ael_execution_id=~\"${execution_id:regex}\"} | json | level=\"ERROR\"",
           "refId": "A"
         }
       ],
@@ -108,52 +108,47 @@
   "templating": {
     "list": [
       {
-        "current": {},
+        "current": { "selected": true, "text": "All", "value": "$__all" },
         "datasource": { "type": "loki", "uid": "loki" },
-        "definition": "label_values({job=~\"ploston.*\", source=\"workflow\"}, execution_id)",
+        "definition": "label_values({job=\"ploston/ael\", ael_source=\"workflow\"}, ael_execution_id)",
         "hide": 0,
-        "includeAll": false,
+        "includeAll": true,
         "label": "Execution ID",
         "multi": false,
         "name": "execution_id",
         "options": [],
-        "query": {
-          "query": "label_values({job=~\"ploston.*\", source=\"workflow\"}, execution_id)",
-          "refId": "StandardVariableQuery"
-        },
+        "query": "label_values({job=\"ploston/ael\", ael_source=\"workflow\"}, ael_execution_id)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
-        "sort": 0,
+        "sort": 2,
         "type": "query"
       },
       {
-        "current": {},
+        "current": { "selected": true, "text": "All", "value": "$__all" },
         "datasource": { "type": "loki", "uid": "loki" },
-        "definition": "label_values({job=~\"ploston.*\", source=\"workflow\", execution_id=\"$execution_id\"}, step_id)",
+        "definition": "label_values({job=\"ploston/ael\", ael_source=\"workflow\"}, ael_step_id)",
         "hide": 0,
         "includeAll": true,
         "label": "Step",
         "multi": true,
         "name": "step_id",
         "options": [],
-        "query": {
-          "query": "label_values({job=~\"ploston.*\", source=\"workflow\", execution_id=\"$execution_id\"}, step_id)",
-          "refId": "StandardVariableQuery"
-        },
+        "query": "label_values({job=\"ploston/ael\", ael_source=\"workflow\"}, ael_step_id)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
-        "sort": 0,
+        "sort": 1,
         "type": "query"
       },
       {
-        "current": {},
+        "current": { "selected": true, "text": "All", "value": "$__all" },
         "includeAll": true,
         "label": "Log Level",
         "multi": true,
         "name": "level",
         "options": [
+          { "selected": true, "text": "All", "value": "$__all" },
           { "selected": false, "text": "DEBUG", "value": "DEBUG" },
           { "selected": false, "text": "INFO", "value": "INFO" },
           { "selected": false, "text": "WARN", "value": "WARN" },
