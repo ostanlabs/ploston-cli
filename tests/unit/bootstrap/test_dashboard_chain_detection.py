@@ -5,15 +5,17 @@ import os
 
 import pytest
 
-# Resolve paths relative to the repo root
-_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../.."))
+# Resolve the Docker dashboard path relative to the ploston-cli package root,
+# so the test works both inside the monorepo and in standalone CI checkouts.
+_PKG_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 _DOCKER_PATH = os.path.join(
-    _REPO_ROOT,
-    "packages/ploston-cli/src/ploston_cli/bootstrap/assets/docker/"
-    "observability/grafana/dashboards/chain-detection.json",
+    _PKG_ROOT,
+    "src/ploston_cli/bootstrap/assets/docker/observability/grafana/dashboards/chain-detection.json",
 )
+# Helm chart path only exists in the monorepo layout.
+_MONOREPO_ROOT = os.path.abspath(os.path.join(_PKG_ROOT, "../.."))
 _HELM_PATH = os.path.join(
-    _REPO_ROOT, "charts/ploston-observability/dashboards/chain-detection.json"
+    _MONOREPO_ROOT, "charts/ploston-observability/dashboards/chain-detection.json"
 )
 
 
@@ -75,6 +77,10 @@ def test_unique_chains_panel_is_time_windowed(chain_detection_json):
     assert "> 0" in expr
 
 
+@pytest.mark.skipif(
+    not os.path.exists(_HELM_PATH),
+    reason="Helm chart path not available (standalone checkout)",
+)
 def test_both_dashboard_copies_are_identical():
     with open(_DOCKER_PATH) as f:
         docker_json = json.load(f)
