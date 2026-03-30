@@ -5,17 +5,41 @@ in main.py for both daemon and foreground modes.
 """
 
 import logging
+import os
 
 logger = logging.getLogger(__name__)
+
+
+def _load_ploston_env() -> None:
+    """Load ~/.ploston/.env into os.environ.
+
+    MCP server configs pushed from the CP reference secrets via ``${VAR}``
+    syntax.  ``ConfigReceiver._resolve_env_vars`` resolves them from
+    ``os.environ``, so the values must be present in the process environment
+    before any config/push arrives.
+
+    Only variables that are **not** already set are injected (so explicit
+    exports or CLI-level overrides take precedence).
+    """
+    from ..init.env_manager import load_env_file
+
+    env_vars = load_env_file()  # reads ~/.ploston/.env
+    for key, value in env_vars.items():
+        if key not in os.environ:
+            os.environ[key] = value
+            logger.debug("Loaded env var %s from ~/.ploston/.env", key)
+        else:
+            logger.debug("Env var %s already set, skipping", key)
 
 
 def run_runner(cp: str, token: str, name: str) -> None:
     """Execute the runner (called in daemon or foreground mode).
 
     This is the main entry point for runner execution. It:
-    1. Creates a RunnerConfig from the provided parameters
-    2. Creates a RunnerConnection with all handlers wired up
-    3. Runs the connection's main loop
+    1. Loads secrets from ~/.ploston/.env into os.environ
+    2. Creates a RunnerConfig from the provided parameters
+    3. Creates a RunnerConnection with all handlers wired up
+    4. Runs the connection's main loop
 
     Args:
         cp: Control Plane WebSocket URL (e.g., wss://ploston:8022/runner/ws)
@@ -23,6 +47,10 @@ def run_runner(cp: str, token: str, name: str) -> None:
         name: Runner name (unique identifier)
     """
     import asyncio
+
+    # Load secrets (GITHUB_PERSONAL_ACCESS_TOKEN, etc.) so ConfigReceiver
+    # can resolve ${VAR} references in MCP server env configs.
+    _load_ploston_env()
 
     from .availability import AvailabilityReporter
     from .config_receiver import ConfigReceiver
