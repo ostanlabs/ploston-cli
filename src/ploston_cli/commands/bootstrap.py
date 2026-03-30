@@ -642,10 +642,14 @@ async def _run_bootstrap(
             click.echo(f"  ✓ {msg}")
             # Fall through to full bootstrap flow below
         elif state.stack_running:
+            if images.build_from_source:
+                recreate_label = "Recreate stack (rebuild from source)"
+            else:
+                recreate_label = "Recreate stack (pull latest images)"
             click.echo("\nOptions:")
             click.echo("  [1] Keep running (nothing to do)")
             click.echo("  [2] Restart stack")
-            click.echo("  [3] Recreate stack (pull latest images)")
+            click.echo(f"  [3] {recreate_label}")
             click.echo("  [4] Tear down and re-bootstrap")
 
             choice = click.prompt(
@@ -678,7 +682,31 @@ async def _run_bootstrap(
                 click.echo(f"  ✓ {msg}")
                 # Fall through to full bootstrap flow below
             else:
-                success, msg = state_manager.execute_action(action)
+                # RESTART or RECREATE — rebuild images first when
+                # --build-from-source is active so the stack picks up
+                # the latest local code changes.
+                if images.build_from_source:
+                    click.echo("\n  Rebuilding images from source...")
+                    repo_root = detect_meta_repo_root()
+                    if repo_root is None:
+                        msg = (
+                            "Cannot rebuild: not inside the ploston development "
+                            "workspace (agent-execution-layer)."
+                        )
+                        click.echo(f"\n✗ {msg}", err=True)
+                        return BootstrapResult(success=False, error=msg)
+                    try:
+                        ploston_img, native_tools_img = build_from_source(repo_root)
+                        click.echo(f"  ✓ Built: {ploston_img}")
+                        click.echo(f"  ✓ Built: {native_tools_img}")
+                    except BuildError as e:
+                        click.echo(f"  ✗ {e}", err=True)
+                        return BootstrapResult(success=False, error=str(e))
+
+                success, msg = state_manager.execute_action(
+                    action,
+                    skip_pull=images.build_from_source,
+                )
                 if not success:
                     click.echo(f"\n✗ {msg}", err=True)
                     return BootstrapResult(success=False, error=msg)

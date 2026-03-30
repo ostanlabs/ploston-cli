@@ -183,6 +183,7 @@ class BootstrapStateManager:
         self,
         action: BootstrapAction,
         preserve_telemetry: bool = True,
+        skip_pull: bool = False,
     ) -> tuple[bool, str]:
         """Execute a bootstrap action.
 
@@ -190,6 +191,9 @@ class BootstrapStateManager:
             action: Action to execute.
             preserve_telemetry: If True (default), keep telemetry data
                 (data/ploston) during teardown. If False, wipe it.
+            skip_pull: If True, skip pulling images during RECREATE.
+                Used when images are already built locally
+                (e.g. --build-from-source).
 
         Returns:
             Tuple of (success, message).
@@ -201,10 +205,11 @@ class BootstrapStateManager:
             return self.stack_manager.restart()
 
         elif action == BootstrapAction.RECREATE:
-            # Pull latest images and restart
-            success, msg = self.stack_manager.pull()
-            if not success:
-                return False, f"Failed to pull images: {msg}"
+            if not skip_pull:
+                # Pull latest images before restart
+                success, msg = self.stack_manager.pull()
+                if not success:
+                    return False, f"Failed to pull images: {msg}"
             return self.stack_manager.restart()
 
         elif action == BootstrapAction.TEARDOWN:

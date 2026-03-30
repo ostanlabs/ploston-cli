@@ -92,9 +92,9 @@ class BridgeProxy:
             headers["X-Bridge-Queue-Drops"] = str(self._lifecycle._queue_drops_since_connect)
         if self.bridge_session_start:
             headers["X-Bridge-Session-Start"] = self.bridge_session_start
-        # DEC-157: Runner name for workflow tool resolution
+        # DEC-157/DEC-159: Runner name for workflow tool resolution
         if self.bridge_runner:
-            headers["X-Bridge-Runner"] = self.bridge_runner
+            headers["X-Ploston-Runner"] = self.bridge_runner
         return headers
 
     async def _ensure_client(self) -> httpx.AsyncClient:

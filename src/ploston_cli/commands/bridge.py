@@ -29,6 +29,7 @@ import click
 from ..bridge.lifecycle import BridgeLifecycle
 from ..bridge.proxy import BridgeProxy, BridgeProxyError
 from ..bridge.server import BridgeServer
+from ..init.injector import default_runner_name
 
 # Default values
 DEFAULT_TIMEOUT = 30.0
@@ -263,9 +264,10 @@ async def run_bridge(
     # Propagate --expose value so CP can see which filter this bridge uses
     if expose:
         proxy.bridge_expose = expose
-    # DEC-157: Propagate runner name for workflow tool resolution
-    if runner:
-        proxy.bridge_runner = runner
+    # DEC-157: Propagate runner name for workflow tool resolution.
+    # Always send X-Bridge-Runner — fall back to hostname-based name
+    # (same logic the runner uses to name itself on startup).
+    proxy.bridge_runner = runner or default_runner_name()
 
     server = BridgeServer(proxy=proxy, tools_filter=tools_filter, expose=expose, runner=runner)
 

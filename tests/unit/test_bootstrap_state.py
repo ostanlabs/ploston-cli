@@ -250,6 +250,42 @@ class TestBootstrapStateManager:
 
                 assert success is True
 
+    def test_execute_action_recreate_pulls_by_default(self):
+        """Test RECREATE pulls images before restarting."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            compose_file = Path(tmpdir) / "docker-compose.yaml"
+            compose_file.write_text("version: '3'\nservices: {}")
+
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+
+                manager = BootstrapStateManager(base_dir=Path(tmpdir))
+                success, msg = manager.execute_action(BootstrapAction.RECREATE)
+
+                assert success is True
+                # Should have called pull (compose pull) then restart (down + up)
+                all_args = [c[0][0] for c in mock_run.call_args_list]
+                pull_calls = [a for a in all_args if "pull" in a]
+                assert len(pull_calls) >= 1, "RECREATE should pull images"
+
+    def test_execute_action_recreate_skip_pull(self):
+        """Test RECREATE with skip_pull=True skips the pull step."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            compose_file = Path(tmpdir) / "docker-compose.yaml"
+            compose_file.write_text("version: '3'\nservices: {}")
+
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+
+                manager = BootstrapStateManager(base_dir=Path(tmpdir))
+                success, msg = manager.execute_action(BootstrapAction.RECREATE, skip_pull=True)
+
+                assert success is True
+                # Should NOT have called pull — only down + up (restart)
+                all_args = [c[0][0] for c in mock_run.call_args_list]
+                pull_calls = [a for a in all_args if "pull" in a]
+                assert len(pull_calls) == 0, "RECREATE with skip_pull=True should not pull images"
+
     def test_cleanup(self):
         """Test cleanup removes compose file and data."""
         with tempfile.TemporaryDirectory() as tmpdir:
