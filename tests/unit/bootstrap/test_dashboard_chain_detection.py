@@ -69,9 +69,7 @@ def test_token_savings_panel_uses_real_metric(chain_detection_json):
 
 
 def test_unique_chains_panel_is_time_windowed(chain_detection_json):
-    chains_panel = next(
-        p for p in chain_detection_json["panels"] if "unique" in p["title"].lower()
-    )
+    chains_panel = next(p for p in chain_detection_json["panels"] if "unique" in p["title"].lower())
     expr = chains_panel["targets"][0]["expr"]
     assert "increase(" in expr
     assert "> 0" in expr
@@ -85,4 +83,3 @@ def test_both_dashboard_copies_are_identical():
     assert docker_json == helm_json, (
         "Dashboard copies have diverged — sync helm chart from docker copy"
     )
-
