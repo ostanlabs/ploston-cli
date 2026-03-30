@@ -268,6 +268,15 @@ class BootstrapStateManager:
                 shutil.rmtree(telemetry_dir)
                 logger.debug("Removed telemetry data directory %s", telemetry_dir)
 
+        # Conditionally wipe API-registered workflows.
+        # data/workflows is NOT in _GENERATED_ARTIFACTS so it is preserved
+        # by default — only wiped when the user explicitly opts out.
+        if not preserve_telemetry:
+            workflows_dir = self.base_dir / "data" / "workflows"
+            if workflows_dir.is_dir():
+                shutil.rmtree(workflows_dir)
+                logger.debug("Removed workflows data directory %s", workflows_dir)
+
     def cleanup(self, remove_data: bool = False) -> tuple[bool, str]:
         """Clean up bootstrap installation.
 

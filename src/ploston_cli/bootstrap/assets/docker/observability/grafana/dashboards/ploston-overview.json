@@ -268,75 +268,6 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Health status of native-tools dependencies. Green=healthy, Red=unhealthy, Gray=disabled",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {"options": {"1": {"color": "green", "index": 0, "text": "Healthy"}}, "type": "value"},
-            {"options": {"0": {"color": "red", "index": 1, "text": "Unhealthy"}}, "type": "value"},
-            {"options": {"-1": {"color": "gray", "index": 2, "text": "Disabled"}}, "type": "value"}
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {"color": "red", "value": null},
-              {"color": "gray", "value": -1},
-              {"color": "red", "value": 0},
-              {"color": "green", "value": 1}
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 16,
-        "y": 12
-      },
-      "id": 11,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "pluginVersion": "10.0.0",
-      "targets": [
-        {
-          "expr": "native_tools_dependency_status{dependency=\"kafka\"}",
-          "legendFormat": "Kafka",
-          "refId": "A"
-        },
-        {
-          "expr": "native_tools_dependency_status{dependency=\"ollama\"}",
-          "legendFormat": "Ollama",
-          "refId": "B"
-        },
-        {
-          "expr": "native_tools_dependency_status{dependency=\"firecrawl\"}",
-          "legendFormat": "Firecrawl",
-          "refId": "C"
-        }
-      ],
-      "title": "Native Tools Dependencies",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -506,40 +437,7 @@
   "style": "dark",
   "tags": ["ploston"],
   "templating": {
-    "list": [
-      {
-        "current": { "selected": true, "text": "All", "value": "$__all" },
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(ploston_tool_invocations_total, runner_id)",
-        "hide": 0,
-        "includeAll": true,
-        "multi": true,
-        "name": "runner",
-        "options": [],
-        "query": { "query": "label_values(ploston_tool_invocations_total, runner_id)", "refId": "StandardVariableQuery" },
-        "refresh": 2,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
-      },
-      {
-        "current": { "selected": true, "text": "All", "value": "$__all" },
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(ploston_tool_invocations_total, bridge_id)",
-        "hide": 0,
-        "includeAll": true,
-        "multi": true,
-        "name": "bridge_id",
-        "options": [],
-        "query": { "query": "label_values(ploston_tool_invocations_total, bridge_id)", "refId": "StandardVariableQuery" },
-        "refresh": 2,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
-      }
-    ]
+    "list": []
   },
   "time": {
     "from": "now-6h",

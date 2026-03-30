@@ -56,12 +56,12 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_tokens_saved_total[24h]))",
-          "legendFormat": "Tokens Saved (24h)",
+          "expr": "sum(increase(ploston_tokens_saved_total{workflow_name=~\"$workflow\"}[$__range]))",
+          "legendFormat": "Tokens Saved",
           "refId": "A"
         }
       ],
-      "title": "Tokens Saved (24h)",
+      "title": "Tokens Saved",
       "type": "stat"
     },
     {
@@ -111,12 +111,12 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_cost_saved_cents_total[24h])) / 100",
-          "legendFormat": "Cost Saved (24h)",
+          "expr": "sum(increase(ploston_cost_saved_cents_total{workflow_name=~\"$workflow\",model=~\"$model\"}[$__range])) / 100",
+          "legendFormat": "Cost Saved",
           "refId": "A"
         }
       ],
-      "title": "Cost Saved (24h)",
+      "title": "Cost Saved",
       "type": "stat"
     },
     {
@@ -170,7 +170,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "100 * sum(increase(ploston_tokens_saved_total[24h])) / sum(increase(ploston_raw_mcp_estimate_total[24h]))",
+          "expr": "100 * sum(increase(ploston_tokens_saved_total{workflow_name=~\"$workflow\"}[$__range])) / sum(increase(ploston_raw_mcp_estimate_total{workflow_name=~\"$workflow\"}[$__range]))",
           "legendFormat": "Savings Rate",
           "refId": "A"
         }
@@ -255,7 +255,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(ploston_tokens_saved_total[5m])) by (workflow_name)",
+          "expr": "sum(increase(ploston_tokens_saved_total{workflow_name=~\"$workflow\"}[$__range])) by (workflow_name)",
           "legendFormat": "{{workflow_name}}",
           "refId": "A"
         }
@@ -340,7 +340,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(ploston_cost_saved_cents_total[5m])) by (model) / 100",
+          "expr": "sum(increase(ploston_cost_saved_cents_total{workflow_name=~\"$workflow\",model=~\"$model\"}[$__range])) by (model) / 100",
           "legendFormat": "{{model}}",
           "refId": "A"
         }
@@ -405,7 +405,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(ploston_tokens_saved_per_execution_bucket[5m])) by (le)",
+          "expr": "sum(rate(ploston_tokens_saved_per_execution_bucket{workflow_name=~\"$workflow\"}[5m])) by (le)",
           "legendFormat": "{{le}}",
           "refId": "A",
           "format": "heatmap"
@@ -430,7 +430,7 @@
         "multi": true,
         "name": "workflow",
         "options": [],
-        "query": { "query": "label_values(ploston_tokens_saved_total, workflow_name)", "refId": "StandardVariableQuery" },
+        "query": "label_values(ploston_tokens_saved_total, workflow_name)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -446,7 +446,7 @@
         "multi": true,
         "name": "model",
         "options": [],
-        "query": { "query": "label_values(ploston_cost_saved_cents_total, model)", "refId": "StandardVariableQuery" },
+        "query": "label_values(ploston_cost_saved_cents_total, model)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,

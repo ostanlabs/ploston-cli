@@ -220,15 +220,15 @@ class TestGrafanaDashboards:
         assert dashboard["uid"] == "ploston-workflow-execution-logs"
 
     def test_workflow_execution_logs_queries_have_source_workflow(self):
-        """All LogQL queries in execution-logs must include source='workflow'."""
+        """All LogQL queries in execution-logs must include ael_source='workflow'."""
         with open(self.DASHBOARDS_DIR / "execution-logs.json") as f:
             dashboard = json.load(f)
         for panel in dashboard.get("panels", []):
             for target in panel.get("targets", []):
                 expr = target.get("expr", "")
                 if "{" in expr:
-                    assert 'source="workflow"' in expr, (
-                        f"Panel '{panel.get('title')}' query missing source=\"workflow\": {expr}"
+                    assert 'ael_source="workflow"' in expr, (
+                        f"Panel '{panel.get('title')}' query missing ael_source=\"workflow\": {expr}"
                     )
 
     def test_direct_tool_logs_dashboard_exists(self):
@@ -242,15 +242,15 @@ class TestGrafanaDashboards:
         assert dashboard["uid"] == "ploston-direct-tool-logs"
 
     def test_direct_tool_logs_queries_have_source_tool(self):
-        """All LogQL queries in direct-tool-logs must include source='tool'."""
+        """All LogQL queries in direct-tool-logs must include ael_source='tool'."""
         with open(self.DASHBOARDS_DIR / "direct-tool-logs.json") as f:
             dashboard = json.load(f)
         for panel in dashboard.get("panels", []):
             for target in panel.get("targets", []):
                 expr = target.get("expr", "")
                 if "{" in expr:
-                    assert 'source="tool"' in expr, (
-                        f"Panel '{panel.get('title')}' query missing source=\"tool\": {expr}"
+                    assert 'ael_source="tool"' in expr, (
+                        f"Panel '{panel.get('title')}' query missing ael_source=\"tool\": {expr}"
                     )
 
     def test_direct_tool_logs_has_required_variables(self):
@@ -265,7 +265,7 @@ class TestGrafanaDashboards:
         assert "search" in var_names
 
     def test_otel_config_promotes_source_label(self):
-        """OTEL config must promote 'source' to a Loki label."""
+        """OTEL config must promote 'ael_source' to a Loki label (ael_ prefix)."""
         config_path = ASSETS_DIR / "otel" / "config.yaml"
         with open(config_path) as f:
             otel_config = yaml.safe_load(f)
@@ -274,9 +274,19 @@ class TestGrafanaDashboards:
         actions = loki_hints.get("actions", [])
         for action in actions:
             if action.get("key") == "loki.attribute.labels":
-                assert "source" in action.get("value", ""), (
-                    "loki.attribute.labels must include 'source'"
-                )
+                value = action.get("value", "")
+                assert "ael_source" in value, "loki.attribute.labels must include 'ael_source'"
+                # Verify all required ael_ prefixed labels are present
+                for label in [
+                    "ael_execution_id",
+                    "ael_workflow_id",
+                    "ael_step_id",
+                    "ael_source",
+                    "ael_bridge",
+                    "ael_tool_name",
+                    "ael_runner_id",
+                ]:
+                    assert label in value, f"loki.attribute.labels must include '{label}'"
                 break
         else:
             pytest.fail("No loki.attribute.labels action found in OTEL config")

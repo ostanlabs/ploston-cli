@@ -618,7 +618,7 @@
         "multi": true,
         "name": "bridge_id",
         "options": [],
-        "query": { "query": "label_values(ploston_chain_links_total, bridge_id)", "refId": "StandardVariableQuery" },
+        "query": "label_values(ploston_chain_links_total, bridge_id)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,

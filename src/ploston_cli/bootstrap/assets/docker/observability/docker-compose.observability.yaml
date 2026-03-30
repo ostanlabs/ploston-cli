@@ -117,11 +117,10 @@ services:
       - "8889:8889"   # Prometheus metrics
     volumes:
       - ./observability/otel/config.yaml:/etc/otel/config.yaml:ro
+    # Note: otel-contrib image is scratch-based (no wget/curl/sh).
+    # Nothing depends on otel-collector health; disable Docker healthcheck.
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:13133/"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      disable: true
     depends_on:
       prometheus:
         condition: service_healthy
