@@ -40,7 +40,7 @@ from ..bootstrap.image_resolver import ImageConfig, ImageResolverError, resolve_
 from ..bootstrap.workspace import detect_meta_repo_root
 from ..init import ServerSelector
 from ..init.detector import ConfigDetector
-from ..init.injector import is_already_injected, list_backups, restore_config_from_backup
+from ..init.injector import is_already_injected, restore_config_from_imported
 
 DEFAULT_NETWORK_NAME = "ploston-network"
 
@@ -49,7 +49,7 @@ def _restore_injected_configs() -> None:
     """Detect and restore any Claude/Cursor configs that were injected by Ploston.
 
     Scans for known config files, checks if Ploston bridge entries are present,
-    and restores from the most recent backup automatically.
+    and restores from the inline ``_ploston_imported`` section automatically.
     """
     detector = ConfigDetector()
     configs = detector.detect_all()
@@ -61,15 +61,10 @@ def _restore_injected_configs() -> None:
             continue
 
         label = "Claude Desktop" if config.source == "claude_desktop" else "Cursor"
-        backups = list_backups(config.path)
-        if backups:
-            restore_config_from_backup(config.path, backups[0])
-            click.echo(f"  ✓ Restored {label} config from backup")
+        if restore_config_from_imported(config.path):
+            click.echo(f"  ✓ Restored {label} config from _ploston_imported")
         else:
-            click.echo(
-                f"  ⚠ {label} config has Ploston entries but no backup found. "
-                f"Swap '_ploston_imported' back into 'mcpServers' manually."
-            )
+            click.echo(f"  ⚠ {label} config has Ploston entries but could not be restored.")
 
 
 def _prompt_preserve_telemetry() -> bool:
@@ -533,8 +528,8 @@ def rollback():
     """Restore Claude Desktop and Cursor configs to their pre-injection state.
 
     Scans for configs that were modified by ``ploston init --import --inject``
-    and restores them from the most recent backup.  If no backup is found,
-    prints instructions for manual restoration.
+    and restores them from the inline ``_ploston_imported`` section, which
+    holds the original server definitions.
 
     \b
     This is safe to run at any time — if no injection is detected the command
@@ -551,16 +546,13 @@ def rollback():
             continue
 
         label = "Claude Desktop" if config.source == "claude_desktop" else "Cursor"
-        backups = list_backups(config.path)
-        if backups:
-            restore_config_from_backup(config.path, backups[0])
-            click.echo(f"  ✓ Restored {label} config from backup ({backups[0].name})")
+        if restore_config_from_imported(config.path):
+            click.echo(f"  ✓ Restored {label} config from _ploston_imported")
             restored += 1
         else:
             click.echo(
-                f"  ⚠ {label} config has Ploston entries but no backup found.\n"
-                f"    Swap '_ploston_imported' back into 'mcpServers' manually in:\n"
-                f"    {config.path}"
+                f"  ⚠ {label} config has Ploston entries but could not be restored.\n"
+                f"    Check: {config.path}"
             )
 
     if restored:

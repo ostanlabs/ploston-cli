@@ -198,14 +198,9 @@
           "refId": "B"
         },
         {
-          "expr": "sum(ploston_tools_by_source{source=\"runner\"})",
-          "legendFormat": "Runner Tools",
-          "refId": "C"
-        },
-        {
           "expr": "sum(ploston_tools_by_source{source=\"native\"})",
           "legendFormat": "Native Tools",
-          "refId": "D"
+          "refId": "C"
         }
       ],
       "title": "Tools by Source",

@@ -17,6 +17,11 @@ from .client import PlostClient, PlostClientError
 from .commands.bootstrap import bootstrap
 from .commands.bridge import bridge_command
 from .commands.init import init_command
+from .commands.inject import inject_command
+from .commands.server import server_group
+from .completion import (
+    complete_workflow_names as _complete_wf,
+)
 from .config import DEFAULT_SERVER, load_config
 from .utils import parse_inputs
 
@@ -90,10 +95,12 @@ def cli(
 cli.add_command(bootstrap)
 cli.add_command(bridge_command)
 cli.add_command(init_command)
+cli.add_command(inject_command)
+cli.add_command(server_group)
 
 
 @cli.command()
-@click.argument("workflow")
+@click.argument("workflow", shell_complete=_complete_wf)
 @click.option("-i", "--input", "inputs", multiple=True, help="Input KEY=VALUE")
 @click.option("--input-file", type=click.Path(exists=True), help="Inputs file")
 @click.option("-t", "--timeout", type=int, help="Timeout in seconds")

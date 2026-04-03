@@ -328,7 +328,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum by (bridge_id) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[5m]))",
+          "expr": "sum by (bridge_id) (rate(ploston_tool_invocations_total{runner_id=~\"($runner|)\", bridge_id=~\"$bridge_id\", tool_name=~\"$tool_name\"}[$__rate_interval]))",
           "legendFormat": "{{bridge_id}}",
           "refId": "A"
         }
@@ -534,17 +534,17 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.50, sum(rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__rate_interval])) by (le))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__rate_interval])) by (le))",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__rate_interval])) by (le))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -622,7 +622,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])) by (le)",
+          "expr": "sum(increase(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__range])) by (le)",
           "format": "heatmap",
           "legendFormat": "{{le}}",
           "refId": "A"
@@ -733,21 +733,21 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (tool_name, le) (rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (tool_name, le) (rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__rate_interval])))",
           "format": "table",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (tool_name, le) (rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (tool_name, le) (rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__rate_interval])))",
           "format": "table",
           "instant": true,
           "legendFormat": "",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (tool_name, le) (rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (tool_name, le) (rate(ploston_tool_invocation_duration_seconds_bucket{runner_id=~\"($runner|)\", tool_name=~\"$tool_name\", bridge_id=~\"$bridge_id\"}[$__rate_interval])))",
           "format": "table",
           "instant": true,
           "legendFormat": "",

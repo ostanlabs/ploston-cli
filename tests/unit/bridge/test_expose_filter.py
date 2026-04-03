@@ -390,33 +390,47 @@ class TestSessionMapLifecycle:
 
 
 class TestExposeWorkflows:
-    """Tests for --expose workflows filtering."""
+    """Tests for --expose workflows tag-based filtering.
+
+    After S-243, --expose workflows resolves to tags=["kind:workflow"]
+    and delegates filtering to the CP.  The bridge returns CP response as-is.
+    """
 
     @pytest.mark.asyncio
-    async def test_only_workflow_tools_returned(self, mock_proxy, tools_with_runner):
+    async def test_tags_forwarded_to_cp(self, mock_proxy, tools_with_runner):
+        """Bridge forwards tags=["kind:workflow"] when --expose workflows."""
+        # Mock: CP returns only the matching tools (as it would in production)
+        workflow_tools = [t for t in tools_with_runner if t["name"].startswith("workflow_")]
         mock_proxy.send_request.return_value = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": {"tools": tools_with_runner},
+            "result": {"tools": workflow_tools},
         }
         server = make_server(mock_proxy, expose="workflows")
 
         request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
         response = await server.handle_request(request)
 
+        # Verify tags were forwarded
+        call_args = mock_proxy.send_request.call_args[0][0]
+        assert call_args["params"]["tags"] == ["kind:workflow"]
+
+        # Verify response returned as-is from CP
         tools = response["result"]["tools"]
-        tool_names = [t["name"] for t in tools]
         assert len(tools) == 3
+        tool_names = [t["name"] for t in tools]
         assert "workflow_deploy_pipeline" in tool_names
         assert "workflow_schema" in tool_names
         assert "workflow_list" in tool_names
 
     @pytest.mark.asyncio
     async def test_no_stripping_applied(self, mock_proxy, tools_with_runner):
+        """Workflow tool names are not stripped (no prefix to strip)."""
+        workflow_tools = [t for t in tools_with_runner if t["name"].startswith("workflow_")]
         mock_proxy.send_request.return_value = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": {"tools": tools_with_runner},
+            "result": {"tools": workflow_tools},
         }
         server = make_server(mock_proxy, expose="workflows")
 
@@ -424,15 +438,18 @@ class TestExposeWorkflows:
         response = await server.handle_request(request)
 
         tool_names = [t["name"] for t in response["result"]["tools"]]
-        assert "workflow_deploy_pipeline" in tool_names  # Not stripped
-        assert "workflow_schema" in tool_names  # Not stripped
+        assert "workflow_deploy_pipeline" in tool_names
+        assert "workflow_schema" in tool_names
 
     @pytest.mark.asyncio
-    async def test_non_workflow_tools_excluded(self, mock_proxy, tools_with_runner):
+    async def test_cp_filters_non_workflow_tools(self, mock_proxy, tools_with_runner):
+        """Non-workflow tools are excluded by CP (not locally)."""
+        # Simulate CP doing the filtering and returning only workflow tools
+        workflow_tools = [t for t in tools_with_runner if t["name"].startswith("workflow_")]
         mock_proxy.send_request.return_value = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": {"tools": tools_with_runner},
+            "result": {"tools": workflow_tools},
         }
         server = make_server(mock_proxy, expose="workflows")
 
@@ -447,10 +464,11 @@ class TestExposeWorkflows:
     @pytest.mark.asyncio
     async def test_no_runner_required(self, mock_proxy, tools_with_runner):
         """--expose workflows does not require --runner."""
+        workflow_tools = [t for t in tools_with_runner if t["name"].startswith("workflow_")]
         mock_proxy.send_request.return_value = {
             "jsonrpc": "2.0",
             "id": 1,
-            "result": {"tools": tools_with_runner},
+            "result": {"tools": workflow_tools},
         }
         server = make_server(mock_proxy, expose="workflows")
         assert server.runner is None

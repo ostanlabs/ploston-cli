@@ -18,11 +18,15 @@ from ploston_cli.init import (
     ConfigDetector,
     ServerSelector,
     generate_runner_token,
-    inject_ploston_into_config,
     merge_configs,
     write_env_file,
 )
-from ploston_cli.init.injector import default_runner_name
+from ploston_cli.init.detector import ALL_INJECT_TARGETS
+from ploston_cli.init.injector import (
+    SOURCE_LABELS,
+    default_runner_name,
+    run_injection,
+)
 
 if TYPE_CHECKING:
     from ploston_cli.init.detector import DetectedConfig, ServerInfo
@@ -75,6 +79,13 @@ def _get_default_cp_url() -> str:
         "Used in --runner args of generated bridge entries."
     ),
 )
+@click.option(
+    "--inject-target",
+    "inject_targets",
+    multiple=True,
+    type=click.Choice(ALL_INJECT_TARGETS),
+    help="Inject into specific config target(s). Repeatable. Default: interactive selection.",
+)
 def init_command(
     do_import: bool,
     source: str,
@@ -82,6 +93,7 @@ def init_command(
     inject: bool,
     non_interactive: bool,
     runner_name: str | None,
+    inject_targets: tuple[str, ...],
 ) -> None:
     """Initialize Ploston configuration.
 
@@ -101,6 +113,10 @@ def init_command(
         click.echo("Run 'ploston init --help' for more options.")
         return
 
+    # If --inject-target is supplied, implicitly enable --inject
+    if inject_targets:
+        inject = True
+
     # Run the async import flow
     asyncio.run(
         _run_import_flow(
@@ -109,6 +125,7 @@ def init_command(
             inject=inject,
             non_interactive=non_interactive,
             runner_name=runner_name,  # None → default_runner_name() applied at inject time
+            inject_targets=list(inject_targets) or None,
         )
     )
 
@@ -119,6 +136,7 @@ async def _run_import_flow(
     inject: bool,
     non_interactive: bool,
     runner_name: str | None,
+    inject_targets: list[str] | None = None,
 ) -> None:
     """Execute the full init --import flow."""
     click.echo("\n🚀 Ploston Init - Import MCP Configuration\n")
@@ -179,7 +197,15 @@ async def _run_import_flow(
         sys.exit(0)
 
     # Continue with the rest of the flow
-    await _complete_import_flow(cp_url, found, servers, selected_names, runner_name, inject)
+    await _complete_import_flow(
+        cp_url,
+        found,
+        servers,
+        selected_names,
+        runner_name,
+        inject,
+        inject_targets=inject_targets,
+    )
 
 
 async def _ensure_cp_connectivity(cp_url: str, non_interactive: bool) -> str | None:
@@ -274,6 +300,7 @@ async def _complete_import_flow(
     selected_names: list[str],
     runner_name: str | None,
     inject: bool,
+    inject_targets: list[str] | None = None,
 ) -> None:
     """Complete the import flow after server selection."""
     from ploston_core.config.secrets import SecretDetector
@@ -323,6 +350,7 @@ async def _complete_import_flow(
                 runner_name=effective_runner_name,
                 mcp_servers=mcp_servers,
                 token=runner_token,
+                merge=True,  # Additive: preserve previously imported servers
             )
         click.echo("  ✓ Configuration pushed successfully")
     except PlostClientError as e:
@@ -332,19 +360,19 @@ async def _complete_import_flow(
     # Step 6: Optionally inject into source config
     if inject:
         click.echo("\n🔧 Injecting Ploston into source configurations...")
-        for detected in detected_configs:
-            if detected.found and detected.path:
-                try:
-                    inject_ploston_into_config(
-                        config_path=detected.path,
-                        imported_servers=list(selected_servers.keys()),
-                        cp_url=cp_url,
-                        runner_name=effective_runner_name,
-                    )
-                    label = "Claude Desktop" if detected.source == "claude_desktop" else "Cursor"
-                    click.echo(f"  ✓ Updated {label} config ({detected.path})")
-                except Exception as e:
-                    click.echo(f"  ⚠️  Failed to update {detected.path}: {e}")
+        results = run_injection(
+            detected_configs=detected_configs,
+            imported_servers=list(selected_servers.keys()),
+            cp_url=cp_url,
+            runner_name=effective_runner_name,
+            targets=inject_targets,
+        )
+        for source_type, path, error in results:
+            label = SOURCE_LABELS.get(source_type, source_type)
+            if error:
+                click.echo(f"  ⚠️  Failed to update {path}: {error}")
+            else:
+                click.echo(f"  ✓ Updated {label} config ({path})")
 
     # Step 7: Print summary
     click.echo("\n" + "=" * 60)

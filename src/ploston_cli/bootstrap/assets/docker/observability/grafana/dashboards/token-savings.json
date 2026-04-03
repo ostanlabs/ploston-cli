@@ -405,7 +405,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(ploston_tokens_saved_per_execution_bucket{workflow_name=~\"$workflow\"}[5m])) by (le)",
+          "expr": "sum(rate(ploston_tokens_saved_per_execution_bucket{workflow_name=~\"$workflow\"}[$__rate_interval])) by (le)",
           "legendFormat": "{{le}}",
           "refId": "A",
           "format": "heatmap"

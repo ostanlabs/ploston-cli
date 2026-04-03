@@ -31,6 +31,7 @@
         {
           "datasource": { "type": "loki", "uid": "loki" },
           "expr": "{job=\"ploston/ael\", ael_source=\"workflow\", ael_execution_id=~\"${execution_id:regex}\"} | json | ael_step_id=~\"${step_id:regex}\" | level=~\"$level\"",
+          "maxLines": 500,
           "refId": "A"
         }
       ],
@@ -95,6 +96,7 @@
         {
           "datasource": { "type": "loki", "uid": "loki" },
           "expr": "{job=\"ploston/ael\", ael_source=\"workflow\", ael_execution_id=~\"${execution_id:regex}\"} | json | level=\"ERROR\"",
+          "maxLines": 500,
           "refId": "A"
         }
       ],
@@ -110,14 +112,19 @@
       {
         "current": { "selected": true, "text": "All", "value": "$__all" },
         "datasource": { "type": "loki", "uid": "loki" },
-        "definition": "label_values({job=\"ploston/ael\", ael_source=\"workflow\"}, ael_execution_id)",
+        "definition": "",
         "hide": 0,
         "includeAll": true,
         "label": "Execution ID",
         "multi": false,
         "name": "execution_id",
         "options": [],
-        "query": "label_values({job=\"ploston/ael\", ael_source=\"workflow\"}, ael_execution_id)",
+        "query": {
+          "label": "ael_execution_id",
+          "stream": "",
+          "type": 1,
+          "refId": "LokiVariableQueryEditor-VariableQuery"
+        },
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -127,14 +134,19 @@
       {
         "current": { "selected": true, "text": "All", "value": "$__all" },
         "datasource": { "type": "loki", "uid": "loki" },
-        "definition": "label_values({job=\"ploston/ael\", ael_source=\"workflow\"}, ael_step_id)",
+        "definition": "",
         "hide": 0,
         "includeAll": true,
         "label": "Step",
         "multi": true,
         "name": "step_id",
         "options": [],
-        "query": "label_values({job=\"ploston/ael\", ael_source=\"workflow\"}, ael_step_id)",
+        "query": {
+          "label": "ael_step_id",
+          "stream": "",
+          "type": 1,
+          "refId": "LokiVariableQueryEditor-VariableQuery"
+        },
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,

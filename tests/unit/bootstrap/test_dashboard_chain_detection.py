@@ -77,6 +77,12 @@ def test_unique_chains_panel_is_time_windowed(chain_detection_json):
     assert "> 0" in expr
 
 
+def test_top_chain_candidates_panel_is_time_windowed(chain_detection_json):
+    panel = next(p for p in chain_detection_json["panels"] if "candidate" in p["title"].lower())
+    expr = panel["targets"][0]["expr"]
+    assert "[$__range]" in expr, "Top Chain Candidates panel must use [$__range] time macro"
+
+
 @pytest.mark.skipif(
     not os.path.exists(_HELM_PATH),
     reason="Helm chart path not available (standalone checkout)",

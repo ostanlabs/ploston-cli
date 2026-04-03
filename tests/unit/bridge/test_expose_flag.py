@@ -132,3 +132,124 @@ class TestRunnerFlagParsing:
         # Should not be a usage error
         if result.exit_code != 0:
             assert "no such option" not in (result.output or "").lower()
+
+
+# =============================================================================
+# resolve_expose_flags() tests
+# =============================================================================
+
+
+class TestResolveExposeFlags:
+    """Tests for resolve_expose_flags() tag resolution."""
+
+    def test_no_flags_no_filter_returns_none(self):
+        from ploston_cli.bridge.server import resolve_expose_flags
+
+        assert resolve_expose_flags([], "all") is None
+
+    def test_no_flags_local_returns_source_runner(self):
+        from ploston_cli.bridge.server import resolve_expose_flags
+
+        result = resolve_expose_flags([], "local")
+        assert result == [{"source:runner"}]
+
+    def test_no_flags_native_returns_source_native(self):
+        from ploston_cli.bridge.server import resolve_expose_flags
+
+        result = resolve_expose_flags([], "native")
+        assert result == [{"source:native"}]
+
+    def test_workflows_sugar(self):
+        from ploston_cli.bridge.server import resolve_expose_flags
+
+        result = resolve_expose_flags(["workflows"])
+        assert result == [{"kind:workflow"}]
+
+    def test_authoring_sugar(self):
+        from ploston_cli.bridge.server import resolve_expose_flags
+
+        result = resolve_expose_flags(["authoring"])
+        assert result == [{"kind:workflow_mgmt"}]
+
+    def test_all_sugar_returns_none(self):
+        from ploston_cli.bridge.server import resolve_expose_flags
+
+        assert resolve_expose_flags(["all"]) is None
+
+    def test_tag_prefix_direct(self):
+        from ploston_cli.bridge.server import resolve_expose_flags
+
+        result = resolve_expose_flags(["tag:kind:workflow"])
+        assert result == [{"kind:workflow"}]
+
+    def test_tag_prefix_multiple_and(self):
+        from ploston_cli.bridge.server import resolve_expose_flags
+
+        result = resolve_expose_flags(["tag:kind:workflow source:runner"])
+        assert result == [{"kind:workflow", "source:runner"}]
+
+    def test_server_name_fallback(self):
+        from ploston_cli.bridge.server import resolve_expose_flags
+
+        result = resolve_expose_flags(["github"])
+        assert result == [{"server:github"}]
+
+    def test_empty_flags_returns_none(self):
+        from ploston_cli.bridge.server import resolve_expose_flags
+
+        assert resolve_expose_flags([]) is None
+
+
+# =============================================================================
+# --tags CLI flag tests
+# =============================================================================
+
+
+class TestTagsCliFlag:
+    """Tests for --tags CLI flag on bridge command."""
+
+    def test_tags_flag_accepted(self):
+        runner = CliRunner()
+        result = runner.invoke(
+            bridge_command,
+            ["--url", "http://localhost:8022", "--tags", "kind:workflow"],
+        )
+        if result.exit_code != 0:
+            assert "no such option" not in (result.output or "").lower()
+
+    def test_tags_overrides_expose(self):
+        """--tags should override --expose (no mutual exclusivity error)."""
+        runner = CliRunner()
+        result = runner.invoke(
+            bridge_command,
+            [
+                "--url",
+                "http://localhost:8022",
+                "--tags",
+                "kind:workflow",
+                "--expose",
+                "workflows",
+            ],
+        )
+        if result.exit_code != 0:
+            # Should fail on connection, not on mutual exclusivity
+            assert "mutually exclusive" not in (result.output or "").lower()
+
+    def test_bridge_server_is_server_expose_false_for_tag(self):
+        """tag: expressions should not trigger server-expose logic."""
+        mock_proxy = AsyncMock(spec=BridgeProxy)
+        server = BridgeServer(proxy=mock_proxy, expose="tag:kind:workflow")
+        assert server._is_server_expose is False
+
+    def test_bridge_server_is_server_expose_true_for_server_name(self):
+        """Plain server names should trigger server-expose logic."""
+        mock_proxy = AsyncMock(spec=BridgeProxy)
+        server = BridgeServer(proxy=mock_proxy, expose="github")
+        assert server._is_server_expose is True
+
+    def test_bridge_server_is_server_expose_false_for_sugar(self):
+        """Sugar names (workflows, authoring) should not trigger server-expose."""
+        mock_proxy = AsyncMock(spec=BridgeProxy)
+        for sugar in ("workflows", "authoring", "all", "local", "native"):
+            server = BridgeServer(proxy=mock_proxy, expose=sugar)
+            assert server._is_server_expose is False, f"Failed for sugar={sugar}"

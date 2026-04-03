@@ -15,7 +15,6 @@ import logging
 import re
 import shutil
 import socket
-from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -67,18 +66,32 @@ def _resolve_ploston_command() -> str:
     return shutil.which("ploston") or "ploston"
 
 
-def _bridge_entry(cp_url: str, expose: str, runner_name: str | None) -> dict:
+def _bridge_entry(
+    cp_url: str,
+    expose: str | None = None,
+    runner_name: str | None = None,
+    tags: list[str] | None = None,
+) -> dict:
     """Build a single mcpServers entry for a ploston bridge command.
 
     Args:
         cp_url: Control Plane URL
-        expose: Value for --expose flag (server name or 'workflows')
+        expose: Value for --expose flag (server name). Prefer ``tags`` for
+                tag-based filtering; ``expose`` is still used for server-name
+                expose (prefix stripping / session-map) and backward compat.
         runner_name: Value for --runner flag, or None to omit it
+        tags: List of tag expressions forwarded via ``--tags`` flag.
+              When provided, ``--expose`` is omitted in favour of ``--tags``.
 
     Returns:
         mcpServers entry dict: {command, args}
     """
-    args: list[str] = ["bridge", "--url", cp_url, "--expose", expose]
+    args: list[str] = ["bridge", "--url", cp_url]
+    if tags:
+        for tag in tags:
+            args += ["--tags", tag]
+    elif expose:
+        args += ["--expose", expose]
     if runner_name:
         args += ["--runner", runner_name]
     return {"command": _resolve_ploston_command(), "args": args}
@@ -89,13 +102,14 @@ def inject_ploston_into_config(
     imported_servers: list[str],
     cp_url: str = "http://localhost:8022",
     runner_name: str | None = None,
-) -> Path:
+) -> None:
     """Inject Ploston into a Claude/Cursor config file.
 
     Generates one bridge entry per imported server (--expose <server>
     --runner <runner_name>) plus a 'ploston' entry for workflows
     (--expose workflows). Original entries are preserved in
-    _ploston_imported for easy restoration.
+    ``_ploston_imported`` inside the config JSON for inline rollback
+    via :func:`restore_config_from_imported`.
 
     Edge cases handled:
     - E-16: If a server is named 'ploston', its backup key is renamed to
@@ -110,9 +124,6 @@ def inject_ploston_into_config(
         cp_url: Control Plane URL
         runner_name: Runner name for --runner args. None uses default_runner_name().
                      Pass empty string "" to omit --runner entirely (E-18).
-
-    Returns:
-        Path to the backup file
     """
     # Resolve runner name
     # Empty string is the E-18 signal: CP-native servers, no runner needed
@@ -123,20 +134,22 @@ def inject_ploston_into_config(
     else:
         effective_runner = sanitise_runner_name(runner_name)
 
-    # Create backup
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = config_path.with_suffix(f".backup_{timestamp}.json")
-    shutil.copy2(config_path, backup_path)
-
     # Load config
     config = json.loads(config_path.read_text(encoding="utf-8"))
     mcp_servers = config.get("mcpServers", {})
 
-    # Build _ploston_imported backup section from selected servers
-    imported_section: dict[str, object] = {
-        "_comment": "Original server definitions — managed by Ploston. "
-        "Swap with mcpServers to restore direct access.",
-    }
+    # Build _ploston_imported backup section from selected servers.
+    # Merge into any existing _ploston_imported so that incremental imports
+    # (e.g. import 3 servers, then add a 4th) accumulate all originals for
+    # correct rollback.
+    imported_section: dict[str, object] = config.get("_ploston_imported", {})
+    if not imported_section:
+        imported_section = {}
+    # Ensure the comment is always present
+    imported_section["_comment"] = (
+        "Original server definitions — managed by Ploston. "
+        "Swap with mcpServers to restore direct access."
+    )
     for server_name in imported_servers:
         if server_name in mcp_servers:
             backup_key = server_name
@@ -147,7 +160,13 @@ def inject_ploston_into_config(
                     "Server named 'ploston' found; backed up as 'ploston-original' "
                     "to avoid collision with the Ploston workflows entry."
                 )
-            imported_section[backup_key] = mcp_servers.pop(server_name)
+            # Only back up if we don't already have a backup for this server
+            # (preserve the earliest/original definition)
+            if backup_key not in imported_section:
+                imported_section[backup_key] = mcp_servers.pop(server_name)
+            else:
+                # Already backed up from a previous import — just remove from active
+                mcp_servers.pop(server_name)
 
     # Generate one bridge entry per selected server (skip 'ploston' — handled below)
     new_servers: dict[str, object] = {}
@@ -160,11 +179,17 @@ def inject_ploston_into_config(
             runner_name=effective_runner,
         )
 
-    # Always append the ploston workflows entry last
-    # No --runner needed — workflows are served directly from CP
+    # Append the authoring bridge (workflow management tools)
+    new_servers["ploston-authoring"] = _bridge_entry(
+        cp_url=cp_url,
+        tags=["kind:workflow_mgmt"],
+        runner_name=None,
+    )
+
+    # Append the workflows bridge (bare-name workflow execution tools)
     new_servers["ploston"] = _bridge_entry(
         cp_url=cp_url,
-        expose="workflows",
+        tags=["kind:workflow"],
         runner_name=None,
     )
 
@@ -178,31 +203,66 @@ def inject_ploston_into_config(
         encoding="utf-8",
     )
 
-    return backup_path
 
+def restore_config_from_imported(config_path: Path) -> bool:
+    """Restore config by swapping ``_ploston_imported`` back into ``mcpServers``.
 
-def restore_config_from_backup(config_path: Path, backup_path: Path) -> None:
-    """Restore config from backup file.
+    This is the fallback restore mechanism when no backup file exists on disk.
+    It reads the inline ``_ploston_imported`` section (which always lives inside
+    the config JSON), moves each original server definition back into
+    ``mcpServers``, removes Ploston bridge entries, and deletes the
+    ``_ploston_imported`` section.
 
     Args:
         config_path: Path to the config file to restore
-        backup_path: Path to the backup file
-    """
-    shutil.copy2(backup_path, config_path)
-
-
-def list_backups(config_path: Path) -> list[Path]:
-    """List all backup files for a config.
-
-    Args:
-        config_path: Path to the original config file
 
     Returns:
-        List of backup file paths, sorted by date (newest first)
+        True if the config was successfully restored, False if there was
+        nothing to restore (no ``_ploston_imported`` section found).
     """
-    pattern = f"{config_path.stem}.backup_*.json"
-    backups = list(config_path.parent.glob(pattern))
-    return sorted(backups, reverse=True)
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+
+    imported = config.get("_ploston_imported")
+    if not imported or not isinstance(imported, dict):
+        return False
+
+    mcp_servers = config.get("mcpServers", {})
+
+    # Remove Ploston bridge entries (they all point to `ploston bridge ...`)
+    bridge_keys = [name for name, entry in mcp_servers.items() if _is_ploston_bridge_entry(entry)]
+    for key in bridge_keys:
+        del mcp_servers[key]
+
+    # Restore original server definitions from _ploston_imported
+    for key, value in imported.items():
+        if key.startswith("_"):
+            continue  # skip metadata like _comment
+        # Undo the E-16 rename: 'ploston-original' → 'ploston'
+        restore_key = "ploston" if key == "ploston-original" else key
+        mcp_servers[restore_key] = value
+
+    config["mcpServers"] = mcp_servers
+    del config["_ploston_imported"]
+
+    config_path.write_text(
+        json.dumps(config, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    logger.info("Restored config from inline _ploston_imported: %s", config_path)
+    return True
+
+
+def _is_ploston_bridge_entry(entry: object) -> bool:
+    """Return True if *entry* looks like a Ploston bridge mcpServers entry."""
+    if not isinstance(entry, dict):
+        return False
+    args = entry.get("args", [])
+    if not isinstance(args, list):
+        return False
+    return len(args) >= 1 and args[0] == "bridge"
 
 
 def is_already_injected(config_path: Path) -> bool:
@@ -241,7 +301,7 @@ class SourceConfigInjector:
         self.config_path = config_path
         self.cp_url = cp_url
 
-    def inject(self, imported_servers: list[str], runner_name: str | None = None) -> Path:
+    def inject(self, imported_servers: list[str], runner_name: str | None = None) -> None:
         """Inject Ploston into the config.
 
         Args:
@@ -249,22 +309,72 @@ class SourceConfigInjector:
             runner_name: Runner name for --runner args. None uses default_runner_name().
                          Pass "" to omit --runner entirely (CP-native servers).
         """
-        return inject_ploston_into_config(
+        inject_ploston_into_config(
             self.config_path,
             imported_servers,
             self.cp_url,
             runner_name=runner_name,
         )
 
-    def restore(self, backup_path: Path) -> None:
-        """Restore config from backup."""
-        restore_config_from_backup(self.config_path, backup_path)
-
-    def list_backups(self) -> list[Path]:
-        """List all backups for this config."""
-        return list_backups(self.config_path)
+    def restore(self) -> bool:
+        """Restore config from inline ``_ploston_imported`` section."""
+        return restore_config_from_imported(self.config_path)
 
     @property
     def is_injected(self) -> bool:
         """Check if Ploston is already injected."""
         return is_already_injected(self.config_path)
+
+
+# ---------------------------------------------------------------------------
+# Shared injection helper (T-769)
+# Used by: ploston init --inject, ploston inject, ploston server add --inject
+# ---------------------------------------------------------------------------
+
+SOURCE_LABELS: dict[str, str] = {
+    "claude_desktop": "Claude Desktop",
+    "cursor": "Cursor",
+    "claude_code_global": "Claude Code (global)",
+    "claude_code_project": "Claude Code (project)",
+}
+
+
+def run_injection(
+    detected_configs: list,
+    imported_servers: list[str],
+    cp_url: str,
+    runner_name: str | None = None,
+    targets: list[str] | None = None,
+) -> list[tuple[str, Path | None, str | None]]:
+    """Shared injection logic for all callers.
+
+    Args:
+        detected_configs: List of DetectedConfig objects from ConfigDetector.detect_all()
+        imported_servers: Server names to inject bridge entries for
+        cp_url: Control Plane URL
+        runner_name: Runner name for bridge entries
+        targets: If given, only inject into these source types.
+                 If None, inject into all detected configs.
+
+    Returns:
+        List of (source_type, path, error_or_none) for each attempted injection.
+    """
+    results: list[tuple[str, Path | None, str | None]] = []
+    for detected in detected_configs:
+        # Skip if targets are specified and this source is not in the list
+        if targets and detected.source not in targets:
+            continue
+        # Skip if config was not found
+        if not detected.found or not detected.path:
+            continue
+        try:
+            inject_ploston_into_config(
+                config_path=detected.path,
+                imported_servers=imported_servers,
+                cp_url=cp_url,
+                runner_name=runner_name,
+            )
+            results.append((detected.source, detected.path, None))
+        except Exception as e:
+            results.append((detected.source, detected.path, str(e)))
+    return results
