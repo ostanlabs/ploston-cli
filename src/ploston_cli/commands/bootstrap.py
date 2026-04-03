@@ -625,8 +625,14 @@ async def _run_bootstrap(
 
         if non_interactive:
             if state.stack_running and not images.build_from_source:
-                click.echo("\n  Using existing stack (non-interactive mode)")
-                return BootstrapResult(success=True, port=port)
+                # Quick health check — only reuse the stack if the CP is actually healthy.
+                cp_url = f"http://localhost:{port}"
+                poller = HealthPoller(max_attempts=3, interval_seconds=1.0, timeout_seconds=3.0)
+                quick_check = await poller.wait_for_healthy(cp_url)
+                if quick_check.healthy:
+                    click.echo("\n  Using existing stack (non-interactive mode)")
+                    return BootstrapResult(success=True, port=port)
+                click.echo("\n  Stack services running but CP is unhealthy — recreating...")
             # Auto-teardown: stack running with --build-from-source, or
             # stale artifacts with no running stack.
             # Non-interactive always preserves telemetry data (DEC-150).
