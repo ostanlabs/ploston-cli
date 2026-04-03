@@ -14,7 +14,15 @@ from typing import Any, Literal
 
 from ploston_core.config.secrets import SecretDetector
 
-SourceType = Literal["claude_desktop", "cursor"]
+SourceType = Literal["claude_desktop", "cursor", "claude_code_global", "claude_code_project"]
+
+# All valid injection targets
+ALL_INJECT_TARGETS: list[SourceType] = [
+    "claude_desktop",
+    "cursor",
+    "claude_code_global",
+    "claude_code_project",
+]
 
 
 @dataclass
@@ -78,6 +86,7 @@ class ConfigDetector:
 
     # Config paths per platform (relative to home directory)
     # Use {home} as placeholder for the home/base directory
+    # {cwd} is substituted with the current working directory (for project-level configs)
     CONFIG_PATHS: dict[SourceType, dict[str, str]] = {
         "claude_desktop": {
             "darwin": "{home}/Library/Application Support/Claude/claude_desktop_config.json",
@@ -88,6 +97,16 @@ class ConfigDetector:
             "darwin": "{home}/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/",
             "linux": "{home}/.config/Cursor/User/globalStorage/cursor.mcp/",
             "windows": "{home}/AppData/Roaming/Cursor/User/globalStorage/cursor.mcp/",
+        },
+        "claude_code_global": {
+            "darwin": "{home}/.claude/settings.json",
+            "linux": "{home}/.claude/settings.json",
+            "windows": "{home}/.claude/settings.json",
+        },
+        "claude_code_project": {
+            "darwin": "{cwd}/.mcp.json",
+            "linux": "{cwd}/.mcp.json",
+            "windows": "{cwd}/.mcp.json",
         },
     }
 
@@ -142,21 +161,39 @@ class ConfigDetector:
         if not path_template:
             return None
 
-        # Substitute {home} with the base path
+        # Substitute {home} and {cwd} with their respective paths
         home_path = self._get_home_path()
-        path_str = path_template.format(home=str(home_path))
+        cwd_path = self._get_cwd()
+        path_str = path_template.format(home=str(home_path), cwd=str(cwd_path))
 
         return Path(path_str)
+
+    def _get_cwd(self) -> Path:
+        """Get current working directory (or git root if available)."""
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return Path(result.stdout.strip())
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        return Path.cwd()
 
     def detect_all(self) -> list[DetectedConfig]:
         """Detect all MCP configurations on the current platform.
 
         Returns:
-            List of DetectedConfig for each source (claude_desktop, cursor)
+            List of DetectedConfig for each source type
         """
         results = []
-        for source in ["claude_desktop", "cursor"]:
-            result = self.detect_source(source)  # type: ignore
+        for source in ALL_INJECT_TARGETS:
+            result = self.detect_source(source)
             results.append(result)
         return results
 
@@ -254,10 +291,26 @@ class ConfigDetector:
         servers: dict[str, ServerInfo] = {}
 
         for name, config in mcp_servers.items():
+            if self._is_ploston_bridge_entry(config):
+                continue  # Skip entries managed by Ploston injection
             server_info = self._parse_server_config(name, source, config)
             servers[name] = server_info
 
         return servers
+
+    @staticmethod
+    def _is_ploston_bridge_entry(config: dict[str, Any]) -> bool:
+        """Check if an mcpServers entry is a Ploston bridge (injected by us).
+
+        Detects entries where the command ends with 'ploston' and args start
+        with 'bridge'.
+        """
+        args = config.get("args", [])
+        if not args or args[0] != "bridge":
+            return False
+        cmd = config.get("command", "")
+        # Match 'ploston' or any path ending in /ploston (e.g. /usr/bin/ploston)
+        return cmd == "ploston" or (isinstance(cmd, str) and cmd.endswith("/ploston"))
 
     def _parse_server_config(
         self, name: str, source: SourceType, config: dict[str, Any]

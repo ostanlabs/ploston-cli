@@ -24,8 +24,7 @@ from .injector import (
     SourceConfigInjector,
     inject_ploston_into_config,
     is_already_injected,
-    list_backups,
-    restore_config_from_backup,
+    restore_config_from_imported,
 )
 from .selector import ServerSelector, display_import_summary
 
@@ -48,7 +47,6 @@ __all__ = [
     "ENV_FILE",
     "SourceConfigInjector",
     "inject_ploston_into_config",
-    "restore_config_from_backup",
-    "list_backups",
+    "restore_config_from_imported",
     "is_already_injected",
 ]

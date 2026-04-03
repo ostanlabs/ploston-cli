@@ -110,6 +110,11 @@ class BridgeProxy:
                 headers=self._get_headers(),
                 verify=not self.insecure,
             )
+            logger.info(
+                f"[bridge] HTTP client created: url={self.url} "
+                f"bridge_id={self.bridge_id} expose={self.bridge_expose} "
+                f"runner={self.bridge_runner} timeout={self.timeout}s"
+            )
         return self._client
 
     async def initialize(self) -> dict[str, Any]:
@@ -220,7 +225,7 @@ class BridgeProxy:
 
         except httpx.ConnectError as e:
             error = map_connection_error(str(e), url)
-            logger.debug(f"HTTP connection error: {e}")
+            logger.warning(f"[bridge] HTTP connection error: {e}")
             raise BridgeProxyError(
                 code=error.code,
                 message=f"Cannot reach Control Plane at {self.url}: {e}",
@@ -228,7 +233,7 @@ class BridgeProxy:
             ) from e
         except httpx.TimeoutException as e:
             error = map_connection_error(str(e), url, is_timeout=True)
-            logger.debug(f"HTTP timeout: {e}")
+            logger.warning(f"[bridge] HTTP timeout: method={method} {e}")
             raise BridgeProxyError(
                 code=error.code,
                 message=error.message,
@@ -359,3 +364,6 @@ class BridgeProxy:
         if self._client:
             await self._client.aclose()
             self._client = None
+        logger.info(
+            f"[bridge] Connection closed: bridge_id={self.bridge_id} expose={self.bridge_expose}"
+        )

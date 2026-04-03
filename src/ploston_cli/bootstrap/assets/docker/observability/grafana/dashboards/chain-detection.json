@@ -56,7 +56,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_chain_links_total{bridge_id=~\"$bridge_id\"}[$__range]))",
+          "expr": "floor(sum(increase(ploston_chain_links_total{bridge_id=~\"$bridge_id\"}[$__range])))",
           "legendFormat": "Chain Links",
           "refId": "A"
         }
@@ -111,7 +111,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "count(count by (from_tool, to_tool)(increase(ploston_chain_links_total{bridge_id=~\"$bridge_id\"}[$__range]) > 0))",
+          "expr": "count(sum by (from_tool, to_tool) (increase(ploston_chain_links_total{bridge_id=~\"$bridge_id\"}[$__range])) > 0)",
           "legendFormat": "Unique Chains",
           "refId": "A"
         }
@@ -252,7 +252,9 @@
         {
           "expr": "topk(10, sum by (from_tool, to_tool) (increase(ploston_chain_links_total{bridge_id=~\"$bridge_id\"}[$__range])))",
           "legendFormat": "{{from_tool}} → {{to_tool}}",
-          "refId": "A"
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "title": "Top Tool Chains",
@@ -335,7 +337,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(rate(ploston_chain_links_total{bridge_id=~\"$bridge_id\"}[5m])) * 60",
+          "expr": "sum(rate(ploston_chain_links_total{bridge_id=~\"$bridge_id\"}[$__rate_interval])) * 60",
           "legendFormat": "Chains/min",
           "refId": "A"
         }
@@ -491,20 +493,24 @@
         "displayMode": "gradient",
         "minVizWidth": 0,
         "minVizHeight": 10,
+        "namePlacement": "auto",
         "orientation": "horizontal",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
-        "showUnfilled": true
+        "showUnfilled": true,
+        "valueMode": "color"
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "topk(10, sum by (from_tool, to_tool)(increase(ploston_sequence_pairs_total[$__range])))",
+          "expr": "topk(10, sum by (from_tool, to_tool)(increase(ploston_sequence_pairs_total{bridge_id=~\"$bridge_id\"}[$__range])))",
           "legendFormat": "{{from_tool}} → {{to_tool}}",
-          "refId": "A"
+          "refId": "A",
+          "instant": true,
+          "range": false
         }
       ],
       "title": "Top Repeated Sequences",
@@ -549,7 +555,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "count(count by (chunk_id)(ploston_temporal_cooccurrence_total))",
+          "expr": "count(count by (chunk_id)(ploston_temporal_cooccurrence_total{bridge_id=~\"$bridge_id\"}))",
           "legendFormat": "",
           "refId": "A"
         }
@@ -589,14 +595,30 @@
       "options": {
         "footer": { "fields": "", "reducer": ["sum"], "show": false },
         "showHeader": true,
-        "sortBy": [{ "desc": true, "displayName": "Value" }]
+        "sortBy": [{ "desc": true, "displayName": "Score" }]
       },
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "topk(10, ploston_chain_composite_score)",
+          "expr": "topk(10, max_over_time(ploston_chain_composite_score{bridge_id=~\"$bridge_id\"}[$__range]))",
           "legendFormat": "{{from_tool}} → {{to_tool}}",
-          "refId": "A"
+          "refId": "A",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true },
+            "renameByName": {
+              "Value": "Score",
+              "from_tool": "From Tool",
+              "to_tool": "To Tool"
+            }
+          }
         }
       ],
       "title": "Top Chain Candidates",

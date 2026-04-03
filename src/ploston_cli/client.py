@@ -475,6 +475,7 @@ class PlostClient:
         runner_name: str,
         mcp_servers: dict[str, dict[str, Any]],
         token: str,
+        merge: bool = False,
     ) -> dict[str, Any]:
         """Push runner configuration to CP via staged config API.
 
@@ -487,6 +488,8 @@ class PlostClient:
             runner_name: Name of the runner (e.g., "local")
             mcp_servers: Dict of MCP server configurations
             token: Authentication token for the runner
+            merge: If True, additively merge servers into existing config.
+                   If False (default), full replacement of the runner's server list.
 
         Returns:
             Response from config_done
@@ -495,6 +498,16 @@ class PlostClient:
         mode_response = await self.get_mode()
         if mode_response.get("mode") != "configuration":
             await self.enter_configuration_mode()
+
+        if merge:
+            # Additive merge: read existing runner config, merge in new servers
+            try:
+                existing = await self._request("GET", f"/api/v1/config/runners/{runner_name}")
+                existing_servers = existing.get("mcp_servers", {})
+                existing_servers.update(mcp_servers)
+                mcp_servers = existing_servers
+            except PlostClientError:
+                pass  # Runner doesn't exist yet — full creation
 
         runner_config = {
             "token": token,

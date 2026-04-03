@@ -15,6 +15,74 @@ logger = logging.getLogger(__name__)
 # Bridge version
 BRIDGE_VERSION = "1.0.0"
 
+# Legacy --expose / --tools sugar → tag expressions.
+# Each key resolves to a list of tag-sets.  Multiple tag-sets are OR-ed;
+# tags within a single set are AND-ed (match-all semantics on CP side).
+_EXPOSE_SUGAR: dict[str, list[set[str]]] = {
+    "all": [],  # empty → no filter
+    "workflows": [{"kind:workflow"}],
+    "local": [{"source:runner"}],
+    "native": [{"source:native"}],
+    "authoring": [{"kind:workflow_mgmt"}],
+}
+
+# Keep the old class attribute name for backward compat in tests that
+# reference BridgeServer.TOOLS_FILTER_MAP.  Values are now tag-sets.
+_TOOLS_FILTER_SUGAR: dict[str, list[set[str]]] = {
+    "all": [],
+    "local": [{"source:runner"}],
+    "native": [{"source:native"}],
+}
+
+
+def resolve_expose_flags(
+    flags: list[str],
+    tools_filter: str = "all",
+) -> list[set[str]] | None:
+    """Resolve ``--expose`` flag values + legacy ``--tools`` into tag-sets.
+
+    Returns a list of tag-sets (OR across sets, AND within each set),
+    or ``None`` when no filtering is requested.
+
+    Flag resolution rules (per §2.5):
+      * ``"workflows"``     → ``{kind:workflow}``
+      * ``"all"``           → no filter
+      * ``"local"``         → ``{source:runner}``
+      * ``"native"``        → ``{source:native}``
+      * ``"authoring"``     → ``{kind:workflow_mgmt}``
+      * ``"tag:<expr>"``    → direct tag match (space-separated tags AND-ed)
+      * ``<server_name>``   → ``{server:<server_name>}``
+
+    Multiple flags are combined with OR across the top-level values.
+    """
+    # Legacy --tools path
+    if not flags:
+        tag_sets = _TOOLS_FILTER_SUGAR.get(tools_filter, [])
+        return tag_sets if tag_sets else None
+
+    result: list[set[str]] = []
+    for flag in flags:
+        # Check sugar table first
+        if flag in _EXPOSE_SUGAR:
+            sugar = _EXPOSE_SUGAR[flag]
+            if not sugar:
+                # "all" → no filter
+                return None
+            result.extend(sugar)
+        elif flag.startswith("tag:"):
+            # Direct tag expression: "tag:kind:workflow tag:kind:workflow_mgmt"
+            # or "tag:kind:workflow" (single)
+            raw = flag[4:]  # strip "tag:" prefix
+            # Space-separated tags within a single flag are AND-ed
+            tags = {t.strip() for t in raw.split() if t.strip()}
+            if tags:
+                result.append(tags)
+        else:
+            # Assume server name → server:<name>
+            result.append({f"server:{flag}"})
+
+    return result if result else None
+
 
 class BridgeServer:
     """Stdio MCP server that bridges to Control Plane.
@@ -23,11 +91,12 @@ class BridgeServer:
     and returns responses on stdout.
     """
 
-    # Map tools filter to source list for CP
+    # Backward compat: kept as class attribute so existing tests that reference
+    # BridgeServer.TOOLS_FILTER_MAP continue to import without error.
     TOOLS_FILTER_MAP = {
-        "all": None,  # No filter - return all tools
-        "local": ["runner"],  # Only runner tools
-        "native": ["native"],  # Only native tools
+        "all": None,
+        "local": ["runner"],
+        "native": ["native"],
     }
 
     def __init__(
@@ -42,7 +111,8 @@ class BridgeServer:
         Args:
             proxy: BridgeProxy instance for CP communication
             tools_filter: Which tools to expose: "all", "local", or "native"
-            expose: Inline tool filter — MCP server name or "workflows"
+            expose: Inline tool filter — MCP server name, tag expression, or
+                    legacy sugar ("workflows", "authoring", etc.)
             runner: Runner name for disambiguation when --expose targets a runner-hosted server
         """
         self.proxy = proxy
@@ -52,6 +122,15 @@ class BridgeServer:
         self.on_notification: Callable[[dict[str, Any]], None] | None = None
         self._cp_server_info: dict[str, Any] | None = None
         self._session_map: dict[str, str] = {}  # clean_name → canonical_name
+
+        # Resolve flags once at construction time.
+        expose_flags = [expose] if expose else []
+        self._resolved_tag_sets = resolve_expose_flags(expose_flags, tools_filter)
+        # Detect whether this bridge exposes a specific runner-hosted server
+        # (needs session-map / prefix-stripping behavior).
+        self._is_server_expose = (
+            expose is not None and expose not in _EXPOSE_SUGAR and not expose.startswith("tag:")
+        )
 
     async def handle_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
         """Handle incoming JSON-RPC request from agent.
@@ -136,41 +215,61 @@ class BridgeServer:
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
     async def _handle_tools_list(self, request: dict[str, Any]) -> dict[str, Any]:
-        """Handle tools/list request - forward to CP with optional source/expose filter."""
+        """Handle tools/list request — forward tags to CP and apply server-expose logic.
+
+        Tag-based filtering (§2.5):
+          * ``_resolved_tag_sets`` is forwarded as ``params.tags`` so the CP
+            does the heavy filtering and strips ``_ploston_tags``.
+          * Server-expose (``--expose <server_name>``) still uses local
+            three-part prefix matching + session-map logic because the CP
+            returns runner tools with ``runner__mcp__tool`` names and the
+            bridge must strip the prefix and maintain a reverse map.
+        """
         request_id = request.get("id")
 
-        # Add source filter to params if configured (--tools flag)
-        sources = self.TOOLS_FILTER_MAP.get(self.tools_filter)
-        if sources is not None:
-            filtered_request = request.copy()
-            params = filtered_request.get("params", {}) or {}
-            params = params.copy()
-            params["sources"] = sources
-            filtered_request["params"] = params
-            cp_response = await self._forward_request(filtered_request)
-        else:
-            cp_response = await self._forward_request(request)
+        # Build forwarded request with tags when applicable
+        forwarded = request.copy()
+        params = (forwarded.get("params") or {}).copy()
 
-        # If no --expose, return CP response unchanged
-        if not self.expose:
-            return cp_response
+        if self._resolved_tag_sets and not self._is_server_expose:
+            # Flatten tag-sets into a list of tag strings for CP.
+            # CP `_handle_tools_list` already accepts `tags` param (S-242).
+            flat_tags = sorted({t for ts in self._resolved_tag_sets for t in ts})
+            params["tags"] = flat_tags
 
-        # Extract tools from CP response
-        all_tools = cp_response.get("result", {}).get("tools", [])
+        forwarded["params"] = params
+        cp_response = await self._forward_request(forwarded)
 
-        if self.expose == "workflows":
-            filtered_tools = [t for t in all_tools if t["name"].startswith("workflow_")]
-        else:
-            # --expose <server_name>: filter runner tools + strip prefix
+        # Server-expose still needs local prefix matching + stripping
+        if self._is_server_expose:
+            all_tools = cp_response.get("result", {}).get("tools", [])
             filtered_tools = self._filter_by_expose(all_tools, self.expose, self.runner)
             self._session_map = self._build_session_map(filtered_tools)
             filtered_tools = [self._strip_prefix(t) for t in filtered_tools]
+            tool_count = len(filtered_tools)
+            if tool_count == 0:
+                logger.warning(
+                    f"[bridge] tools/list returned 0 tools for expose='{self.expose}' "
+                    f"runner='{self.runner}' (CP returned {len(all_tools)} total tools). "
+                    f"The MCP server may not be configured on the runner."
+                )
+            else:
+                logger.info(
+                    f"[bridge] tools/list: {tool_count} tools exposed "
+                    f"(expose='{self.expose}' runner='{self.runner}')"
+                )
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {"tools": filtered_tools},
+            }
 
-        return {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": {"tools": filtered_tools},
-        }
+        # For tag-based paths the CP already did the filtering; return as-is.
+        tag_tools = cp_response.get("result", {}).get("tools", [])
+        logger.info(
+            f"[bridge] tools/list: {len(tag_tools)} tools returned (tags={self._resolved_tag_sets})"
+        )
+        return cp_response
 
     async def _handle_tools_call(self, request: dict[str, Any]) -> dict[str, Any]:
         """Handle tools/call request - reverse-resolve exposed names and forward to CP."""
@@ -178,7 +277,7 @@ class BridgeServer:
         params = request.get("params", {})
         tool_name = params.get("name", "")
 
-        if self.expose and self.expose != "workflows":
+        if self._is_server_expose:
             canonical = self._session_map.get(tool_name)
             if canonical is None:
                 return self._make_error_response(

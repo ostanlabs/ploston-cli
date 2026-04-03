@@ -29,6 +29,7 @@ import click
 from ..bridge.lifecycle import BridgeLifecycle
 from ..bridge.proxy import BridgeProxy, BridgeProxyError
 from ..bridge.server import BridgeServer
+from ..completion import complete_tag_values
 from ..init.injector import default_runner_name
 
 # Default values
@@ -146,7 +147,22 @@ def setup_logging(log_level: str, log_file: str | None) -> None:
     "--expose",
     envvar="PLOSTON_EXPOSE",
     default=None,
-    help="Inline tool filter: MCP server name or 'workflows'. Mutually exclusive with --tools.",
+    help=(
+        "Inline tool filter: MCP server name, 'workflows', 'authoring', or 'tag:<expr>'. "
+        "Mutually exclusive with --tools."
+    ),
+)
+@click.option(
+    "--tags",
+    "tag_flags",
+    envvar="PLOSTON_TAGS",
+    multiple=True,
+    shell_complete=complete_tag_values,
+    help=(
+        "Tag expression(s) forwarded to the CP for tool filtering. "
+        "Accepts 'kind:workflow', 'server:github', etc. "
+        "Multiple --tags are OR-ed. Overrides --expose and --tools when provided."
+    ),
 )
 @click.option(
     "--runner",
@@ -165,6 +181,7 @@ def bridge_command(
     insecure: bool,
     tools: str,
     expose: str | None,
+    tag_flags: tuple[str, ...],
     runner: str | None,
 ) -> None:
     """Start MCP bridge to Control Plane.
@@ -177,9 +194,11 @@ def bridge_command(
       ploston bridge --url http://localhost:8022
       ploston bridge --url https://cp.example.com --token plt_xxx
       ploston bridge --url http://localhost:8022 --tools local
+      ploston bridge --url http://localhost:8022 --tags kind:workflow
+      ploston bridge --url http://localhost:8022 --tags kind:workflow_mgmt
 
     \b
-    Tool filtering (--tools):
+    Tool filtering (--tools, legacy):
       all    - All tools: native-tools + local-runner + MCP servers (default)
       local  - Local runner tools only (from connected runners)
       native - Native tools only (filesystem, kafka, etc.)
@@ -187,7 +206,15 @@ def bridge_command(
     \b
     Inline expose (--expose):
       <server>   - Expose tools from this MCP server only (e.g. filesystem, github)
-      workflows  - Expose only workflow tools (workflow_ prefix)
+      workflows  - Expose workflow execution tools (tag: kind:workflow)
+      authoring  - Expose workflow management tools (tag: kind:workflow_mgmt)
+
+    \b
+    Tag-based filtering (--tags, preferred):
+      kind:workflow       - Workflow execution tools
+      kind:workflow_mgmt  - Workflow management/authoring tools
+      server:<name>       - Tools from specific MCP server
+      source:runner       - Runner-hosted tools only
 
     \b
     Environment variables:
@@ -198,7 +225,8 @@ def bridge_command(
       PLOSTON_LOG_FILE  - Log file path
       PLOSTON_INSECURE  - Skip SSL verification
       PLOSTON_TOOLS     - Tool filter (all, local, native)
-      PLOSTON_EXPOSE    - Inline tool filter (server name or 'workflows')
+      PLOSTON_EXPOSE    - Inline tool filter (server name or sugar)
+      PLOSTON_TAGS      - Comma-separated tag expressions
       PLOSTON_RUNNER    - Runner name for disambiguation
       PLOSTON_DEBUG     - Enable debug logging (set to 1)
 
@@ -207,8 +235,11 @@ def bridge_command(
       PLOSTON_DEBUG=1 ploston bridge --url http://localhost:8022
       tail -f ~/.ploston/bridge.log
     """
-    # Validate mutual exclusivity of --expose and --tools
-    if expose and tools != "all":
+    # --tags overrides --expose and --tools; otherwise check mutual exclusivity
+    if tag_flags:
+        # Convert --tags to --expose syntax for BridgeServer
+        expose = f"tag:{' '.join(tag_flags)}"
+    elif expose and tools != "all":
         raise click.UsageError("--expose and --tools are mutually exclusive.")
 
     # Setup logging (to file, not stdout)
@@ -216,10 +247,10 @@ def bridge_command(
 
     effective_log_level = "debug" if DEBUG_MODE else log_level
 
-    logger.info(f"Starting bridge to {url}")
     logger.info(
-        f"Debug mode: {DEBUG_MODE}, Log level: {effective_log_level}, "
-        f"Tools: {tools}, Expose: {expose}, Runner: {runner}"
+        f"[bridge] Starting: url={url} expose={expose} tags={tag_flags} "
+        f"runner={runner} tools_filter={tools} log_level={effective_log_level} "
+        f"timeout={timeout}s retry_attempts={retry_attempts}"
     )
 
     try:
@@ -229,13 +260,13 @@ def bridge_command(
             )
         )
     except KeyboardInterrupt:
-        logger.info("Bridge interrupted by user")
+        logger.info(f"[bridge] Interrupted by user (expose={expose})")
         sys.exit(0)
     except BridgeProxyError as e:
-        logger.error(f"Bridge error: {e.message}")
+        logger.error(f"[bridge] Fatal error (expose={expose}): {e.message}")
         sys.exit(1)
     except Exception as e:
-        logger.exception(f"Unexpected error: {e}")
+        logger.exception(f"[bridge] Unexpected fatal error (expose={expose}): {e}")
         sys.exit(1)
 
 
@@ -345,16 +376,16 @@ async def run_bridge(
     try:
         await stdio_loop(server, shutdown_event)
     except asyncio.CancelledError:
-        logger.info("Bridge task cancelled")
+        logger.info(f"[bridge] Task cancelled (expose={expose})")
     finally:
-        logger.info("Bridge shutting down, closing connections...")
+        logger.info(f"[bridge] Shutting down (expose={expose})...")
         try:
             await asyncio.wait_for(proxy.close(), timeout=5.0)
-            logger.info("Bridge shutdown complete")
+            logger.info(f"[bridge] Shutdown complete (expose={expose})")
         except asyncio.TimeoutError:
-            logger.warning("Timeout waiting for proxy to close")
+            logger.warning(f"[bridge] Shutdown timeout (expose={expose})")
         except Exception as e:
-            logger.warning(f"Error during shutdown: {e}")
+            logger.warning(f"[bridge] Shutdown error (expose={expose}): {e}")
 
 
 def _format_request_for_log(request: dict) -> str:

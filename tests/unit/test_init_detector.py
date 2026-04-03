@@ -198,7 +198,9 @@ class TestConfigDetector:
         with patch.object(detector, "get_config_path", side_effect=mock_get_config_path):
             results = detector.detect_all()
 
-        assert len(results) == 2
+        # detect_all now returns results for all 4 targets
+        # (claude_desktop, cursor, claude_code_global, claude_code_project)
+        assert len(results) == 4
         assert any(r.source == "claude_desktop" and r.found for r in results)
         assert any(r.source == "cursor" and r.found for r in results)
 
