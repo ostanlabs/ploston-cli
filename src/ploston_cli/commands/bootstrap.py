@@ -416,17 +416,25 @@ def status():
 )
 @click.option("--namespace", default="ploston")
 @click.option("--kubeconfig", default=None)
-def down(volumes, target, namespace, kubeconfig):
+@click.option(
+    "-y", "--non-interactive", is_flag=True, help="Skip prompts (preserve telemetry by default)"
+)
+def down(volumes, target, namespace, kubeconfig, non_interactive):
     """Stop and remove the Ploston stack."""
     _restore_injected_configs()
 
     if target == "docker":
         state_manager = BootstrapStateManager()
         if volumes:
-            if not click.confirm("This will delete all Ploston data. Continue?"):
+            if not non_interactive and not click.confirm(
+                "This will delete all Ploston data. Continue?"
+            ):
                 return
             # --volumes implies wipe everything including telemetry
             preserve_telemetry = False
+        elif non_interactive:
+            # Non-interactive: preserve telemetry by default
+            preserve_telemetry = True
         else:
             # Prompt for telemetry data preservation (DEC-150)
             preserve_telemetry = _prompt_preserve_telemetry()
