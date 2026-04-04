@@ -1,15 +1,36 @@
 name: Rebuild
 
 on:
-  repository_dispatch:
-    types: [rebuild]
+  workflow_call:
+    inputs:
+      cascade_id:
+        required: true
+        type: string
+      core_version:
+        required: true
+        type: string
+      source:
+        required: false
+        type: string
+        default: 'test-pypi'
+    outputs:
+      cli_version:
+        description: 'Published CLI package version (x.y.z.devN)'
+        value: ${{ jobs.rebuild.outputs.version }}
+      sha:
+        description: 'Git SHA of the ploston-cli repo at build time'
+        value: ${{ jobs.rebuild.outputs.sha }}
+      status:
+        value: ${{ jobs.rebuild.outputs.status }}
+    secrets:
+      META_REPO_TOKEN:
+        required: true
+      DASHBOARD_GIST_ID:
+        required: true
 
 concurrency:
-  group: ${{ github.repository }}-builds
+  group: ploston-cli-rebuild-${{ inputs.cascade_id || github.sha }}
   cancel-in-progress: false
-
-env:
-  DASHBOARD_URL: https://gist.githubusercontent.com/ostanmarc/${{ secrets.DASHBOARD_GIST_ID }}/raw/dashboard.json
 
 jobs:
   rebuild:
@@ -23,15 +44,16 @@ jobs:
       status: ${{ steps.result.outputs.status }}
       error: ${{ steps.result.outputs.error }}
       version: ${{ steps.build.outputs.version }}
+      sha: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract payload
+      - name: Extract inputs
         id: payload
         run: |
-          echo "cascade_id=${{ github.event.client_payload.cascade_id }}" >> $GITHUB_OUTPUT
-          echo "core_version=${{ github.event.client_payload.core_version }}" >> $GITHUB_OUTPUT
-          echo "source=${{ github.event.client_payload.source }}" >> $GITHUB_OUTPUT
+          echo "cascade_id=${{ inputs.cascade_id }}" >> $GITHUB_OUTPUT
+          echo "core_version=${{ inputs.core_version }}" >> $GITHUB_OUTPUT
+          echo "source=${{ inputs.source }}" >> $GITHUB_OUTPUT
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -118,8 +140,8 @@ jobs:
             # Check if wheel is now available on Test PyPI (partial upload succeeded)
             echo "Checking if wheel was partially uploaded..."
             sleep 5  # Give PyPI a moment to index
-            if pip index versions ploston-cli --index-url https://test.pypi.org/simple/ 2>/dev/null | grep -q "$VERSION"; then
-              echo "Wheel successfully uploaded to Test PyPI (source upload may have failed, but wheel is sufficient)"
+            if curl -sf "https://test.pypi.org/pypi/ploston-cli/$VERSION/json" > /dev/null 2>&1; then
+              echo "Version $VERSION confirmed on Test PyPI (source upload may have failed, but wheel is sufficient)"
               exit 0
             fi
 
@@ -148,9 +170,9 @@ jobs:
         uses: ostanlabs/ploston-core/.github/actions/update-dashboard@main
         with:
           repo: ploston-cli
-          cascade_id: ${{ github.event.client_payload.cascade_id }}
+          cascade_id: ${{ inputs.cascade_id }}
           sha: ${{ github.sha }}
-          core_version: ${{ github.event.client_payload.core_version }}
+          core_version: ${{ inputs.core_version }}
           status: ${{ needs.rebuild.result == 'success' && 'success' || 'failure' }}
           error: ${{ needs.rebuild.outputs.error || '' }}
           artifact_version: ${{ needs.rebuild.outputs.version || '' }}
