@@ -234,6 +234,42 @@ class BootstrapStateManager:
 
         return False, f"Unknown action: {action}"
 
+    @staticmethod
+    def _force_remove_tree(path: Path) -> None:
+        """Remove a directory tree, handling Docker-owned (root) files.
+
+        Docker containers (e.g. Redis) create files owned by root inside
+        bind-mounted host directories.  A plain ``shutil.rmtree`` fails with
+        ``PermissionError`` on those files.  We fall back to
+        ``docker run --rm -v …:/cleanup alpine rm -rf /cleanup`` which runs
+        as root and can delete them, then retry the normal removal.
+        """
+        try:
+            shutil.rmtree(path)
+        except PermissionError:
+            logger.debug("PermissionError removing %s — retrying via docker rm", path)
+            try:
+                subprocess.run(
+                    [
+                        "docker",
+                        "run",
+                        "--rm",
+                        "-v",
+                        f"{path}:/cleanup",
+                        "alpine",
+                        "rm",
+                        "-rf",
+                        "/cleanup",
+                    ],
+                    capture_output=True,
+                    timeout=30,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("docker rm fallback failed: %s", exc)
+            # Final attempt — directory may now be empty or fully removed.
+            if path.exists():
+                shutil.rmtree(path, ignore_errors=True)
+
     def _cleanup_generated_files(
         self,
         preserve_telemetry: bool = True,
@@ -256,7 +292,7 @@ class BootstrapStateManager:
                 path.unlink()
                 logger.debug("Removed %s", path)
             elif kind == "dir" and path.is_dir():
-                shutil.rmtree(path)
+                self._force_remove_tree(path)
                 logger.debug("Removed directory %s", path)
 
         # Conditionally wipe telemetry data (DEC-150).
@@ -265,7 +301,7 @@ class BootstrapStateManager:
         if not preserve_telemetry:
             telemetry_dir = self.base_dir / "data" / "ploston"
             if telemetry_dir.is_dir():
-                shutil.rmtree(telemetry_dir)
+                self._force_remove_tree(telemetry_dir)
                 logger.debug("Removed telemetry data directory %s", telemetry_dir)
 
         # Conditionally wipe API-registered workflows.
@@ -274,7 +310,7 @@ class BootstrapStateManager:
         if not preserve_telemetry:
             workflows_dir = self.base_dir / "data" / "workflows"
             if workflows_dir.is_dir():
-                shutil.rmtree(workflows_dir)
+                self._force_remove_tree(workflows_dir)
                 logger.debug("Removed workflows data directory %s", workflows_dir)
 
     def cleanup(self, remove_data: bool = False) -> tuple[bool, str]:
