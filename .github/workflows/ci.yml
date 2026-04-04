@@ -143,8 +143,8 @@ jobs:
             # Check if wheel is now available on Test PyPI (partial upload succeeded)
             echo "Checking if wheel was partially uploaded..."
             sleep 5  # Give PyPI a moment to index
-            if pip index versions ploston-cli --index-url https://test.pypi.org/simple/ 2>/dev/null | grep -q "$VERSION"; then
-              echo "Wheel successfully uploaded to Test PyPI (source upload may have failed, but wheel is sufficient)"
+            if curl -sf "https://test.pypi.org/pypi/ploston-cli/$VERSION/json" > /dev/null 2>&1; then
+              echo "Version $VERSION confirmed on Test PyPI (source upload may have failed, but wheel is sufficient)"
               exit 0
             fi
 
