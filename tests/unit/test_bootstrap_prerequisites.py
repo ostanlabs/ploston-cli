@@ -109,13 +109,14 @@ class TestKubectlDetector:
 
     def test_detect_kubectl_available(self):
         """Test detection when kubectl is available."""
+        kubectl_json = '{"clientVersion": {"gitVersion": "v1.28.0"}}'
         with patch("shutil.which", return_value="/usr/bin/kubectl"):
             with patch("subprocess.run") as mock_run:
 
                 def side_effect(cmd, *args, **kwargs):
                     result = MagicMock(returncode=0)
                     if "version" in cmd:
-                        result.stdout = "v1.28.0"
+                        result.stdout = kubectl_json
                     elif "current-context" in cmd:
                         result.stdout = "minikube"
                     return result
@@ -138,6 +139,7 @@ class TestKubectlDetector:
 
     def test_detect_no_cluster(self):
         """Test detection when no cluster is configured."""
+        kubectl_json = '{"clientVersion": {"gitVersion": "v1.28.0"}}'
         with patch("shutil.which", return_value="/usr/bin/kubectl"):
             with patch("subprocess.run") as mock_run:
 
@@ -145,7 +147,7 @@ class TestKubectlDetector:
                     result = MagicMock()
                     if "version" in cmd:
                         result.returncode = 0
-                        result.stdout = "v1.28.0"
+                        result.stdout = kubectl_json
                     elif "current-context" in cmd:
                         result.returncode = 1
                         result.stdout = ""
