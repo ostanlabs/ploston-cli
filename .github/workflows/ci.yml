@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DASHBOARD_URL: https://gist.githubusercontent.com/ostanmarc/${{ secrets.DASHBOARD_GIST_ID }}/raw/dashboard.json
+  GIST_API_URL: https://api.github.com/gists/${{ secrets.DASHBOARD_GIST_ID }}
   UV_SYSTEM_PYTHON: 1
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
       - name: Wait for active cascade to complete
         run: |
           while true; do
-            ACTIVE=$(curl -s $DASHBOARD_URL | jq -r '.cascade.active')
+            ACTIVE=$(curl -s -H "Authorization: token ${{ secrets.META_REPO_TOKEN }}" "$GIST_API_URL" | jq -r '.files["dashboard.json"].content' | jq -r '.cascade.active')
             if [[ "$ACTIVE" != "true" ]]; then
               echo "No active cascade, proceeding..."
               break
@@ -73,7 +73,7 @@ jobs:
       - name: Validate core version
         id: validate
         run: |
-          LATEST_CORE=$(curl -s $DASHBOARD_URL | jq -r '.latest_available_core_version')
+          LATEST_CORE=$(curl -s -H "Authorization: token ${{ secrets.META_REPO_TOKEN }}" "$GIST_API_URL" | jq -r '.files["dashboard.json"].content' | jq -r '.latest_available_core_version')
           CURRENT_CORE=$(uv pip show --python .venv ploston-core | grep Version | cut -d' ' -f2)
           echo "core_version=$CURRENT_CORE" >> $GITHUB_OUTPUT
 
