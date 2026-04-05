@@ -44,9 +44,15 @@ jobs:
       status: ${{ steps.result.outputs.status }}
       error: ${{ steps.result.outputs.error }}
       version: ${{ steps.build.outputs.version }}
-      sha: ${{ github.sha }}
+      sha: ${{ steps.repo-sha.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          repository: ostanlabs/ploston-cli
+
+      - name: Resolve repo SHA
+        id: repo-sha
+        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -164,7 +170,7 @@ jobs:
         with:
           repo: ploston-cli
           cascade_id: ${{ inputs.cascade_id }}
-          sha: ${{ github.sha }}
+          sha: ${{ needs.rebuild.outputs.sha }}
           core_version: ${{ inputs.core_version }}
           status: ${{ needs.rebuild.result == 'success' && 'success' || 'failure' }}
           error: ${{ needs.rebuild.outputs.error || '' }}
