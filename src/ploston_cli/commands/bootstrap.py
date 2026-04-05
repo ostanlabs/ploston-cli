@@ -762,8 +762,8 @@ async def _run_bootstrap(
             click.echo(f"  ✗ kubectl: {kubectl.error}", err=True)
             return BootstrapResult(success=False, error=kubectl.error)
         click.echo(f"  ✓ kubectl: {kubectl.kubectl_version}")
-        if kubectl.cluster_available:
-            click.echo(f"  ✓ Cluster: {kubectl.cluster_name}")
+        if kubectl.cluster_reachable:
+            click.echo(f"  ✓ Cluster: {kubectl.cluster_info}")
         else:
             click.echo("  ✗ No cluster available", err=True)
             return BootstrapResult(success=False, error="No K8s cluster available")
