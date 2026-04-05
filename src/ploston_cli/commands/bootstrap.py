@@ -228,7 +228,17 @@ def _handle_network_conflict(
     help="Deployment target",
 )
 @click.option("--image-tag", default=None, help="Docker image tag (e.g., v1.0.0, sha-abc1234)")
-@click.option("--pre-release", is_flag=True, help="Use pre-release/dev images (ploston-dev)")
+@click.option(
+    "--edge",
+    is_flag=True,
+    help="Use latest tested dev images (ghcr.io/ostanlabs/ploston-dev:edge)",
+)
+@click.option(
+    "--pre-release",
+    is_flag=True,
+    hidden=True,  # Hidden — kept for backward compat, not shown in help
+    help="Deprecated: use --edge",
+)
 @click.option(
     "--build-from-source",
     is_flag=True,
@@ -260,6 +270,7 @@ def bootstrap(
     ctx,
     target,
     image_tag,
+    edge,
     pre_release,
     build_from_source,
     port,
@@ -280,32 +291,32 @@ def bootstrap(
 
     Image resolution:
 
-        Default:          ghcr.io/ostanlabs/ploston:latest
+        Default:                  ghcr.io/ostanlabs/ploston:latest
 
-        --image-tag TAG:  ghcr.io/ostanlabs/ploston:TAG
+        --edge:                   ghcr.io/ostanlabs/ploston-dev:edge
 
-        --pre-release:    ghcr.io/ostanlabs/ploston-dev:edge
+        --edge --image-tag TAG:   ghcr.io/ostanlabs/ploston-dev:TAG
 
-        --pre-release --image-tag TAG:  ghcr.io/ostanlabs/ploston-dev:TAG
+        --image-tag TAG:          ghcr.io/ostanlabs/ploston:TAG
 
-        --build-from-source:  ploston:local (built locally)
+        --build-from-source:      ploston:local (built locally)
 
     Examples:
 
-        # Deploy to Docker Compose (default — release images)
+        # Developer daily driver — latest tested image
+        ploston bootstrap --edge
+
+        # Deploy with observability stack (dev)
+        ploston bootstrap --edge --with-observability
+
+        # Release image (requires production release to exist)
         ploston bootstrap
 
-        # Deploy with specific image tag
-        ploston bootstrap --image-tag v1.0.0
+        # Specific image tag
+        ploston bootstrap --edge --image-tag sha-abc1234
 
-        # Deploy pre-release (dev) images
-        ploston bootstrap --pre-release
-
-        # Build from local source (inside meta-repo)
+        # Build from local source
         ploston bootstrap --build-from-source
-
-        # Deploy with observability stack
-        ploston bootstrap --with-observability
 
         # Deploy to Kubernetes
         ploston bootstrap --target k8s --namespace ploston
@@ -316,11 +327,19 @@ def bootstrap(
     if ctx.invoked_subcommand is not None:
         return  # Subcommand handles it
 
+    # Backward compat: --pre-release is deprecated alias for --edge
+    if pre_release and not edge:
+        click.echo(
+            "Warning: --pre-release is deprecated. Use --edge instead.",
+            err=True,
+        )
+        edge = True
+
     # Resolve images early to fail fast on invalid flag combinations
     try:
         images = resolve_images(
             image_tag=image_tag,
-            pre_release=pre_release,
+            edge=edge,
             build_from_source=build_from_source,
         )
     except ImageResolverError as e:
@@ -923,6 +942,26 @@ async def _run_bootstrap(
         if not success:
             blog.finish(success=False, message=msg)
             click.echo(f"  ✗ {msg}", err=True)
+            # Friendly hint when pulling release images fails (no public release yet)
+            if images.should_pull and not images.build_from_source:
+                _msg_lower = msg.lower() if msg else ""
+                if any(
+                    hint in _msg_lower
+                    for hint in ("pull", "manifest unknown", "not found", "denied")
+                ):
+                    click.echo("", err=True)
+                    click.echo(
+                        "  💡 Image pull failed. If no public release exists yet, try:",
+                        err=True,
+                    )
+                    click.echo(
+                        "       ploston bootstrap --edge          (latest tested dev image)",
+                        err=True,
+                    )
+                    click.echo(
+                        "       ploston bootstrap --build-from-source  (build locally)",
+                        err=True,
+                    )
             click.echo(f"  📝 Full debug log: {log_path}", err=True)
             return BootstrapResult(success=False, error=msg)
         click.echo("  ✓ Stack started")

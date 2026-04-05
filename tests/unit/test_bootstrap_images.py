@@ -9,7 +9,7 @@ import pytest
 
 from ploston_cli.bootstrap.builder import BuildError, _docker_build, build_from_source
 from ploston_cli.bootstrap.image_resolver import (
-    DEFAULT_PRE_RELEASE_TAG,
+    DEFAULT_EDGE_TAG,
     DEFAULT_REGISTRY,
     DEFAULT_RELEASE_TAG,
     DEV_NATIVE_TOOLS,
@@ -71,17 +71,22 @@ class TestResolveImages:
         assert config.ploston_image == f"{DEFAULT_REGISTRY}/{RELEASE_PLOSTON}:v1.2.3"
         assert config.native_tools_image == f"{DEFAULT_REGISTRY}/{RELEASE_NATIVE_TOOLS}:v1.2.3"
 
-    def test_pre_release_default_tag(self):
-        config = resolve_images(pre_release=True)
-        assert config.ploston_image == f"{DEFAULT_REGISTRY}/{DEV_PLOSTON}:{DEFAULT_PRE_RELEASE_TAG}"
+    def test_edge_default_tag(self):
+        config = resolve_images(edge=True)
+        assert config.ploston_image == f"{DEFAULT_REGISTRY}/{DEV_PLOSTON}:{DEFAULT_EDGE_TAG}"
         assert (
-            config.native_tools_image
-            == f"{DEFAULT_REGISTRY}/{DEV_NATIVE_TOOLS}:{DEFAULT_PRE_RELEASE_TAG}"
+            config.native_tools_image == f"{DEFAULT_REGISTRY}/{DEV_NATIVE_TOOLS}:{DEFAULT_EDGE_TAG}"
         )
 
-    def test_pre_release_explicit_tag(self):
-        config = resolve_images(pre_release=True, image_tag="sha-abc1234")
+    def test_edge_explicit_tag(self):
+        config = resolve_images(edge=True, image_tag="sha-abc1234")
         assert config.ploston_image == f"{DEFAULT_REGISTRY}/{DEV_PLOSTON}:sha-abc1234"
+
+    def test_pre_release_deprecated_alias(self):
+        """pre_release=True should emit DeprecationWarning and resolve like edge=True."""
+        with pytest.warns(DeprecationWarning, match="deprecated"):
+            config = resolve_images(pre_release=True)
+        assert config.ploston_image == f"{DEFAULT_REGISTRY}/{DEV_PLOSTON}:{DEFAULT_EDGE_TAG}"
 
     def test_build_from_source(self):
         config = resolve_images(build_from_source=True)
@@ -94,9 +99,9 @@ class TestResolveImages:
         with pytest.raises(ImageResolverError, match="mutually exclusive"):
             resolve_images(build_from_source=True, image_tag="v1.0.0")
 
-    def test_build_from_source_with_pre_release_raises(self):
+    def test_build_from_source_with_edge_raises(self):
         with pytest.raises(ImageResolverError, match="mutually exclusive"):
-            resolve_images(build_from_source=True, pre_release=True)
+            resolve_images(build_from_source=True, edge=True)
 
 
 # ── detect_meta_repo_root tests ──
