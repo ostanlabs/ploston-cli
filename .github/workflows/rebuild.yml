@@ -27,6 +27,8 @@ on:
         required: true
       DASHBOARD_GIST_ID:
         required: true
+      TEST_PYPI_TOKEN:
+        required: false
 
 concurrency:
   group: ploston-cli-rebuild-${{ inputs.cascade_id || github.sha }}
@@ -114,6 +116,8 @@ jobs:
           echo "Built version: $VERSION"
 
       - name: Publish to Test PyPI
+        env:
+          TEST_PYPI_TOKEN: ${{ secrets.TEST_PYPI_TOKEN }}
         run: |
           set -o pipefail
           MAX_ATTEMPTS=10
@@ -124,9 +128,20 @@ jobs:
           VERSION=$(ls dist/*.whl | head -1 | sed 's/.*-\([0-9].*\)-py3.*/\1/')
           echo "Publishing version: $VERSION"
 
+          # Determine publish method: trusted publishing (OIDC) or API token
+          # Cross-repo workflow_call breaks OIDC claims, so fall back to token
+          PUBLISH_CMD="uv publish --publish-url https://test.pypi.org/legacy/"
+          if [ -n "$TEST_PYPI_TOKEN" ]; then
+            echo "Using API token for Test PyPI publishing"
+            PUBLISH_CMD="$PUBLISH_CMD --token $TEST_PYPI_TOKEN"
+          else
+            echo "Using trusted publishing (OIDC) for Test PyPI"
+            PUBLISH_CMD="$PUBLISH_CMD --trusted-publishing always"
+          fi
+
           while [[ $ATTEMPT -le $MAX_ATTEMPTS ]]; do
             echo "Publish attempt $ATTEMPT of $MAX_ATTEMPTS..."
-            if uv publish --publish-url https://test.pypi.org/legacy/ --trusted-publishing always 2>&1 | tee /tmp/publish_output.txt; then
+            if $PUBLISH_CMD 2>&1 | tee /tmp/publish_output.txt; then
               echo "Successfully published to Test PyPI"
               exit 0
             fi
