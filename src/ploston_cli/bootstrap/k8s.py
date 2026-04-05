@@ -369,7 +369,7 @@ class K8sManifestGenerator:
             {"name": "PLOSTON_HOST", "value": "0.0.0.0"},
             {"name": "PLOSTON_PORT", "value": str(config.port)},
             {"name": "PLOSTON_METRICS_PORT", "value": str(config.metrics_port)},
-            {"name": "REDIS_URL", "value": f"redis://redis:{config.redis_port}/0"},
+            {"name": "PLOSTON_REDIS_URL", "value": f"redis://redis:{config.redis_port}/0"},
             {"name": "CONFIG_PATH", "value": "/app/config/ploston-config.yaml"},
         ]
         if config.native_tools_enabled:
