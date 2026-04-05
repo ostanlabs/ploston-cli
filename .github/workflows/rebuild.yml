@@ -115,6 +115,7 @@ jobs:
 
       - name: Publish to Test PyPI
         run: |
+          set -o pipefail
           MAX_ATTEMPTS=10
           ATTEMPT=1
           DELAY=15
