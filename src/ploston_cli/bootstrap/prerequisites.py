@@ -197,7 +197,7 @@ class KubectlDetector:
 
         try:
             result = subprocess.run(
-                ["kubectl", "version", "--client", "--short"],
+                ["kubectl", "version", "--client", "-o", "json"],
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -207,7 +207,15 @@ class KubectlDetector:
                     kubectl_available=False,
                     error=f"kubectl error: {result.stderr.strip()}",
                 )
-            kubectl_version = result.stdout.strip()
+            # Parse version from JSON output (works with all kubectl versions)
+            import json
+
+            try:
+                version_info = json.loads(result.stdout)
+                client_info = version_info.get("clientVersion", {})
+                kubectl_version = client_info.get("gitVersion", result.stdout.strip())
+            except (json.JSONDecodeError, KeyError):
+                kubectl_version = result.stdout.strip()
         except subprocess.TimeoutExpired:
             return KubectlInfo(
                 kubectl_available=False,
