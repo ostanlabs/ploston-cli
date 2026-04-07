@@ -22,23 +22,35 @@ def runner():
 class TestServerList:
     """Tests for ploston server list."""
 
-    def test_server_list_output_format(self, runner):
-        """ploston server list → table with name, source, tool count."""
-        mock_tools = [
-            {"name": "read_file", "server": "filesystem", "source": "runner"},
-            {"name": "write_file", "server": "filesystem", "source": "runner"},
-            {"name": "search_issues", "server": "github", "source": "runner"},
-        ]
+    @staticmethod
+    def _mock_client_with_runners(mock_client_cls, runners, runner_details):
+        """Wire up a mock PlostClient that returns runners and their details."""
+        instance = AsyncMock()
+        instance.list_runners = AsyncMock(return_value=runners)
+        instance.get_runner = AsyncMock(side_effect=lambda name: runner_details[name])
+        instance.__aenter__ = AsyncMock(return_value=instance)
+        instance.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = instance
 
-        async def mock_list_tools(**kwargs):
-            return mock_tools
+    def test_server_list_output_format(self, runner):
+        """ploston server list → table with name, runner, transport, tool count."""
+        runners = [{"name": "mac", "status": "connected"}]
+        runner_details = {
+            "mac": {
+                "mcps": {
+                    "filesystem": {"command": "node", "args": ["fs-server"]},
+                    "github": {"command": "npx", "args": ["@mcp/github"]},
+                },
+                "available_tools": [
+                    {"name": "filesystem__read_file"},
+                    {"name": "filesystem__write_file"},
+                    {"name": "github__search_issues"},
+                ],
+            }
+        }
 
         with patch("ploston_cli.commands.server.PlostClient") as mock_client:
-            instance = AsyncMock()
-            instance.list_tools = mock_list_tools
-            instance.__aenter__ = AsyncMock(return_value=instance)
-            instance.__aexit__ = AsyncMock(return_value=False)
-            mock_client.return_value = instance
+            self._mock_client_with_runners(mock_client, runners, runner_details)
 
             result = runner.invoke(cli, ["-s", "http://localhost:8022", "server", "list"])
             assert result.exit_code == 0
@@ -47,16 +59,16 @@ class TestServerList:
 
     def test_server_list_json(self, runner):
         """ploston server list --json outputs JSON."""
-
-        async def mock_list_tools(**kwargs):
-            return [{"name": "t1", "server": "fs", "source": "runner"}]
+        runners = [{"name": "mac", "status": "connected"}]
+        runner_details = {
+            "mac": {
+                "mcps": {"fs": {"command": "node"}},
+                "available_tools": [{"name": "fs__t1"}],
+            }
+        }
 
         with patch("ploston_cli.commands.server.PlostClient") as mock_client:
-            instance = AsyncMock()
-            instance.list_tools = mock_list_tools
-            instance.__aenter__ = AsyncMock(return_value=instance)
-            instance.__aexit__ = AsyncMock(return_value=False)
-            mock_client.return_value = instance
+            self._mock_client_with_runners(mock_client, runners, runner_details)
 
             result = runner.invoke(cli, ["-s", "http://localhost:8022", "--json", "server", "list"])
             assert result.exit_code == 0

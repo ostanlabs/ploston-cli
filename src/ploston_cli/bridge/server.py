@@ -7,7 +7,12 @@ and forwards requests to Control Plane via BridgeProxy.
 import logging
 from typing import Any, Callable
 
-from .errors import JSONRPC_INVALID_REQUEST, JSONRPC_SERVER_ERROR, ExposeAmbiguityError
+from .errors import (
+    BRIDGE_EMPTY_TOOLS_ERROR,
+    JSONRPC_INVALID_REQUEST,
+    JSONRPC_SERVER_ERROR,
+    ExposeAmbiguityError,
+)
 from .proxy import BridgeProxy, BridgeProxyError
 
 logger = logging.getLogger(__name__)
@@ -122,6 +127,7 @@ class BridgeServer:
         self.on_notification: Callable[[dict[str, Any]], None] | None = None
         self._cp_server_info: dict[str, Any] | None = None
         self._session_map: dict[str, str] = {}  # clean_name → canonical_name
+        self.shutdown_requested: bool = False
 
         # Resolve flags once at construction time.
         expose_flags = [expose] if expose else []
@@ -248,16 +254,19 @@ class BridgeServer:
             filtered_tools = [self._strip_prefix(t) for t in filtered_tools]
             tool_count = len(filtered_tools)
             if tool_count == 0:
-                logger.warning(
-                    f"[bridge] tools/list returned 0 tools for expose='{self.expose}' "
-                    f"runner='{self.runner}' (CP returned {len(all_tools)} total tools). "
-                    f"The MCP server may not be configured on the runner."
+                msg = (
+                    f"Bridge has 0 tools for expose='{self.expose}' "
+                    f"runner='{self.runner}' (CP returned {len(all_tools)} total). "
+                    f"The MCP server may not be configured on the runner, or all "
+                    f"tools were de-registered. Bridge will shut down."
                 )
-            else:
-                logger.info(
-                    f"[bridge] tools/list: {tool_count} tools exposed "
-                    f"(expose='{self.expose}' runner='{self.runner}')"
-                )
+                logger.error(f"[bridge] {msg}")
+                self.shutdown_requested = True
+                return self._make_error_response(request_id, BRIDGE_EMPTY_TOOLS_ERROR, msg)
+            logger.info(
+                f"[bridge] tools/list: {tool_count} tools exposed "
+                f"(expose='{self.expose}' runner='{self.runner}')"
+            )
             return {
                 "jsonrpc": "2.0",
                 "id": request_id,
@@ -266,6 +275,14 @@ class BridgeServer:
 
         # For tag-based paths the CP already did the filtering; return as-is.
         tag_tools = cp_response.get("result", {}).get("tools", [])
+        if len(tag_tools) == 0 and self._resolved_tag_sets:
+            msg = (
+                f"Bridge has 0 tools for tags={self._resolved_tag_sets}. "
+                f"No tools match the requested filter. Bridge will shut down."
+            )
+            logger.error(f"[bridge] {msg}")
+            self.shutdown_requested = True
+            return self._make_error_response(request_id, BRIDGE_EMPTY_TOOLS_ERROR, msg)
         logger.info(
             f"[bridge] tools/list: {len(tag_tools)} tools returned (tags={self._resolved_tag_sets})"
         )

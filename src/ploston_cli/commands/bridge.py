@@ -495,6 +495,11 @@ async def stdio_loop(server: BridgeServer, shutdown_event: asyncio.Event) -> Non
                 sys.stdout.write(json.dumps(response) + "\n")
                 sys.stdout.flush()
 
+            # Check if the server requested shutdown (e.g., zero tools after filtering)
+            if server.shutdown_requested:
+                logger.info("[bridge] Server requested shutdown (zero tools). Exiting.")
+                break
+
         except asyncio.TimeoutError:
             # No input, check shutdown and continue
             continue

@@ -34,26 +34,57 @@ def server_group() -> None:
 
 
 @server_group.command("list")
+@click.option("--tools", "show_tools", is_flag=True, help="Show tool names for each server")
 @click.pass_context
-def server_list(ctx: click.Context) -> None:
-    """List registered MCP servers on the CP.
+def server_list(ctx: click.Context, show_tools: bool) -> None:
+    """List configured MCP servers on the CP.
 
-    Displays name, status, source and tool count.
+    Shows all MCP servers configured across runners, their transport,
+    status, and tool count.  Use --tools to see individual tool names.
     """
     server_url = _get_server_url(ctx)
     insecure = _get_insecure(ctx)
 
     async def _list() -> list[dict[str, Any]]:
         async with PlostClient(server_url, insecure=insecure) as client:
-            tools = await client.list_tools()
-        # Group by server
-        servers: dict[str, dict[str, Any]] = {}
-        for t in tools:
-            srv = t.get("server") or t.get("source", "unknown")
-            if srv not in servers:
-                servers[srv] = {"name": srv, "tool_count": 0, "source": t.get("source", "?")}
-            servers[srv]["tool_count"] += 1
-        return list(servers.values())
+            runners = await client.list_runners()
+            servers: list[dict[str, Any]] = []
+            for r in runners:
+                detail = await client.get_runner(r["name"])
+                mcps = detail.get("mcps", {})
+                available = detail.get("available_tools", [])
+                runner_status = r.get("status", "unknown")
+
+                for mcp_name, mcp_cfg in mcps.items():
+                    # Determine transport type
+                    if mcp_cfg.get("url"):
+                        transport = "sse"
+                    elif mcp_cfg.get("command"):
+                        transport = "stdio"
+                    else:
+                        transport = "unknown"
+
+                    # Collect tools belonging to this MCP
+                    mcp_tools: list[str] = []
+                    for tool in available:
+                        tname = tool if isinstance(tool, str) else tool.get("name", "")
+                        if tname.startswith(f"{mcp_name}__"):
+                            # Strip the server prefix for display
+                            mcp_tools.append(tname[len(mcp_name) + 2 :])
+
+                    servers.append(
+                        {
+                            "name": mcp_name,
+                            "runner": r["name"],
+                            "runner_status": runner_status,
+                            "transport": transport,
+                            "tool_count": len(mcp_tools),
+                            "tools": mcp_tools,
+                            "command": mcp_cfg.get("command"),
+                            "url": mcp_cfg.get("url"),
+                        }
+                    )
+            return servers
 
     try:
         result = asyncio.run(_list())
@@ -65,13 +96,20 @@ def server_list(ctx: click.Context) -> None:
         click.echo(json.dumps(result, indent=2))
     else:
         if not result:
-            click.echo("No servers registered.")
+            click.echo("No MCP servers configured.")
             return
-        click.echo(f"Registered servers ({len(result)}):\n")
+        click.echo(f"Configured MCP servers ({len(result)}):\n")
         for s in result:
+            status_icon = "●" if s["runner_status"] == "connected" else "○"
             click.echo(
-                f"  {s['name']:<20s}  source={s.get('source', '?'):<10s}  tools={s['tool_count']}"
+                f"  {status_icon} {s['name']:<24s}  "
+                f"transport={s['transport']:<6s}  "
+                f"runner={s['runner']:<20s}  "
+                f"tools={s['tool_count']}"
             )
+            if show_tools and s["tools"]:
+                for t in sorted(s["tools"]):
+                    click.echo(f"      - {t}")
 
 
 @server_group.command("add")

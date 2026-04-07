@@ -477,3 +477,144 @@ class TestExposeWorkflows:
         response = await server.handle_request(request)
 
         assert len(response["result"]["tools"]) == 3
+
+
+# =============================================================================
+# Zero-tools shutdown tests
+# =============================================================================
+
+
+class TestZeroToolsShutdown:
+    """Tests for bridge shutdown when tools/list returns 0 tools.
+
+    When filtering produces zero tools the bridge should:
+    1. Return a JSON-RPC error (BRIDGE_EMPTY_TOOLS_ERROR = -32005)
+    2. Set shutdown_requested = True so the stdio loop exits
+    """
+
+    @pytest.mark.asyncio
+    async def test_server_expose_zero_tools_returns_error(self, mock_proxy, tools_with_runner):
+        """--expose <server> with no matching tools returns error + shutdown."""
+        mock_proxy.send_request.return_value = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"tools": tools_with_runner},
+        }
+        server = make_server(mock_proxy, expose="nonexistent-server", runner="mac")
+        assert not server.shutdown_requested
+
+        request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        response = await server.handle_request(request)
+
+        assert "error" in response
+        assert response["error"]["code"] == -32005
+        assert "0 tools" in response["error"]["message"]
+        assert server.shutdown_requested is True
+
+    @pytest.mark.asyncio
+    async def test_server_expose_zero_tools_after_deregistration(self, mock_proxy):
+        """Tools deregistered after initial connect → error + shutdown."""
+        # First call: tools present
+        tools_v1 = [
+            {"name": "mac__github__create_pr", "description": "Create PR", "inputSchema": {}},
+        ]
+        mock_proxy.send_request.return_value = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"tools": tools_v1},
+        }
+        server = make_server(mock_proxy, expose="github", runner="mac")
+
+        request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        response = await server.handle_request(request)
+        assert "result" in response
+        assert len(response["result"]["tools"]) == 1
+        assert not server.shutdown_requested
+
+        # Second call: tools gone (runner disconnected / MCP removed)
+        mock_proxy.send_request.return_value = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": {"tools": []},
+        }
+        request = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+        response = await server.handle_request(request)
+
+        assert "error" in response
+        assert response["error"]["code"] == -32005
+        assert server.shutdown_requested is True
+
+    @pytest.mark.asyncio
+    async def test_tag_based_zero_tools_returns_error(self, mock_proxy):
+        """Tag-based bridge with 0 matching tools returns error + shutdown."""
+        mock_proxy.send_request.return_value = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"tools": []},
+        }
+        server = make_server(mock_proxy, expose="workflows")
+
+        request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        response = await server.handle_request(request)
+
+        assert "error" in response
+        assert response["error"]["code"] == -32005
+        assert "0 tools" in response["error"]["message"]
+        assert server.shutdown_requested is True
+
+    @pytest.mark.asyncio
+    async def test_tag_based_with_tools_no_shutdown(self, mock_proxy, tools_with_runner):
+        """Tag-based bridge with matching tools does NOT trigger shutdown."""
+        workflow_tools = [t for t in tools_with_runner if t["name"].startswith("workflow_")]
+        mock_proxy.send_request.return_value = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"tools": workflow_tools},
+        }
+        server = make_server(mock_proxy, expose="workflows")
+
+        request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        response = await server.handle_request(request)
+
+        assert "result" in response
+        assert len(response["result"]["tools"]) > 0
+        assert server.shutdown_requested is False
+
+    @pytest.mark.asyncio
+    async def test_unfiltered_bridge_no_shutdown_on_empty(self, mock_proxy):
+        """Bridge with --tools all (no filter) does NOT shutdown on empty tools.
+
+        An unfiltered bridge (no --expose, no --tags) getting 0 tools is likely
+        a transient state (CP just started). Only filtered bridges should fail-fast.
+        """
+        mock_proxy.send_request.return_value = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"tools": []},
+        }
+        server = make_server(mock_proxy, tools_filter="all")
+
+        request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        response = await server.handle_request(request)
+
+        # Unfiltered bridge: returns empty list but does NOT shutdown
+        assert "result" in response
+        assert response["result"]["tools"] == []
+        assert server.shutdown_requested is False
+
+    @pytest.mark.asyncio
+    async def test_server_expose_with_tools_no_shutdown(self, mock_proxy, tools_with_runner):
+        """--expose <server> with matching tools does NOT trigger shutdown."""
+        mock_proxy.send_request.return_value = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"tools": tools_with_runner},
+        }
+        server = make_server(mock_proxy, expose="filesystem", runner="mac")
+
+        request = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
+        response = await server.handle_request(request)
+
+        assert "result" in response
+        assert len(response["result"]["tools"]) == 2
+        assert server.shutdown_requested is False

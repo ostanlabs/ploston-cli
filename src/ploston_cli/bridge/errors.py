@@ -19,6 +19,7 @@ BRIDGE_AUTH_ERROR = -32001
 BRIDGE_CONNECTION_ERROR = -32002
 BRIDGE_TIMEOUT_ERROR = -32003
 BRIDGE_EXPOSE_AMBIGUITY_ERROR = -32004
+BRIDGE_EMPTY_TOOLS_ERROR = -32005
 
 
 @dataclass
@@ -44,6 +45,15 @@ class ExposeAmbiguityError(BridgeError):
 
     code: int = BRIDGE_EXPOSE_AMBIGUITY_ERROR
     message: str = "Ambiguous expose target"
+    retryable: bool = False
+
+
+@dataclass
+class EmptyToolsError(BridgeError):
+    """Bridge has zero tools after filtering — bridge should shut down."""
+
+    code: int = BRIDGE_EMPTY_TOOLS_ERROR
+    message: str = "Bridge has no tools to expose"
     retryable: bool = False
 
 
