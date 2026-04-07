@@ -242,7 +242,7 @@
       "id": 4,
       "options": {
         "legend": {
-          "calcs": ["sum"],
+          "calcs": ["lastNotNull"],
           "displayMode": "table",
           "placement": "right",
           "showLegend": true
@@ -255,7 +255,7 @@
       "pluginVersion": "10.0.0",
       "targets": [
         {
-          "expr": "sum(increase(ploston_tokens_saved_total{workflow_name=~\"$workflow\"}[$__range])) by (workflow_name)",
+          "expr": "sum by (workflow_name) (increase(ploston_tokens_saved_total{workflow_name=~\"$workflow\"}[$__range]))",
           "legendFormat": "{{workflow_name}}",
           "refId": "A"
         }
