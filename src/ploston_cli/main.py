@@ -813,6 +813,12 @@ def executions_show(ctx: click.Context, execution_id: str) -> None:
         click.echo(f"  Status:     {click.style(e_status.upper(), fg=color)}")
         click.echo(f"  Started:    {detail.get('started_at', '—')}")
         click.echo(f"  Duration:   {dur_str}")
+        runner_id = detail.get("runner_id")
+        bridge_sid = detail.get("bridge_session_id")
+        if runner_id:
+            click.echo(f"  Runner:     {runner_id}")
+        if bridge_sid:
+            click.echo(f"  Bridge:     {bridge_sid}")
 
         # Steps
         steps = detail.get("steps", [])
