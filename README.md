@@ -435,7 +435,7 @@ make test-e2e-docker-compose
 ## Features
 
 - **HTTP-only client**: No server dependencies, works with any Ploston server
-- **Tier detection**: Automatically detects community vs enterprise features from server
+- **Server capability detection**: Automatically detects available features from the connected server
 - **Rich output**: Beautiful terminal output with colors and formatting
 - **JSON mode**: Machine-readable output for scripting
 - **Local validation**: Validate workflow YAML without server connection
@@ -443,3 +443,8 @@ make test-e2e-docker-compose
 ## License
 
 Apache-2.0
+
+## Disclaimer
+
+This project is developed independently in a personal capacity and is not affiliated with, endorsed by, or connected to any employer.
+No proprietary or confidential information from any employer has been used in this project.
