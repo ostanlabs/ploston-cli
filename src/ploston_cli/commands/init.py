@@ -162,11 +162,31 @@ async def _run_import_flow(
     found = [d for d in detected if d.found]
     if not found:
         click.echo("  ❌ No MCP configurations found.")
-        click.echo("  Make sure Claude Desktop or Cursor is installed and configured.")
+        # Surface per-source detail so users can distinguish "file missing" from
+        # "file present but unreadable / invalid JSON / permission denied".
+        actionable_files_present = False
+        for d in detected:
+            label = SOURCE_LABELS.get(d.source, d.source)
+            path_present = bool(str(d.path)) and d.path.exists()
+            if d.error:
+                path_str = str(d.path) if str(d.path) else "(no path)"
+                click.echo(f"     {label} ({path_str}):")
+                click.echo(f"       → {d.error}")
+                if path_present:
+                    actionable_files_present = True
+            elif d.server_count == 0:
+                click.echo(f"     {label} ({d.path}):")
+                click.echo("       → No MCP servers defined in config")
+                actionable_files_present = True
+        # Only show the install hint when every source is genuinely absent.
+        # If any source file exists but failed to parse or had no servers, the
+        # hint is misleading — the per-source detail above is the real guidance.
+        if not actionable_files_present:
+            click.echo("  Make sure Claude Desktop or Cursor is installed and configured.")
         sys.exit(1)
 
     for d in found:
-        label = "Claude Desktop" if d.source == "claude_desktop" else "Cursor"
+        label = SOURCE_LABELS.get(d.source, d.source)
         click.echo(f"  ✓ Found: {label} ({d.path})")
         click.echo(f"    {d.server_count} servers configured")
 

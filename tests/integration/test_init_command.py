@@ -71,6 +71,102 @@ class TestInitImportNoConfig:
         assert result.exit_code == 1
         assert "No MCP configurations found" in result.output
 
+    def test_import_reports_per_source_error_detail(self, runner, tmp_path):
+        """Per-source errors (e.g. invalid JSON) must be surfaced, not hidden
+        behind the generic 'No MCP configurations found' message. When a
+        present-but-broken file exists, the 'install Claude/Cursor' hint must
+        NOT be shown — it would contradict the per-source detail."""
+        from pathlib import Path
+
+        from ploston_cli.init.detector import DetectedConfig
+
+        mock_result = CPConnectionResult(
+            connected=True, url="http://localhost:8022", version="1.0.0"
+        )
+
+        # File exists on disk — represents the real-world "config present but
+        # unparseable" scenario.
+        broken_path = tmp_path / "claude_desktop_config.json"
+        broken_path.write_text("{ not valid json")
+        detected = [
+            DetectedConfig(
+                source="claude_desktop",
+                path=broken_path,
+                error="Invalid JSON: Expecting ',' delimiter: line 92 column 9 (char 2953)",
+            ),
+            DetectedConfig(
+                source="cursor",
+                path=Path("/missing/cursor"),
+                error="Config not found at /missing/cursor",
+            ),
+        ]
+
+        with patch("ploston_cli.commands.init.PlostClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.check_cp_connectivity = AsyncMock(return_value=mock_result)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            with patch("ploston_cli.commands.init.ConfigDetector") as mock_detector_class:
+                mock_detector = mock_detector_class.return_value
+                mock_detector.detect_all.return_value = detected
+
+                result = runner.invoke(cli, ["init", "--import", "--non-interactive"])
+
+        assert result.exit_code == 1
+        assert "No MCP configurations found" in result.output
+        assert "Claude Desktop" in result.output
+        assert "Invalid JSON" in result.output
+        assert str(broken_path) in result.output
+        assert "Cursor" in result.output
+        assert "Config not found" in result.output
+        # The install hint contradicts the per-source detail when a real file
+        # exists, so it must be suppressed in this scenario.
+        assert "Make sure Claude Desktop or Cursor is installed" not in result.output
+
+    def test_import_shows_install_hint_when_all_sources_missing(self, runner, tmp_path):
+        """When every source is genuinely absent (no file on disk anywhere),
+        the 'install Claude/Cursor' hint is actionable and should be shown."""
+        from pathlib import Path
+
+        from ploston_cli.init.detector import DetectedConfig
+
+        mock_result = CPConnectionResult(
+            connected=True, url="http://localhost:8022", version="1.0.0"
+        )
+
+        detected = [
+            DetectedConfig(
+                source="claude_desktop",
+                path=Path(str(tmp_path / "nope-claude.json")),
+                error=f"Config not found at {tmp_path / 'nope-claude.json'}",
+            ),
+            DetectedConfig(
+                source="cursor",
+                path=Path(str(tmp_path / "nope-cursor")),
+                error=f"Config not found at {tmp_path / 'nope-cursor'}",
+            ),
+        ]
+
+        with patch("ploston_cli.commands.init.PlostClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.check_cp_connectivity = AsyncMock(return_value=mock_result)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=None)
+            mock_client_class.return_value = mock_client
+
+            with patch("ploston_cli.commands.init.ConfigDetector") as mock_detector_class:
+                mock_detector = mock_detector_class.return_value
+                mock_detector.detect_all.return_value = detected
+
+                result = runner.invoke(cli, ["init", "--import", "--non-interactive"])
+
+        assert result.exit_code == 1
+        assert "No MCP configurations found" in result.output
+        assert "Config not found" in result.output
+        assert "Make sure Claude Desktop or Cursor is installed" in result.output
+
 
 class TestInitImportWithConfig:
     """Tests for init --import with valid config."""
