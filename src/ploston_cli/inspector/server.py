@@ -3,7 +3,9 @@
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import AsyncIterator
 
 import uvicorn
 from sse_starlette.sse import EventSourceResponse
@@ -25,13 +27,15 @@ def create_app(proxy: InspectorProxy) -> Starlette:
     """Construct the Starlette app, wiring the EventHub through app.state."""
     hub = EventHub(proxy)
 
-    async def on_startup() -> None:
+    @asynccontextmanager
+    async def lifespan(app: Starlette) -> AsyncIterator[None]:
         await hub.start()
         logger.info("[inspector] EventHub started")
-
-    async def on_shutdown() -> None:
-        await hub.stop()
-        logger.info("[inspector] EventHub stopped")
+        try:
+            yield
+        finally:
+            await hub.stop()
+            logger.info("[inspector] EventHub stopped")
 
     async def index(request: Request) -> Response:
         path = STATIC_DIR / "index.html"
@@ -142,8 +146,7 @@ def create_app(proxy: InspectorProxy) -> Starlette:
 
     app = Starlette(
         routes=routes,
-        on_startup=[on_startup],
-        on_shutdown=[on_shutdown],
+        lifespan=lifespan,
     )
     app.state.hub = hub
     return app

@@ -134,3 +134,16 @@ def test_static_mount_exists(client):
     # the route is registered by asking for a non-existent file (should 404, not 500).
     response = c.get("/static/does-not-exist.css")
     assert response.status_code == 404
+
+
+def test_create_app_constructs_without_deprecated_starlette_kwargs():
+    """Regression guard: create_app must work on Starlette releases that removed
+    the on_startup/on_shutdown kwargs (0.50+). TestClient-based tests above
+    never touched the Starlette() call path directly — this one does.
+    """
+    proxy = _mk_proxy()
+    app = create_app(proxy)
+    from starlette.applications import Starlette
+
+    assert isinstance(app, Starlette)
+    assert app.router.lifespan_context is not None
