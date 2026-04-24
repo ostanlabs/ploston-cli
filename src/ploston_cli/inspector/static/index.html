@@ -468,17 +468,22 @@
           </div>
 
           <!-- Example call (spans both columns) -->
+          <!-- JSON-RPC over POST /mcp is the one surface that works for
+               every tool the inspector can show (runner-hosted, CP-MCP,
+               system, virtual workflow / authoring). The REST
+               /api/v1/tools/<name>/call endpoint only resolves CP-native
+               tools, so we don't advertise it here. -->
           <div class="panel" style="grid-column: 1 / -1">
             <div class="panel-header">
               <span class="section-label">example call</span>
-              <span class="text-[11px]" style="color: var(--dim)">via Ploston CP REST</span>
+              <span class="text-[11px]" style="color: var(--dim)">MCP JSON-RPC via Ploston CP</span>
               <div class="flex-1"></div>
-              <span class="mono text-[10.5px]" style="color: var(--dim)">POST /api/v1/tools/<span x-text="selectedTool.name"></span>/call</span>
+              <span class="mono text-[10.5px]" style="color: var(--dim)">POST /mcp · tools/call</span>
             </div>
-            <pre class="mono text-[12px] leading-[1.6] p-4 overflow-x-auto scrollbar" style="margin:0; color: #b8c0cc"><span style="color: var(--dim)"># Invoke via the CP</span>
-curl -X POST <span style="color:#a8d1ff"><span x-text="(cpUrl || 'http://localhost:8022') + '/api/v1/tools/'"></span><span x-text="selectedTool.name"></span>/call</span> \
+            <pre class="mono text-[12px] leading-[1.6] p-4 overflow-x-auto scrollbar" style="margin:0; color: #b8c0cc"><span style="color: var(--dim)"># Call the tool via the CP's MCP endpoint</span>
+curl -X POST <span style="color:#a8d1ff" x-text="(cpUrl || 'http://localhost:8022') + '/mcp'"></span> \
   -H <span style="color:#c3e88d">'Content-Type: application/json'</span> \
-  -d <span style="color:#c3e88d" x-text="'\\'' + JSON.stringify({params: exampleParams()}) + '\\''"></span></pre>
+  -d <span style="color:#c3e88d" x-text="'\\'' + JSON.stringify(exampleRpcBody()) + '\\''"></span></pre>
           </div>
 
           <!-- Metadata / routing (spans both) -->
@@ -747,6 +752,10 @@ function inspector() {
         // Bare display name (``<mcp>__`` stripped by the backend); falls
         // back to the canonical name when the backend didn't provide one.
         display_name: t.display_name || t.name,
+        // Name to use when calling via POST /mcp tools/call. For runner
+        // tools this is ``<runner>__<mcp>__<tool>``; for CP/virtual tools
+        // it equals the canonical name.
+        mcp_call_name: t.mcp_call_name || t.name,
         description: t.description || "",
         tags: t.tags || [],
         input_schema: t.input_schema || { type: "object", properties: {} },
@@ -1014,9 +1023,25 @@ function inspector() {
       }
       return out;
     },
+    // JSON-RPC body for POST /mcp tools/call — uniform across all tools,
+    // including runner-hosted (``<runner>__<mcp>__<tool>``) and the two
+    // virtual CP servers.
+    exampleRpcBody() {
+      const t = this.selectedTool;
+      if (!t) return null;
+      return {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: t.mcp_call_name || t.name,
+          arguments: this.exampleParams(),
+        },
+      };
+    },
     exampleCall() {
       const base = this.cpUrl || "http://localhost:8022";
-      return `curl -X POST ${base}/api/v1/tools/${this.selectedTool.name}/call \\\n  -H 'Content-Type: application/json' \\\n  -d '${JSON.stringify({params: this.exampleParams()})}'`;
+      return `curl -X POST ${base}/mcp \\\n  -H 'Content-Type: application/json' \\\n  -d '${JSON.stringify(this.exampleRpcBody())}'`;
     },
     copyToClipboard(text, label) {
       try {

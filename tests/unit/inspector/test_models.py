@@ -311,6 +311,29 @@ async def test_runner_tool_display_name_is_stripped():
     row = next(t for t in result["tools"] if t["name"] == "github__actions_get")
     assert row["display_name"] == "actions_get"
     assert row["server_id"] == "runner:runner-a::github"
+    # /mcp tools/call expects the full runner-prefixed name.
+    assert row["mcp_call_name"] == "runner-a__github__actions_get"
+
+
+@pytest.mark.asyncio
+async def test_cp_tool_mcp_call_name_is_canonical():
+    """CP-hosted system/mcp tools are exposed on /mcp by bare canonical
+    name — no runner prefix to prepend.
+    """
+    proxy = _mk_proxy()
+    proxy.list_tools.return_value = [
+        {"name": "python_exec", "source": "system", "server": "system"},
+        {
+            "name": "filesystem__read_file",
+            "source": "mcp",
+            "server": "filesystem",
+        },
+    ]
+    result = await build_overview(proxy)
+    sys_row = next(t for t in result["tools"] if t["name"] == "python_exec")
+    assert sys_row["mcp_call_name"] == "python_exec"
+    fs_row = next(t for t in result["tools"] if t["name"] == "filesystem__read_file")
+    assert fs_row["mcp_call_name"] == "filesystem__read_file"
 
 
 @pytest.mark.asyncio
@@ -356,6 +379,8 @@ async def test_virtual_ploston_authoring_server_exposes_workflow_mgmt_tools():
     assert create["input_schema"] == {"type": "object", "required": ["yaml"]}
     # Virtual tools are already bare-named, so display == canonical.
     assert create["display_name"] == "workflow_create"
+    # /mcp accepts workflow mgmt tools by bare name.
+    assert create["mcp_call_name"] == "workflow_create"
 
 
 @pytest.mark.asyncio

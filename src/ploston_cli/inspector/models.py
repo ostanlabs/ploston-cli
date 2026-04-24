@@ -243,10 +243,21 @@ async def build_overview(proxy: InspectorProxy) -> dict[str, Any]:
 
         display_name = _bare_tool_name(tool_name, mcp_for_display) if mcp_for_display else tool_name
 
+        # Name the user must use when calling this tool via POST /mcp
+        # tools/call. The CP's JSON-RPC surface exposes runner tools as
+        # ``<runner>__<mcp>__<tool>`` (step 2 routing in DEC-169/170) —
+        # /api/v1/tools strips the runner prefix, /mcp does not, so we
+        # rebuild it here.
+        if source == "runner" and server_name:
+            mcp_call_name = f"{server_name}__{tool_name}"
+        else:
+            mcp_call_name = tool_name
+
         tool_rows.append(
             {
                 "name": tool_name,
                 "display_name": display_name,
+                "mcp_call_name": mcp_call_name,
                 "server_id": server_id,
                 "description": tool.get("description", ""),
                 "input_schema": tool.get("input_schema", {}),
@@ -374,6 +385,9 @@ def _virtual_tool_row(mcp_tool: dict[str, Any], server_name: str) -> dict[str, A
         "name": tool_name,
         # Virtual servers already expose bare names, so display == canonical.
         "display_name": tool_name,
+        # Virtual-server tools are CP-hosted (workflow registry / management
+        # provider) and the /mcp endpoint accepts them by bare name.
+        "mcp_call_name": tool_name,
         "server_id": make_server_id("control_plane", server_name),
         "description": mcp_tool.get("description", ""),
         # ``tools/list`` returns MCP-shape ``inputSchema`` — keep it under
