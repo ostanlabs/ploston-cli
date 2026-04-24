@@ -939,13 +939,14 @@ function inspector() {
 
     // Server-level selection: shows the config pane on the right. Does NOT
     // clear the tool selection — user toggles to config by clicking the
-    // server row; returning to a tool re-selects it.
+    // server row; returning to a tool re-selects it. Leaves the expansion
+    // state alone so a row click is free to toggle it — the containing
+    // group is still opened so the selection stays visible.
     selectServer(serverId) {
       this.selectedServerId = serverId;
       this.selectedKey = null;
       for (const g of this.tree) {
-        const s = g.servers.find(x => x.id === serverId);
-        if (s) { s.expanded = true; g.expanded = true; return; }
+        if (g.servers.some(x => x.id === serverId)) { g.expanded = true; return; }
       }
     },
 
