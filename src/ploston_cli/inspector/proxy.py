@@ -130,6 +130,26 @@ class InspectorProxy:
     async def get_runner_mcp_status(self, runner: str, mcp: str) -> dict[str, Any]:
         return await self._get(f"/api/v1/runners/{runner}/mcps/{mcp}/status")
 
+    async def mcp_tools_list(self, tags: list[str] | None = None) -> list[dict[str, Any]]:
+        """Call the CP's JSON-RPC ``tools/list`` endpoint.
+
+        Returns tools with their exact MCP schema (the same shape an agent
+        connecting through ``ploston bridge`` would see). Optional ``tags``
+        applies the CP's match-all tag filter (e.g. ``kind:workflow_mgmt``).
+        """
+        payload: dict[str, Any] = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list",
+            "params": {"tags": tags} if tags else {},
+        }
+        resp = await self._post("/mcp", json_body=payload)
+        if isinstance(resp, dict):
+            if "error" in resp:
+                raise InspectorProxyError(f"MCP tools/list failed: {resp['error']}")
+            return resp.get("result", {}).get("tools", [])
+        return []
+
     # ── SSE subscription ─────────────────────────────────────────
 
     async def subscribe_cp_events(

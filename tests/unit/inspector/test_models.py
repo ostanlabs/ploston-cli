@@ -69,6 +69,8 @@ def _mk_proxy():
         },
         {"name": "now", "source": "native", "description": "Clock", "tags": []},
     ]
+    # Default: no virtual-server tools — tests that care opt in explicitly.
+    proxy.mcp_tools_list.return_value = []
     return proxy
 
 
@@ -245,8 +247,153 @@ async def test_build_overview_tolerates_errors():
     proxy.get_config.side_effect = models.InspectorProxyError("boom")
     proxy.list_runners.side_effect = models.InspectorProxyError("boom")
     proxy.list_tools.side_effect = models.InspectorProxyError("boom")
+    proxy.mcp_tools_list.side_effect = models.InspectorProxyError("boom")
 
     result = await build_overview(proxy)
     assert result["servers"] == []
     assert result["tools"] == []
     assert result["cp"]["connected"] is False
+
+
+# ── Prefix stripping + virtual servers ───────────────────────────
+
+
+def test_bare_tool_name_strips_double_underscore():
+    assert models._bare_tool_name("github__actions_get", "github") == "actions_get"
+
+
+def test_bare_tool_name_strips_single_underscore_fallback():
+    # The double-underscore form is canonical but older servers used
+    # ``<mcp>_<tool>``; both should be peeled.
+    assert models._bare_tool_name("fs_read", "fs") == "read"
+
+
+def test_bare_tool_name_unchanged_when_no_prefix():
+    assert models._bare_tool_name("standalone", "github") == "standalone"
+
+
+def test_bare_tool_name_empty_inputs():
+    # Defensive: missing mcp or tool name must be a no-op, not crash.
+    assert models._bare_tool_name("", "github") == ""
+    assert models._bare_tool_name("actions_get", "") == "actions_get"
+
+
+@pytest.mark.asyncio
+async def test_cp_server_tool_display_name_is_stripped():
+    """CP-hosted MCP tools must display without the ``<mcp>__`` prefix."""
+    proxy = _mk_proxy()
+    # Replace the default read_file entry with a prefixed one so we can
+    # assert the strip.
+    proxy.list_tools.return_value = [
+        {
+            "name": "filesystem__read_file",
+            "source": "mcp",
+            "server": "filesystem",
+            "description": "Reads files",
+        },
+    ]
+    result = await build_overview(proxy)
+    row = next(t for t in result["tools"] if t["name"] == "filesystem__read_file")
+    assert row["display_name"] == "read_file"
+    assert row["server_id"] == "cp::filesystem"
+
+
+@pytest.mark.asyncio
+async def test_runner_tool_display_name_is_stripped():
+    proxy = _mk_proxy()
+    proxy.get_runner.return_value = {
+        "mcps": {"github": {"command": "docker", "transport": "stdio"}}
+    }
+    proxy.list_tools.return_value = [
+        {"name": "github__actions_get", "source": "runner", "server": "runner-a"},
+    ]
+    result = await build_overview(proxy)
+    row = next(t for t in result["tools"] if t["name"] == "github__actions_get")
+    assert row["display_name"] == "actions_get"
+    assert row["server_id"] == "runner:runner-a::github"
+
+
+@pytest.mark.asyncio
+async def test_virtual_ploston_authoring_server_exposes_workflow_mgmt_tools():
+    """The inspector must surface the same workflow_* authoring tools an
+    agent would see via ``ploston bridge --expose ploston-authoring``.
+    """
+    proxy = _mk_proxy()
+
+    async def _mcp_tools_list(tags=None):
+        if tags == ["kind:workflow_mgmt"]:
+            return [
+                {
+                    "name": "workflow_create",
+                    "description": "Publish a workflow as an MCP tool.",
+                    "inputSchema": {"type": "object", "required": ["yaml"]},
+                },
+                {
+                    "name": "workflow_list",
+                    "description": "List workflows.",
+                    "inputSchema": {"type": "object"},
+                },
+            ]
+        return []
+
+    proxy.mcp_tools_list.side_effect = _mcp_tools_list
+    result = await build_overview(proxy)
+
+    auth = next(s for s in result["servers"] if s["name"] == "ploston-authoring")
+    assert auth["virtual"] is True
+    assert auth["location"] == "control_plane"
+    assert auth["tool_count"] == 2
+    # Synthetic bridge config so users know how to wire it up.
+    assert auth["config"] == {
+        "transport": "stdio",
+        "command": "ploston",
+        "args": ["bridge", "--expose", "ploston-authoring"],
+    }
+
+    create = next(t for t in result["tools"] if t["name"] == "workflow_create")
+    assert create["server_id"] == "cp::ploston-authoring"
+    # Exact MCP schema passes through (input_schema carries the bridge shape).
+    assert create["input_schema"] == {"type": "object", "required": ["yaml"]}
+    # Virtual tools are already bare-named, so display == canonical.
+    assert create["display_name"] == "workflow_create"
+
+
+@pytest.mark.asyncio
+async def test_virtual_ploston_server_exposes_workflow_tools():
+    proxy = _mk_proxy()
+
+    async def _mcp_tools_list(tags=None):
+        if tags == ["kind:workflow"]:
+            return [
+                {
+                    "name": "hello_world",
+                    "description": "Hello world workflow.",
+                    "inputSchema": {"type": "object", "properties": {"name": {}}},
+                }
+            ]
+        return []
+
+    proxy.mcp_tools_list.side_effect = _mcp_tools_list
+    result = await build_overview(proxy)
+
+    ploston = next(s for s in result["servers"] if s["name"] == "ploston")
+    assert ploston["virtual"] is True
+    assert ploston["tool_count"] == 1
+    assert ploston["config"]["args"] == ["bridge", "--expose", "ploston"]
+
+    hw = next(t for t in result["tools"] if t["name"] == "hello_world")
+    assert hw["server_id"] == "cp::ploston"
+    assert hw["input_schema"] == {"type": "object", "properties": {"name": {}}}
+
+
+@pytest.mark.asyncio
+async def test_virtual_servers_absent_when_no_tools_reported():
+    """If the CP reports no workflow/authoring tools, the virtual buckets
+    must not appear (e.g. workflows disabled, stripped-down deployments).
+    """
+    proxy = _mk_proxy()
+    proxy.mcp_tools_list.return_value = []
+    result = await build_overview(proxy)
+    names = {s["name"] for s in result["servers"]}
+    assert "ploston" not in names
+    assert "ploston-authoring" not in names

@@ -75,6 +75,39 @@ def _match_runner_mcp(tool_name: str, known_mcps: set[str]) -> str | None:
     return None
 
 
+# Virtual (CP-side) servers that represent what ``ploston bridge`` exposes
+# rather than a real MCP process. Keep IDs in sync with the two entries
+# ``inject_ploston_into_config`` writes into the agent config file.
+VIRTUAL_WORKFLOWS_SERVER = "ploston"
+VIRTUAL_AUTHORING_SERVER = "ploston-authoring"
+
+
+def _bare_tool_name(tool_name: str, mcp_name: str) -> str:
+    """Strip a ``<mcp>__`` (or ``<mcp>_``) prefix from a tool name if present.
+
+    Used for *display only*. The canonical name is preserved elsewhere on
+    the row so the inspector can still copy/call by full name.
+    """
+    if not tool_name or not mcp_name:
+        return tool_name
+    for sep in ("__", "_"):
+        prefix = f"{mcp_name}{sep}"
+        if tool_name.startswith(prefix) and len(tool_name) > len(prefix):
+            return tool_name[len(prefix) :]
+    return tool_name
+
+
+def _virtual_bridge_config(expose: str) -> dict[str, Any]:
+    """Synthetic MCP-client config showing how to plug this virtual server
+    into an agent. Mirrors what ``inject_ploston_into_config`` writes.
+    """
+    return {
+        "transport": "stdio",
+        "command": "ploston",
+        "args": ["bridge", "--expose", expose],
+    }
+
+
 def _iter_runner_mcps(raw: Any):
     """Yield ``(name, config_dict)`` tuples for a runner's MCP list.
 
@@ -182,6 +215,7 @@ async def build_overview(proxy: InspectorProxy) -> dict[str, Any]:
         server_name = tool.get("server")
         tool_name = tool.get("name", "")
         server_id: str
+        mcp_for_display: str | None = None
 
         if source == "native":
             server_id = make_server_id("native", server_name or "native")
@@ -195,6 +229,7 @@ async def build_overview(proxy: InspectorProxy) -> dict[str, Any]:
             mcp_hit = _match_runner_mcp(tool_name, runner_mcp_names.get(runner_name, set()))
             if mcp_hit:
                 server_id = make_server_id(f"runner:{runner_name}", mcp_hit, runner=runner_name)
+                mcp_for_display = mcp_hit
             else:
                 server_id = make_server_id(
                     f"runner:{runner_name}", f"{runner_name}-inline", runner=runner_name
@@ -202,12 +237,16 @@ async def build_overview(proxy: InspectorProxy) -> dict[str, Any]:
                 runner_inline_tools[runner_name] = runner_inline_tools.get(runner_name, 0) + 1
         elif server_name:
             server_id = make_server_id("control_plane", server_name)
+            mcp_for_display = server_name
         else:
             server_id = make_server_id("native", tool_name)
+
+        display_name = _bare_tool_name(tool_name, mcp_for_display) if mcp_for_display else tool_name
 
         tool_rows.append(
             {
                 "name": tool_name,
+                "display_name": display_name,
                 "server_id": server_id,
                 "description": tool.get("description", ""),
                 "input_schema": tool.get("input_schema", {}),
@@ -287,8 +326,60 @@ async def build_overview(proxy: InspectorProxy) -> dict[str, Any]:
             }
         )
 
+    # ── Virtual CP-side servers ──────────────────────────────────
+    # These mirror the two entries ``inject_ploston_into_config`` writes
+    # into the agent config file. The tool rows they contain are pulled
+    # from the CP's JSON-RPC ``tools/list`` so we show the *exact* schema
+    # an agent would see connecting through ``ploston bridge``.
+    authoring_tools = await _safe(proxy.mcp_tools_list(tags=["kind:workflow_mgmt"]), [])
+    if authoring_tools:
+        servers.append(_virtual_server_row(VIRTUAL_AUTHORING_SERVER, len(authoring_tools)))
+        for t in authoring_tools:
+            tool_rows.append(_virtual_tool_row(t, VIRTUAL_AUTHORING_SERVER))
+
+    workflow_tools = await _safe(proxy.mcp_tools_list(tags=["kind:workflow"]), [])
+    if workflow_tools:
+        servers.append(_virtual_server_row(VIRTUAL_WORKFLOWS_SERVER, len(workflow_tools)))
+        for t in workflow_tools:
+            tool_rows.append(_virtual_tool_row(t, VIRTUAL_WORKFLOWS_SERVER))
+
     return {
         "cp": cp_meta,
         "servers": servers,
         "tools": tool_rows,
+    }
+
+
+def _virtual_server_row(name: str, tool_count: int) -> dict[str, Any]:
+    """Build a server row for one of the virtual (bridge-backed) servers."""
+    return {
+        "id": make_server_id("control_plane", name),
+        "location": "control_plane",
+        "name": name,
+        "virtual": True,
+        "transport": "stdio",
+        "command": "ploston",
+        "status": "connected",
+        "tool_count": tool_count,
+        "last_connected_at": None,
+        "tags": ["source:virtual", f"server:{name}"],
+        "config": _virtual_bridge_config(name),
+    }
+
+
+def _virtual_tool_row(mcp_tool: dict[str, Any], server_name: str) -> dict[str, Any]:
+    """Normalize one MCP ``tools/list`` entry into an inspector tool row."""
+    tool_name = mcp_tool.get("name", "")
+    return {
+        "name": tool_name,
+        # Virtual servers already expose bare names, so display == canonical.
+        "display_name": tool_name,
+        "server_id": make_server_id("control_plane", server_name),
+        "description": mcp_tool.get("description", ""),
+        # ``tools/list`` returns MCP-shape ``inputSchema`` — keep it under
+        # the inspector's existing ``input_schema`` field.
+        "input_schema": mcp_tool.get("inputSchema") or mcp_tool.get("input_schema") or {},
+        "output_schema": mcp_tool.get("outputSchema") or mcp_tool.get("output_schema"),
+        "tags": list(mcp_tool.get("tags", [])),
+        "status": "available",
     }
