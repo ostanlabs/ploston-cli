@@ -1,0 +1,884 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ploston Inspector — mock</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:#0a0b0d; --bg-2:#0f1114; --bg-3:#161a1f;
+    --line:#1f242c; --line-2:#2a3039;
+    --text:#e6e8eb; --muted:#8a92a0; --dim:#5b6472;
+    --accent:#7c5cff; --accent-2:#4aa8ff;
+    --green:#2fd67a; --amber:#f5c542; --red:#ff6b6b;
+  }
+  html, body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; }
+  .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scrollbar::-webkit-scrollbar-thumb { background: #232830; border-radius: 999px; }
+  .scrollbar::-webkit-scrollbar-thumb:hover { background: #2f3640; }
+  .scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .dot { width: 7px; height: 7px; border-radius: 999px; display: inline-block; }
+  .dot-green { background: var(--green); box-shadow: 0 0 0 3px rgba(47,214,122,0.15); }
+  .dot-amber { background: var(--amber); box-shadow: 0 0 0 3px rgba(245,197,66,0.15); }
+  .dot-red { background: var(--red); box-shadow: 0 0 0 3px rgba(255,107,107,0.15); }
+  .dot-dim { background: var(--dim); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 500;
+    background: #1a1f27; color: #b8c0cc; border: 1px solid var(--line);
+  }
+  .chip-accent { background: rgba(124,92,255,0.12); color: #b9a8ff; border-color: rgba(124,92,255,0.35); }
+  .chip-blue   { background: rgba(74,168,255,0.12); color: #a8d1ff; border-color: rgba(74,168,255,0.35); }
+  .chip-green  { background: rgba(47,214,122,0.10); color: #86e8b2; border-color: rgba(47,214,122,0.30); }
+  .chip-amber  { background: rgba(245,197,66,0.10); color: #f3d384; border-color: rgba(245,197,66,0.30); }
+  .chip-red    { background: rgba(255,107,107,0.10); color: #ffa3a3; border-color: rgba(255,107,107,0.30); }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 8px;
+    font-size: 12px; font-weight: 500;
+    background: #171b22; color: var(--text);
+    border: 1px solid var(--line);
+    transition: background .12s, border-color .12s;
+  }
+  .btn:hover { background: #1c222b; border-color: var(--line-2); }
+  .btn-primary {
+    background: linear-gradient(180deg, #7c5cff 0%, #6245ff 100%);
+    border-color: #6245ff; color: white;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.12) inset, 0 1px 2px rgba(0,0,0,0.4);
+  }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn[disabled], .btn-primary[disabled] { opacity: 0.5; cursor: not-allowed; }
+  .kbd {
+    font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    padding: 1px 6px; border-radius: 4px;
+    background: #1a1f27; color: #b8c0cc; border: 1px solid var(--line);
+    border-bottom-width: 2px;
+  }
+
+  /* Tree styling */
+  .tree-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 8px 4px 10px;
+    cursor: pointer; position: relative; font-size: 12.5px;
+    user-select: none;
+  }
+  .tree-row:hover { background: #12161c; }
+  .tree-row.active { background: #161c25; }
+  .tree-row.active::before {
+    content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 2px; border-radius: 2px;
+    background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  }
+  .tree-caret {
+    width: 12px; height: 12px; flex-shrink: 0;
+    transition: transform .12s;
+    color: var(--muted);
+  }
+  .tree-caret.expanded { transform: rotate(90deg); }
+  .tree-tool-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 3px 8px 3px 38px;
+    cursor: pointer; font-size: 12px;
+    position: relative;
+  }
+  .tree-tool-row:hover { background: #12161c; }
+  .tree-tool-row.active {
+    background: rgba(124,92,255,0.10);
+    color: #dcd3ff;
+  }
+  .tree-tool-row.active::before {
+    content: ''; position: absolute; left: 0; top: 2px; bottom: 2px; width: 2px; border-radius: 2px;
+    background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  }
+  .tree-server-row {
+    padding: 5px 8px 5px 22px;
+    font-weight: 500;
+  }
+  .tree-group-row {
+    padding: 8px 8px 4px 8px;
+    display: flex; align-items: center; gap: 6px;
+    cursor: pointer; user-select: none;
+  }
+  .tree-group-row:hover .section-label { color: var(--text); }
+  .tree-group-label {
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--dim);
+    flex: 1;
+  }
+
+  .pulse {
+    display: inline-block; width: 7px; height: 7px; border-radius: 999px;
+    background: var(--green); position: relative;
+  }
+  .pulse::after {
+    content: ''; position: absolute; inset: -4px; border-radius: 999px;
+    border: 2px solid rgba(47,214,122,0.5);
+    animation: pulse 1.8s ease-out infinite;
+  }
+  @keyframes pulse { 0% { transform: scale(0.6); opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+
+  .schema-key { color: #8dd9f5; }
+  .schema-string { color: #c3e88d; }
+  .schema-number { color: #f78c6c; }
+  .schema-bool { color: #c792ea; }
+
+  .section-label {
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  .activity-row { opacity: 0; animation: fadeIn .5s forwards; }
+  @keyframes fadeIn { to { opacity: 1; } }
+
+  .panel {
+    background: #0d1014;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .panel-header {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .fade-in { animation: fadeSlow .25s ease-out; }
+  @keyframes fadeSlow { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+
+  .divider { height: 1px; background: var(--line); }
+
+  .tool-heading {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px; font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .prop-table { width: 100%; font-size: 12px; }
+  .prop-table td { padding: 5px 8px; vertical-align: top; }
+  .prop-table tr { border-top: 1px solid var(--line); }
+  .prop-table tr:first-child { border-top: none; }
+  .prop-name { color: #e6e8eb; font-family: 'JetBrains Mono', monospace; white-space: nowrap; }
+  .prop-type { color: #b9a8ff; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .prop-desc { color: var(--muted); }
+  .prop-req {
+    font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em;
+    color: #ff9a9a; background: rgba(255,107,107,0.12);
+    padding: 1px 5px; border-radius: 3px; margin-left: 6px;
+    border: 1px solid rgba(255,107,107,0.3);
+  }
+</style>
+</head>
+<body
+  x-data="inspector()"
+  x-init="init()"
+  class="h-screen overflow-hidden"
+>
+
+<!-- ====== TOPBAR ====== -->
+<header class="h-12 border-b flex items-center px-4 gap-3" style="border-color: var(--line); background: var(--bg-2)">
+  <div class="flex items-center gap-2">
+    <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
+      <defs>
+        <linearGradient id="lg" x1="0" y1="0" x2="32" y2="32">
+          <stop offset="0" stop-color="#7c5cff"/>
+          <stop offset="1" stop-color="#4aa8ff"/>
+        </linearGradient>
+      </defs>
+      <rect x="2" y="2" width="28" height="28" rx="7" stroke="url(#lg)" stroke-width="2"/>
+      <circle cx="16" cy="16" r="4" fill="url(#lg)"/>
+      <circle cx="16" cy="16" r="8" stroke="url(#lg)" stroke-width="1.3" stroke-dasharray="2 3" opacity="0.6"/>
+    </svg>
+    <div class="leading-tight">
+      <div class="text-[13px] font-semibold">Ploston Inspector</div>
+      <div class="text-[10px]" style="color: var(--dim)">v0.1 · demo</div>
+    </div>
+  </div>
+
+  <div class="h-6 w-px mx-2" style="background: var(--line)"></div>
+
+  <div class="flex items-center gap-2 text-[12px]">
+    <span style="color: var(--muted)">CP:</span>
+    <span class="mono" x-text="cpUrl || 'http://localhost:8022'"></span>
+    <template x-if="cpConnected">
+      <span class="chip chip-green"><span class="dot dot-green"></span> healthy</span>
+    </template>
+    <template x-if="!cpConnected">
+      <span class="chip"><span class="dot dot-amber"></span> reconnecting</span>
+    </template>
+  </div>
+
+  <div class="flex-1"></div>
+
+  <div class="flex items-center gap-2 text-[12px]" style="color: var(--muted)">
+    <span class="pulse"></span>
+    <span>live</span>
+    <span class="mono" style="color: var(--dim)" x-text="`${eventsCount} events`"></span>
+  </div>
+
+  <button class="btn" @click="expandAll()">Expand all</button>
+  <button class="btn" @click="collapseAll()">Collapse</button>
+  <button class="btn" @click="triggerRefreshAll()">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+    Refresh all
+  </button>
+</header>
+
+<!-- ====== MAIN ====== -->
+<div class="flex" style="height: calc(100vh - 48px - 36px)">
+
+  <!-- ====== LEFT RAIL: TREE ====== -->
+  <aside class="w-[320px] border-r flex flex-col" style="border-color: var(--line); background: var(--bg-2)">
+    <div class="p-3 border-b" style="border-color: var(--line)">
+      <div class="relative">
+        <input
+          x-model="filterText"
+          type="text"
+          placeholder="Filter tools, servers, runners…"
+          class="w-full bg-transparent border rounded-md text-[12px] px-7 py-1.5 outline-none focus:ring-1"
+          style="border-color: var(--line); color: var(--text); --tw-ring-color: var(--accent)"
+        />
+        <svg class="absolute left-2 top-1/2 -translate-y-1/2" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="color: var(--dim)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      </div>
+      <div class="mt-2 flex items-center gap-2 text-[11px]" style="color: var(--dim)">
+        <span x-text="`${totalTools} tools`"></span>
+        <span>·</span>
+        <span x-text="`${totalServers} servers`"></span>
+        <span>·</span>
+        <span x-text="`${totalRunners} runners`"></span>
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto scrollbar pb-3">
+      <template x-for="group in filteredTree" :key="group.id">
+        <div>
+          <!-- Group row (Control Plane / Runner: X / Native) -->
+          <div class="tree-group-row" @click="toggleGroup(group.id)">
+            <svg class="tree-caret" :class="group.expanded ? 'expanded' : ''" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m4 2 4 4-4 4"/></svg>
+            <span class="tree-group-label" x-text="group.label"></span>
+            <template x-if="group.kind === 'runner'">
+              <span class="dot flex-shrink-0" :class="dotClass(group.status)"></span>
+            </template>
+            <span class="text-[10px]" style="color: var(--dim)" x-text="`${group.serverCount}`"></span>
+          </div>
+
+          <!-- Servers in this group -->
+          <div x-show="group.expanded" x-transition.opacity.duration.100ms>
+            <template x-for="srv in group.servers" :key="srv.id">
+              <div>
+                <div
+                  class="tree-row tree-server-row"
+                  @click="toggleServer(srv.id)"
+                >
+                  <svg class="tree-caret" :class="srv.expanded ? 'expanded' : ''" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m4 2 4 4-4 4"/></svg>
+                  <span class="dot flex-shrink-0" :class="dotClass(srv.status)"></span>
+                  <span class="flex-1 truncate" x-text="srv.name"></span>
+                  <span class="text-[10.5px]" style="color: var(--dim)" x-text="srv.tools.length"></span>
+                </div>
+
+                <!-- Tools under this server -->
+                <div x-show="srv.expanded" x-transition.opacity.duration.100ms>
+                  <template x-for="tool in srv.tools" :key="`${srv.id}::${tool.name}`">
+                    <div
+                      class="tree-tool-row"
+                      :class="selectedKey === `${srv.id}::${tool.name}` ? 'active' : ''"
+                      @click="selectTool(srv.id, tool.name)"
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--dim); flex-shrink: 0;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+                      <span class="mono flex-1 truncate" x-text="tool.name"></span>
+                      <template x-if="tool.is_new">
+                        <span class="chip chip-green" style="font-size: 9.5px; padding: 1px 5px">new</span>
+                      </template>
+                      <template x-if="tool.just_changed">
+                        <span class="chip chip-accent" style="font-size: 9.5px; padding: 1px 5px">~</span>
+                      </template>
+                    </div>
+                  </template>
+                  <template x-if="srv.tools.length === 0">
+                    <div style="padding: 4px 8px 4px 38px; font-size: 11px; color: var(--dim); font-style: italic">no tools</div>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+
+      <template x-if="filteredTree.length === 0">
+        <div class="px-4 py-6 text-center text-[11px]" style="color: var(--dim)">
+          Nothing matches "<span x-text="filterText"></span>"
+        </div>
+      </template>
+    </div>
+
+    <div class="p-3 border-t text-[11px] flex items-center justify-between" style="border-color: var(--line); color: var(--muted)">
+      <div class="flex items-center gap-2"><span class="dot dot-green"></span><span>3 connected</span></div>
+      <div class="flex items-center gap-2"><span class="dot dot-amber"></span><span>1 degraded</span></div>
+      <div class="flex items-center gap-2"><span class="dot dot-dim"></span><span>1 offline</span></div>
+    </div>
+  </aside>
+
+  <!-- ====== CENTER: TOOL DETAIL ====== -->
+  <main class="flex-1 flex flex-col min-w-0 overflow-y-auto scrollbar" style="background: var(--bg)">
+    <template x-if="selectedTool">
+      <div class="fade-in">
+
+        <!-- Header block -->
+        <div class="border-b px-7 py-5" style="border-color: var(--line); background: var(--bg-2)">
+          <!-- Breadcrumb / source chain -->
+          <div class="flex items-center gap-1.5 text-[11px] mb-3" style="color: var(--dim)">
+            <span class="chip" x-text="selectedGroup.label"></span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="chip" style="gap: 4px">
+              <span class="dot" :class="dotClass(selectedServer.status)"></span>
+              <span x-text="selectedServer.name"></span>
+            </span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="chip chip-accent mono" x-text="selectedTool.name"></span>
+          </div>
+
+          <!-- Tool name -->
+          <div class="flex items-end gap-3 flex-wrap">
+            <h1 class="tool-heading" x-text="selectedTool.name"></h1>
+            <div class="flex items-center gap-1.5 pb-1.5">
+              <template x-if="selectedTool.is_new"><span class="chip chip-green">new</span></template>
+              <template x-if="selectedTool.just_changed"><span class="chip chip-accent">updated just now</span></template>
+              <template x-for="t in selectedTool.tags" :key="t">
+                <span class="chip" x-text="t"></span>
+              </template>
+            </div>
+          </div>
+
+          <!-- Description -->
+          <p class="text-[14px] mt-3 leading-relaxed" style="color: #c4cad4; max-width: 72ch" x-text="selectedTool.description"></p>
+
+          <!-- Action bar -->
+          <div class="mt-4 flex items-center gap-2 flex-wrap">
+            <button class="btn-primary btn" disabled title="Out of v0 — preview only">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              Try tool
+            </button>
+            <button class="btn" @click="copyToClipboard(JSON.stringify(selectedTool.input_schema, null, 2), 'schema')">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span x-text="copied === 'schema' ? 'Copied!' : 'Copy schema'"></span>
+            </button>
+            <button class="btn" @click="copyToClipboard(exampleCall(), 'curl')">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              <span x-text="copied === 'curl' ? 'Copied!' : 'Copy curl'"></span>
+            </button>
+            <button class="btn" @click="triggerRefresh(selectedServer.id)">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Refresh server
+            </button>
+            <div class="flex-1"></div>
+            <span class="text-[11px]" style="color: var(--dim)">
+              last refreshed <span x-text="selectedServer.last_refreshed_rel || '—'"></span>
+              · <span class="mono" x-text="selectedServer.command"></span>
+            </span>
+          </div>
+        </div>
+
+        <!-- Body: two columns -->
+        <div class="px-7 py-5 grid gap-5" style="grid-template-columns: 1fr 1fr">
+
+          <!-- Input schema (props table + raw) -->
+          <div class="panel">
+            <div class="panel-header">
+              <span class="section-label">input</span>
+              <span class="text-[11px]" style="color: var(--dim)" x-text="`${Object.keys(selectedTool.input_schema.properties || {}).length} parameters`"></span>
+              <div class="flex-1"></div>
+              <button class="text-[10.5px] px-2 py-0.5 rounded" :style="inputView==='table' ? 'background:#1f2530' : 'color:var(--muted)'" @click="inputView='table'">Fields</button>
+              <button class="text-[10.5px] px-2 py-0.5 rounded" :style="inputView==='raw' ? 'background:#1f2530' : 'color:var(--muted)'" @click="inputView='raw'">JSON</button>
+            </div>
+            <div x-show="inputView==='table'" class="p-1">
+              <table class="prop-table">
+                <template x-for="[name, spec] in Object.entries(selectedTool.input_schema.properties || {})" :key="name">
+                  <tr>
+                    <td class="prop-name" style="width:30%">
+                      <span x-text="name"></span>
+                      <template x-if="(selectedTool.input_schema.required || []).includes(name)">
+                        <span class="prop-req">REQ</span>
+                      </template>
+                    </td>
+                    <td style="width:15%"><span class="prop-type" x-text="spec.type + (spec.enum ? ' (enum)' : '')"></span></td>
+                    <td class="prop-desc">
+                      <span x-text="spec.description || '—'"></span>
+                      <template x-if="spec.default !== undefined">
+                        <span class="mono text-[11px]" style="color: var(--dim)"> · default <span x-text="JSON.stringify(spec.default)"></span></span>
+                      </template>
+                      <template x-if="spec.enum">
+                        <div class="mt-1 flex gap-1 flex-wrap">
+                          <template x-for="v in spec.enum" :key="v">
+                            <span class="mono text-[10.5px] px-1.5 py-0.5 rounded" style="background:#1a1f27; color: #b8c0cc; border: 1px solid var(--line)" x-text="JSON.stringify(v)"></span>
+                          </template>
+                        </div>
+                      </template>
+                    </td>
+                  </tr>
+                </template>
+                <template x-if="Object.keys(selectedTool.input_schema.properties || {}).length === 0">
+                  <tr><td class="prop-desc" colspan="3" style="font-style: italic">no parameters</td></tr>
+                </template>
+              </table>
+            </div>
+            <div x-show="inputView==='raw'">
+              <pre class="mono text-[11.5px] leading-[1.55] p-3 overflow-x-auto scrollbar" x-html="renderSchema(selectedTool.input_schema)" style="margin:0"></pre>
+            </div>
+          </div>
+
+          <!-- Output schema -->
+          <div class="panel">
+            <div class="panel-header">
+              <span class="section-label">output</span>
+              <span class="text-[11px]" style="color: var(--dim)">
+                <template x-if="selectedTool.output_schema">
+                  <span x-text="`${Object.keys(selectedTool.output_schema.properties || {}).length || ''} fields`"></span>
+                </template>
+                <template x-if="!selectedTool.output_schema">
+                  <span>no schema declared</span>
+                </template>
+              </span>
+            </div>
+            <template x-if="selectedTool.output_schema">
+              <pre class="mono text-[11.5px] leading-[1.55] p-3 overflow-x-auto scrollbar" x-html="renderSchema(selectedTool.output_schema)" style="margin:0"></pre>
+            </template>
+            <template x-if="!selectedTool.output_schema">
+              <div class="p-4 text-[12px]" style="color: var(--dim)">
+                This MCP server does not declare an output schema for <span class="mono" x-text="selectedTool.name"></span>.
+                Tools can still return content; the shape is implementation-defined.
+              </div>
+            </template>
+          </div>
+
+          <!-- Example call (spans both columns) -->
+          <div class="panel" style="grid-column: 1 / -1">
+            <div class="panel-header">
+              <span class="section-label">example call</span>
+              <span class="text-[11px]" style="color: var(--dim)">via Ploston CP REST</span>
+              <div class="flex-1"></div>
+              <span class="mono text-[10.5px]" style="color: var(--dim)">POST /api/v1/tools/<span x-text="selectedTool.name"></span>/call</span>
+            </div>
+            <pre class="mono text-[12px] leading-[1.6] p-4 overflow-x-auto scrollbar" style="margin:0; color: #b8c0cc"><span style="color: var(--dim)"># Invoke via the CP</span>
+curl -X POST <span style="color:#a8d1ff"><span x-text="(cpUrl || 'http://localhost:8022') + '/api/v1/tools/'"></span><span x-text="selectedTool.name"></span>/call</span> \
+  -H <span style="color:#c3e88d">'Content-Type: application/json'</span> \
+  -d <span style="color:#c3e88d" x-text="'\\'' + JSON.stringify({params: exampleParams()}) + '\\''"></span></pre>
+          </div>
+
+          <!-- Metadata / routing (spans both) -->
+          <div class="panel" style="grid-column: 1 / -1">
+            <div class="panel-header">
+              <span class="section-label">routing &amp; metadata</span>
+            </div>
+            <div class="p-4 grid gap-4" style="grid-template-columns: repeat(4, 1fr)">
+              <div>
+                <div class="text-[10.5px] uppercase tracking-wider" style="color: var(--dim)">served by</div>
+                <div class="mt-1 text-[13px]" x-text="selectedGroup.label"></div>
+              </div>
+              <div>
+                <div class="text-[10.5px] uppercase tracking-wider" style="color: var(--dim)">mcp server</div>
+                <div class="mt-1 text-[13px] mono" x-text="selectedServer.name"></div>
+              </div>
+              <div>
+                <div class="text-[10.5px] uppercase tracking-wider" style="color: var(--dim)">transport</div>
+                <div class="mt-1 text-[13px]" x-text="selectedServer.transport"></div>
+              </div>
+              <div>
+                <div class="text-[10.5px] uppercase tracking-wider" style="color: var(--dim)">status</div>
+                <div class="mt-1 text-[13px] flex items-center gap-1.5">
+                  <span class="dot" :class="dotClass(selectedServer.status)"></span>
+                  <span x-text="selectedServer.status"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </template>
+
+    <template x-if="!selectedTool">
+      <div class="flex-1 flex items-center justify-center text-[13px]" style="color: var(--dim)">
+        <div class="text-center">
+          <div>Select a tool from the tree.</div>
+          <div class="text-[11px] mt-1">Expand a server to see its tools.</div>
+        </div>
+      </div>
+    </template>
+  </main>
+
+</div>
+
+<!-- ====== BOTTOM ACTIVITY ====== -->
+<footer class="h-9 border-t flex items-center px-4 gap-4 overflow-hidden" style="border-color: var(--line); background: var(--bg-2)">
+  <div class="flex items-center gap-2 text-[11px]" style="color: var(--dim)">
+    <span class="section-label">activity</span>
+    <span class="mono" x-text="`${events.length}`"></span>
+  </div>
+  <div class="flex-1 flex items-center gap-4 overflow-x-auto scrollbar h-full">
+    <template x-for="ev in events.slice().reverse().slice(0, 12)" :key="ev.id">
+      <div class="activity-row flex items-center gap-2 text-[11px] whitespace-nowrap">
+        <span class="mono" style="color: var(--dim)" x-text="ev.time"></span>
+        <span class="chip" :class="ev.kind === 'refresh' ? 'chip-blue' : ev.kind === 'tools_changed' ? 'chip-accent' : ev.kind === 'status' ? 'chip-green' : ''" x-text="ev.label"></span>
+        <span style="color: var(--muted)" x-text="ev.message"></span>
+      </div>
+    </template>
+  </div>
+  <div class="text-[11px]" style="color: var(--dim)">127.0.0.1:7777</div>
+</footer>
+
+<script>
+function inspector() {
+  const now = Date.now();
+
+  // raw server list — populated from /api/overview at init() time.
+  // Server shape:
+  //   { id, location, name, transport, command, status,
+  //     last_refreshed_at, tags, tools: [ { name, description, tags,
+  //     input_schema, output_schema, is_new?, just_changed? } ] }
+  let rawServers = [];
+
+  // Build tree with expansion state
+  function buildTree(servers) {
+    const groups = new Map();
+    for (const s of servers) {
+      let groupId, groupLabel, groupKind;
+      if (s.location === "control_plane") { groupId = "g:cp"; groupLabel = "Control Plane"; groupKind = "cp"; }
+      else if (s.location === "native")   { groupId = "g:native"; groupLabel = "Native"; groupKind = "native"; }
+      else {
+        const r = s.location.split(":")[1];
+        groupId = `g:runner:${r}`; groupLabel = `Runner: ${r}`; groupKind = "runner";
+      }
+      if (!groups.has(groupId)) {
+        groups.set(groupId, {
+          id: groupId, label: groupLabel, kind: groupKind,
+          expanded: true, // default expanded
+          servers: [],
+          runnerName: groupKind === "runner" ? s.location.split(":")[1] : null,
+          status: "connected",
+        });
+      }
+      groups.get(groupId).servers.push({ ...s, expanded: false });
+    }
+    // compute runner group status from servers
+    for (const g of groups.values()) {
+      if (g.kind === "runner") {
+        const statuses = g.servers.map(s => s.status);
+        if (statuses.every(s => s === "disconnected")) g.status = "disconnected";
+        else if (statuses.some(s => s === "degraded" || s === "disconnected")) g.status = "degraded";
+        else g.status = "connected";
+      }
+      g.serverCount = g.servers.length;
+    }
+    // order: CP, runners, Native
+    const ordered = [];
+    for (const id of ["g:cp"]) if (groups.has(id)) ordered.push(groups.get(id));
+    for (const [id, g] of groups) if (g.kind === "runner") ordered.push(g);
+    for (const id of ["g:native"]) if (groups.has(id)) ordered.push(groups.get(id));
+    return ordered;
+  }
+
+  // Transform /api/overview payload into the rawServers shape the tree expects.
+  function overviewToRawServers(overview) {
+    const toolsByServerId = {};
+    for (const t of overview.tools || []) {
+      (toolsByServerId[t.server_id] ||= []).push({
+        name: t.name,
+        description: t.description || "",
+        tags: t.tags || [],
+        input_schema: t.input_schema || { type: "object", properties: {} },
+        output_schema: t.output_schema || null,
+      });
+    }
+    return (overview.servers || []).map(s => ({
+      id: s.id,
+      location: s.location,
+      name: s.name,
+      transport: s.transport,
+      command: s.command,
+      status: s.status,
+      last_refreshed_at: s.last_connected_at
+        ? Date.parse(s.last_connected_at) || null
+        : null,
+      tags: s.tags || [],
+      tools: toolsByServerId[s.id] || [],
+    }));
+  }
+
+  return {
+    tree: [],
+    filterText: "",
+    selectedKey: null,       // `${serverId}::${toolName}`
+    copied: null,            // 'schema' | 'curl'
+    inputView: "table",
+    events: [],
+    eventsCount: 0,
+    cpUrl: "",
+    cpConnected: false,
+    _evtSource: null,
+
+    async init() {
+      try {
+        const resp = await fetch("/api/overview");
+        const overview = await resp.json();
+        this.cpUrl = overview.cp?.url || "";
+        this.cpConnected = !!overview.cp?.connected;
+        this.tree = buildTree(overviewToRawServers(overview));
+        if (this.tree[0] && this.tree[0].servers[0]) {
+          this.tree[0].servers[0].expanded = true;
+        }
+        const first = this.tree.find(g => g.servers.length);
+        if (first && first.servers[0] && first.servers[0].tools[0]) {
+          this.selectTool(first.servers[0].id, first.servers[0].tools[0].name);
+        }
+      } catch (e) {
+        console.error("[inspector] /api/overview failed:", e);
+        this.pushEvent({ kind: "status", label: "error",
+                         message: "Failed to load overview" });
+      }
+
+      this._subscribeEvents();
+
+      // tick last_refreshed labels
+      setInterval(() => {
+        for (const g of this.tree) for (const s of g.servers) {
+          if (!s.last_refreshed_at) { s.last_refreshed_rel = "—"; continue; }
+          const d = Math.floor((Date.now() - s.last_refreshed_at)/1000);
+          s.last_refreshed_rel = d < 60 ? d + "s ago"
+            : d < 3600 ? Math.floor(d/60)+"m ago"
+            : Math.floor(d/3600)+"h ago";
+        }
+      }, 1000);
+    },
+
+    pushEvent(e) {
+      this.events.push({ id: this.eventsCount, time: "now", ...e });
+      this.eventsCount++;
+      if (this.events.length > 64) this.events.splice(0, this.events.length - 64);
+    },
+
+    _subscribeEvents() {
+      const es = new EventSource("/events");
+      this._evtSource = es;
+      es.addEventListener("heartbeat", () => {});
+      es.addEventListener("server_status", (ev) => {
+        const data = JSON.parse(ev.data);
+        if (data.server_id === "cp") {
+          this.cpConnected = data.status === "connected";
+          this.pushEvent({ kind:"status", label:data.status, message:"control plane" });
+          return;
+        }
+        for (const g of this.tree) for (const s of g.servers) {
+          if (s.id === data.server_id) {
+            s.status = data.status;
+            this.pushEvent({ kind:"status", label:data.status, message:s.name });
+            return;
+          }
+        }
+      });
+      es.addEventListener("tools_changed", async () => {
+        // Re-fetch overview on any change; simpler + correct for v0.
+        try {
+          const overview = await (await fetch("/api/overview")).json();
+          const fresh = overviewToRawServers(overview);
+          // merge while preserving expansion
+          const prevExp = {};
+          for (const g of this.tree) for (const s of g.servers) {
+            prevExp[s.id] = !!s.expanded;
+          }
+          this.tree = buildTree(fresh);
+          for (const g of this.tree) for (const s of g.servers) {
+            if (prevExp[s.id]) s.expanded = true;
+          }
+          this.pushEvent({ kind:"tools_changed", label:"updated",
+                           message:"tools list changed" });
+        } catch (e) { console.error("[inspector] overview refetch failed:", e); }
+      });
+      es.addEventListener("refresh_started", (ev) => {
+        const data = JSON.parse(ev.data);
+        this.pushEvent({ kind:"refresh", label:"refresh…", message:data.server_id });
+      });
+      es.addEventListener("refresh_completed", (ev) => {
+        const data = JSON.parse(ev.data);
+        this.pushEvent({ kind:"refresh", label:"refresh ok",
+                         message:`${data.server_id} · ${data.tool_count||0} tools` });
+      });
+      es.onerror = () => {
+        this.cpConnected = false;
+        this.pushEvent({ kind:"status", label:"reconnecting", message:"SSE dropped" });
+      };
+    },
+
+    get totalTools() {
+      let n = 0;
+      for (const g of this.tree) for (const s of g.servers) n += s.tools.length;
+      return n;
+    },
+    get totalServers() {
+      let n = 0; for (const g of this.tree) n += g.servers.length; return n;
+    },
+    get totalRunners() {
+      return this.tree.filter(g => g.kind === "runner").length;
+    },
+
+    get filteredTree() {
+      const q = this.filterText.trim().toLowerCase();
+      if (!q) return this.tree;
+      // filter but preserve expansion structure
+      return this.tree
+        .map(g => {
+          const srvs = g.servers.map(s => {
+            const toolMatch = s.tools.filter(t =>
+              t.name.toLowerCase().includes(q) ||
+              (t.description || "").toLowerCase().includes(q)
+            );
+            const serverMatches = s.name.toLowerCase().includes(q);
+            if (serverMatches || toolMatch.length) {
+              return { ...s, tools: serverMatches ? s.tools : toolMatch, expanded: true };
+            }
+            return null;
+          }).filter(Boolean);
+          if (srvs.length) return { ...g, servers: srvs, expanded: true };
+          if (g.label.toLowerCase().includes(q)) return { ...g, expanded: true };
+          return null;
+        })
+        .filter(Boolean);
+    },
+
+    toggleGroup(id) {
+      const g = this.tree.find(x => x.id === id);
+      if (g) g.expanded = !g.expanded;
+    },
+    toggleServer(id) {
+      for (const g of this.tree) {
+        const s = g.servers.find(x => x.id === id);
+        if (s) { s.expanded = !s.expanded; return; }
+      }
+    },
+
+    expandAll() {
+      for (const g of this.tree) { g.expanded = true; for (const s of g.servers) s.expanded = true; }
+    },
+    collapseAll() {
+      for (const g of this.tree) { for (const s of g.servers) s.expanded = false; }
+    },
+
+    selectTool(serverId, toolName) {
+      this.selectedKey = `${serverId}::${toolName}`;
+      // ensure the containing server is expanded so highlight is visible
+      for (const g of this.tree) {
+        const s = g.servers.find(x => x.id === serverId);
+        if (s) { s.expanded = true; g.expanded = true; return; }
+      }
+    },
+
+    get _selection() {
+      if (!this.selectedKey) return null;
+      const [serverId, toolName] = this.selectedKey.split("::").length === 3
+        ? [this.selectedKey.split("::").slice(0,2).join("::"), this.selectedKey.split("::")[2]]
+        : this.selectedKey.split("::");
+      // Our ids have "::" in them (cp::filesystem), so we need a smarter split
+      const lastSep = this.selectedKey.lastIndexOf("::");
+      const sid = this.selectedKey.slice(0, lastSep);
+      const tname = this.selectedKey.slice(lastSep + 2);
+      for (const g of this.tree) {
+        const s = g.servers.find(x => x.id === sid);
+        if (s) {
+          const t = s.tools.find(tt => tt.name === tname);
+          if (t) return { group: g, server: s, tool: t };
+        }
+      }
+      return null;
+    },
+    get selectedGroup()  { return this._selection ? this._selection.group  : null; },
+    get selectedServer() { return this._selection ? this._selection.server : null; },
+    get selectedTool()   { return this._selection ? this._selection.tool   : null; },
+
+    dotClass(status) {
+      if (status === "connected") return "dot-green";
+      if (status === "degraded")  return "dot-amber";
+      if (status === "disconnected") return "dot-red";
+      return "dot-dim";
+    },
+    fmtAgo(sec) {
+      if (sec < 60) return sec + "s";
+      if (sec < 3600) return Math.floor(sec/60) + "m";
+      return Math.floor(sec/3600) + "h";
+    },
+    exampleParams() {
+      const props = this.selectedTool?.input_schema?.properties || {};
+      const req = this.selectedTool?.input_schema?.required || [];
+      const out = {};
+      for (const k of req.length ? req : Object.keys(props)) {
+        const p = props[k] || { type: "string" };
+        if (p.default !== undefined) out[k] = p.default;
+        else if (p.type === "string") out[k] = p.enum ? p.enum[0] : `<${k}>`;
+        else if (p.type === "integer" || p.type === "number") out[k] = 0;
+        else if (p.type === "boolean") out[k] = false;
+        else out[k] = null;
+      }
+      return out;
+    },
+    exampleCall() {
+      const base = this.cpUrl || "http://localhost:8022";
+      return `curl -X POST ${base}/api/v1/tools/${this.selectedTool.name}/call \\\n  -H 'Content-Type: application/json' \\\n  -d '${JSON.stringify({params: this.exampleParams()})}'`;
+    },
+    copyToClipboard(text, label) {
+      try {
+        navigator.clipboard?.writeText(text);
+      } catch (_) {}
+      this.copied = label;
+      setTimeout(() => { if (this.copied === label) this.copied = null; }, 1200);
+    },
+
+    async triggerRefresh(id) {
+      try {
+        const url = `/api/refresh?server_id=${encodeURIComponent(id)}`;
+        const resp = await fetch(url, { method: "POST" });
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ error: "unknown" }));
+          this.pushEvent({ kind:"status", label:"error",
+                           message: err.error || `HTTP ${resp.status}` });
+        }
+      } catch (e) {
+        this.pushEvent({ kind:"status", label:"error", message: String(e) });
+      }
+    },
+    async triggerRefreshAll() {
+      try {
+        const resp = await fetch("/api/refresh", { method: "POST" });
+        if (!resp.ok) {
+          this.pushEvent({ kind:"status", label:"error",
+                           message: `refresh-all HTTP ${resp.status}` });
+        }
+      } catch (e) {
+        this.pushEvent({ kind:"status", label:"error", message: String(e) });
+      }
+    },
+
+    renderSchema(schema) {
+      if (!schema) return "<span style='color:var(--dim)'>none</span>";
+      return this._syntaxHighlight(JSON.stringify(schema, null, 2));
+    },
+    _syntaxHighlight(json) {
+      return json
+        .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+        .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(\.\d+)?([eE][+\-]?\d+)?)/g, match => {
+          let cls = "schema-number";
+          if (/^"/.test(match)) {
+            cls = /:$/.test(match) ? "schema-key" : "schema-string";
+          } else if (/true|false|null/.test(match)) {
+            cls = "schema-bool";
+          }
+          return `<span class="${cls}">${match}</span>`;
+        });
+    },
+  };
+}
+</script>
+
+</body>
+</html>

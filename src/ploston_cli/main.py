@@ -18,6 +18,7 @@ from .commands.bootstrap import bootstrap
 from .commands.bridge import bridge_command
 from .commands.init import init_command
 from .commands.inject import inject_command
+from .commands.inspector import inspector_command
 from .commands.server import server_group
 from .completion import (
     complete_workflow_names as _complete_wf,
@@ -96,6 +97,7 @@ cli.add_command(bootstrap)
 cli.add_command(bridge_command)
 cli.add_command(init_command)
 cli.add_command(inject_command)
+cli.add_command(inspector_command)
 cli.add_command(server_group)
 
 
