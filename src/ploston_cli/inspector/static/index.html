@@ -1009,16 +1009,41 @@ function inspector() {
       if (sec < 3600) return Math.floor(sec/60) + "m";
       return Math.floor(sec/3600) + "h";
     },
+    // Build a best-effort argument map for the example call.
+    //
+    // Strategy: always fill required params; for optional params only
+    // include them when we have a concrete sample (default / enum /
+    // examples) — otherwise omit so the generated curl runs cleanly.
+    //
+    // Value picking, per property, in order:
+    //   1. p.default
+    //   2. p.enum[0]
+    //   3. p.examples[0]  (JSON-Schema 2019-09+, used by MCP tools)
+    //   4. type-based placeholder ('<key>' / 0 / false / null)
     exampleParams() {
       const props = this.selectedTool?.input_schema?.properties || {};
-      const req = this.selectedTool?.input_schema?.required || [];
+      const req = new Set(this.selectedTool?.input_schema?.required || []);
       const out = {};
-      for (const k of req.length ? req : Object.keys(props)) {
-        const p = props[k] || { type: "string" };
-        if (p.default !== undefined) out[k] = p.default;
-        else if (p.type === "string") out[k] = p.enum ? p.enum[0] : `<${k}>`;
+      const pickSample = (p) => {
+        if (p.default !== undefined) return { ok: true, v: p.default };
+        if (Array.isArray(p.enum) && p.enum.length) return { ok: true, v: p.enum[0] };
+        if (Array.isArray(p.examples) && p.examples.length) return { ok: true, v: p.examples[0] };
+        return { ok: false };
+      };
+      for (const [k, rawP] of Object.entries(props)) {
+        const p = rawP || { type: "string" };
+        const sample = pickSample(p);
+        if (sample.ok) {
+          out[k] = sample.v;
+          continue;
+        }
+        // No concrete sample → only emit a placeholder for required params.
+        if (!req.has(k)) continue;
+        if (p.type === "string") out[k] = `<${k}>`;
         else if (p.type === "integer" || p.type === "number") out[k] = 0;
         else if (p.type === "boolean") out[k] = false;
+        else if (p.type === "array") out[k] = [];
+        else if (p.type === "object") out[k] = {};
         else out[k] = null;
       }
       return out;
