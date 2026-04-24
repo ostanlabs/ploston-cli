@@ -119,6 +119,45 @@ async def test_build_overview_tools_get_correct_server_id():
 
 
 @pytest.mark.asyncio
+async def test_build_overview_cp_server_exposes_config():
+    proxy = _mk_proxy()
+    result = await build_overview(proxy)
+    cp_server = next(s for s in result["servers"] if s["location"] == "control_plane")
+    assert cp_server["config"]["transport"] == "stdio"
+    assert cp_server["config"]["command"] == "/bin/fs"
+
+
+@pytest.mark.asyncio
+async def test_build_overview_accepts_runner_mcps_dict_shape():
+    """Production CP returns runner 'mcps' as a dict keyed by name.
+
+    Regression: earlier iteration treated this as a list and dropped
+    command/args/env.
+    """
+    proxy = _mk_proxy()
+    proxy.get_runner.return_value = {
+        "mcps": {
+            "filesystem": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+                "transport": "stdio",
+                "env": {"FOO": "bar"},
+            }
+        }
+    }
+    result = await build_overview(proxy)
+    runner_srv = next(s for s in result["servers"] if s["location"].startswith("runner:"))
+    assert runner_srv["name"] == "filesystem"
+    assert runner_srv["command"] == "npx"
+    assert runner_srv["config"]["args"] == [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/tmp",
+    ]
+    assert runner_srv["config"]["env"] == {"FOO": "bar"}
+
+
+@pytest.mark.asyncio
 async def test_build_overview_tolerates_errors():
     proxy = AsyncMock()
     proxy.url = "http://cp:8022"

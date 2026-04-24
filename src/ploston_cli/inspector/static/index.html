@@ -272,7 +272,8 @@
               <div>
                 <div
                   class="tree-row tree-server-row"
-                  @click="toggleServer(srv.id)"
+                  :class="(!selectedTool && selectedServerId === srv.id) ? 'active' : ''"
+                  @click="toggleServer(srv.id); selectServer(srv.id)"
                 >
                   <svg class="tree-caret" :class="srv.expanded ? 'expanded' : ''" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m4 2 4 4-4 4"/></svg>
                   <span class="dot flex-shrink-0" :class="dotClass(srv.status)"></span>
@@ -500,11 +501,145 @@ curl -X POST <span style="color:#a8d1ff"><span x-text="(cpUrl || 'http://localho
       </div>
     </template>
 
-    <template x-if="!selectedTool">
+    <!-- SERVER DETAIL: shown when a server is selected but no tool is -->
+    <template x-if="!selectedTool && selectedServer">
+      <div class="flex-1 overflow-y-auto scrollbar">
+        <!-- Header block -->
+        <div class="border-b px-7 py-5" style="border-color: var(--line); background: var(--bg-2)">
+          <div class="flex items-center gap-1.5 text-[11px] mb-3" style="color: var(--dim)">
+            <span class="chip" x-text="selectedGroup.label"></span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="chip" style="gap: 4px">
+              <span class="dot" :class="dotClass(selectedServer.status)"></span>
+              <span x-text="selectedServer.name"></span>
+            </span>
+          </div>
+          <div class="flex items-end gap-3 flex-wrap">
+            <h1 class="tool-heading" x-text="selectedServer.name"></h1>
+            <div class="flex items-center gap-1.5 pb-1.5">
+              <template x-for="t in (selectedServer.tags || [])" :key="t">
+                <span class="chip" x-text="t"></span>
+              </template>
+            </div>
+          </div>
+          <div class="mt-4 flex items-center gap-2 flex-wrap">
+            <button class="btn" @click="triggerRefresh(selectedServer.id)">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Refresh server
+            </button>
+            <button class="btn" @click="copyToClipboard(JSON.stringify(selectedServer.config || {}, null, 2), 'config')">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span x-text="copied === 'config' ? 'Copied!' : 'Copy config'"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="px-7 py-5 grid gap-5" style="grid-template-columns: 1fr 1fr">
+          <!-- Meta/summary -->
+          <div class="panel" style="grid-column: 1 / -1">
+            <div class="panel-header">
+              <span class="section-label">summary</span>
+            </div>
+            <div class="p-4 grid gap-4" style="grid-template-columns: repeat(4, 1fr)">
+              <div>
+                <div class="text-[10.5px] uppercase tracking-wider" style="color: var(--dim)">location</div>
+                <div class="mt-1 text-[13px]" x-text="selectedGroup.label"></div>
+              </div>
+              <div>
+                <div class="text-[10.5px] uppercase tracking-wider" style="color: var(--dim)">transport</div>
+                <div class="mt-1 text-[13px]" x-text="selectedServer.transport || '—'"></div>
+              </div>
+              <div>
+                <div class="text-[10.5px] uppercase tracking-wider" style="color: var(--dim)">status</div>
+                <div class="mt-1 text-[13px] flex items-center gap-1.5">
+                  <span class="dot" :class="dotClass(selectedServer.status)"></span>
+                  <span x-text="selectedServer.status"></span>
+                </div>
+              </div>
+              <div>
+                <div class="text-[10.5px] uppercase tracking-wider" style="color: var(--dim)">tools</div>
+                <div class="mt-1 text-[13px] mono" x-text="selectedServer.tools?.length ?? 0"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Configuration -->
+          <div class="panel" style="grid-column: 1 / -1">
+            <div class="panel-header">
+              <span class="section-label">configuration</span>
+              <span class="text-[11px]" style="color: var(--dim)" x-text="`${Object.keys(selectedServer.config || {}).length} keys`"></span>
+              <div class="flex-1"></div>
+              <button class="text-[10.5px] px-2 py-0.5 rounded" :style="configView==='fields' ? 'background:#1f2530' : 'color:var(--muted)'" @click="configView='fields'">Fields</button>
+              <button class="text-[10.5px] px-2 py-0.5 rounded" :style="configView==='raw' ? 'background:#1f2530' : 'color:var(--muted)'" @click="configView='raw'">JSON</button>
+            </div>
+            <div x-show="configView==='fields'" class="p-1">
+              <template x-if="Object.keys(selectedServer.config || {}).length === 0">
+                <div class="prop-desc p-4" style="font-style: italic">No configuration metadata exposed for this server.</div>
+              </template>
+              <table x-show="Object.keys(selectedServer.config || {}).length > 0" class="prop-table">
+                <template x-for="[key, value] in Object.entries(selectedServer.config || {})" :key="key">
+                  <tr>
+                    <td class="prop-name" style="width:22%" x-text="key"></td>
+                    <td class="prop-desc">
+                      <template x-if="Array.isArray(value)">
+                        <div class="flex flex-wrap gap-1">
+                          <template x-for="(v, i) in value" :key="i">
+                            <span class="mono text-[11px] px-1.5 py-0.5 rounded" style="background:#1a1f27; color:#b8c0cc; border:1px solid var(--line)" x-text="v"></span>
+                          </template>
+                        </div>
+                      </template>
+                      <template x-if="value && typeof value === 'object' && !Array.isArray(value)">
+                        <table class="prop-table" style="margin:0">
+                          <template x-for="[ek, ev] in Object.entries(value)" :key="ek">
+                            <tr>
+                              <td class="prop-name" style="width:40%" x-text="ek"></td>
+                              <td class="prop-desc mono text-[11.5px]" x-text="ev"></td>
+                            </tr>
+                          </template>
+                        </table>
+                      </template>
+                      <template x-if="value === null || value === undefined || (typeof value !== 'object')">
+                        <span class="mono text-[12px]" x-text="value === null || value === undefined ? '—' : value"></span>
+                      </template>
+                    </td>
+                  </tr>
+                </template>
+              </table>
+            </div>
+            <div x-show="configView==='raw'">
+              <pre class="mono text-[11.5px] leading-[1.55] p-3 overflow-x-auto scrollbar" style="margin:0" x-text="JSON.stringify(selectedServer.config || {}, null, 2)"></pre>
+            </div>
+          </div>
+
+          <!-- Tool list -->
+          <div class="panel" style="grid-column: 1 / -1">
+            <div class="panel-header">
+              <span class="section-label">tools exposed</span>
+              <span class="text-[11px]" style="color: var(--dim)" x-text="`${selectedServer.tools?.length ?? 0}`"></span>
+            </div>
+            <div class="p-1">
+              <template x-if="(selectedServer.tools || []).length === 0">
+                <div class="prop-desc p-4" style="font-style: italic">No tools reported by this server.</div>
+              </template>
+              <table x-show="(selectedServer.tools || []).length > 0" class="prop-table">
+                <template x-for="tool in (selectedServer.tools || [])" :key="tool.name">
+                  <tr class="cursor-pointer" @click="selectTool(selectedServer.id, tool.name)">
+                    <td class="prop-name mono" style="width:30%" x-text="tool.name"></td>
+                    <td class="prop-desc" x-text="tool.description || '—'"></td>
+                  </tr>
+                </template>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template x-if="!selectedTool && !selectedServer">
       <div class="flex-1 flex items-center justify-center text-[13px]" style="color: var(--dim)">
         <div class="text-center">
-          <div>Select a tool from the tree.</div>
-          <div class="text-[11px] mt-1">Expand a server to see its tools.</div>
+          <div>Select a server or tool from the tree.</div>
+          <div class="text-[11px] mt-1">Click a server header to inspect its configuration.</div>
         </div>
       </div>
     </template>
@@ -604,6 +739,7 @@ function inspector() {
         ? Date.parse(s.last_connected_at) || null
         : null,
       tags: s.tags || [],
+      config: s.config || {},
       tools: toolsByServerId[s.id] || [],
     }));
   }
@@ -611,9 +747,11 @@ function inspector() {
   return {
     tree: [],
     filterText: "",
-    selectedKey: null,       // `${serverId}::${toolName}`
-    copied: null,            // 'schema' | 'curl'
+    selectedKey: null,       // `${serverId}::${toolName}`  — tool-level selection
+    selectedServerId: null,  // server-level selection (used when no tool selected)
+    copied: null,            // 'schema' | 'curl' | 'config'
     inputView: "table",
+    configView: "fields",    // 'fields' | 'raw'
     events: [],
     eventsCount: 0,
     cpUrl: "",
@@ -768,7 +906,20 @@ function inspector() {
 
     selectTool(serverId, toolName) {
       this.selectedKey = `${serverId}::${toolName}`;
+      this.selectedServerId = serverId;
       // ensure the containing server is expanded so highlight is visible
+      for (const g of this.tree) {
+        const s = g.servers.find(x => x.id === serverId);
+        if (s) { s.expanded = true; g.expanded = true; return; }
+      }
+    },
+
+    // Server-level selection: shows the config pane on the right. Does NOT
+    // clear the tool selection — user toggles to config by clicking the
+    // server row; returning to a tool re-selects it.
+    selectServer(serverId) {
+      this.selectedServerId = serverId;
+      this.selectedKey = null;
       for (const g of this.tree) {
         const s = g.servers.find(x => x.id === serverId);
         if (s) { s.expanded = true; g.expanded = true; return; }
@@ -777,10 +928,7 @@ function inspector() {
 
     get _selection() {
       if (!this.selectedKey) return null;
-      const [serverId, toolName] = this.selectedKey.split("::").length === 3
-        ? [this.selectedKey.split("::").slice(0,2).join("::"), this.selectedKey.split("::")[2]]
-        : this.selectedKey.split("::");
-      // Our ids have "::" in them (cp::filesystem), so we need a smarter split
+      // Our ids contain "::" (cp::filesystem), so split on the LAST "::"
       const lastSep = this.selectedKey.lastIndexOf("::");
       const sid = this.selectedKey.slice(0, lastSep);
       const tname = this.selectedKey.slice(lastSep + 2);
@@ -793,9 +941,26 @@ function inspector() {
       }
       return null;
     },
-    get selectedGroup()  { return this._selection ? this._selection.group  : null; },
-    get selectedServer() { return this._selection ? this._selection.server : null; },
-    get selectedTool()   { return this._selection ? this._selection.tool   : null; },
+
+    // Server-only selection resolution (used when no tool is selected).
+    get _serverSelection() {
+      if (!this.selectedServerId) return null;
+      for (const g of this.tree) {
+        const s = g.servers.find(x => x.id === this.selectedServerId);
+        if (s) return { group: g, server: s };
+      }
+      return null;
+    },
+
+    get selectedGroup()  {
+      return this._selection ? this._selection.group
+           : this._serverSelection ? this._serverSelection.group : null;
+    },
+    get selectedServer() {
+      return this._selection ? this._selection.server
+           : this._serverSelection ? this._serverSelection.server : null;
+    },
+    get selectedTool()   { return this._selection ? this._selection.tool : null; },
 
     dotClass(status) {
       if (status === "connected") return "dot-green";
