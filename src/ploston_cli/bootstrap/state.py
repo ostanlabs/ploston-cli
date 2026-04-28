@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from ..inspector.daemon import is_running as inspector_is_running
+from ..inspector.daemon import stop_daemon as stop_inspector
 from ..runner.daemon import is_running as runner_is_running
 from ..runner.daemon import stop_daemon as stop_runner
 from .compose import PLOSTON_DIR
@@ -220,6 +222,14 @@ class BootstrapStateManager:
             if alive:
                 logger.info("Stopping runner daemon (PID %s) before teardown", pid)
                 stop_runner()
+
+            # Stop the inspector daemon for the same reason — it talks to
+            # the CP over REST+SSE and its PID/log files live in
+            # ``~/.ploston`` which we may also clean below.
+            alive, pid = inspector_is_running()
+            if alive:
+                logger.info("Stopping inspector daemon (PID %s) before teardown", pid)
+                stop_inspector()
 
             success, msg = self.stack_manager.down(
                 remove_volumes=not preserve_telemetry,

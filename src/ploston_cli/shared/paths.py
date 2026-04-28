@@ -8,8 +8,20 @@ from pathlib import Path
 # Base directory for all ploston data
 PLOSTON_DIR = Path.home() / ".ploston"
 
-# Runner PID file location
-PID_FILE = PLOSTON_DIR / "runner.pid"
+# Runner daemon PID + log file locations.
+# ``PID_FILE`` is the long-standing public name and is preserved as an alias of
+# ``RUNNER_PID_FILE`` for backward compatibility (it is also re-exported from
+# ``ploston_cli.shared``).
+RUNNER_PID_FILE = PLOSTON_DIR / "runner.pid"
+PID_FILE = RUNNER_PID_FILE
+
+# Inspector daemon PID + log file locations. ``INSPECTOR_STATE_FILE`` carries
+# the bound ``host``/``port`` so ``ploston inspector status`` and
+# ``ploston bootstrap status`` can show the listening URL without re-deriving
+# it from defaults (which would lie if the user passed ``--port``).
+INSPECTOR_PID_FILE = PLOSTON_DIR / "inspector.pid"
+INSPECTOR_LOG_FILE = PLOSTON_DIR / "inspector.log"
+INSPECTOR_STATE_FILE = PLOSTON_DIR / "inspector.state.json"
 
 # Log directory (same as base for simplicity)
 LOG_DIR = PLOSTON_DIR

@@ -15,14 +15,25 @@ logger = logging.getLogger(__name__)
 
 QUEUE_MAXSIZE = 256
 
+# Belt-and-braces: if no `notifications/tools/list_changed` arrives within
+# this window, rebuild the overview on the next read anyway. Catches any
+# CP-side path that mutates the tool surface without firing the notification.
+DEFAULT_CACHE_TTL_SECONDS = 30.0
+
 
 class EventHub:
     """Fan-out hub coordinating CP SSE → browser SSE subscribers."""
 
-    def __init__(self, proxy: InspectorProxy) -> None:
+    def __init__(
+        self,
+        proxy: InspectorProxy,
+        cache_ttl_seconds: float = DEFAULT_CACHE_TTL_SECONDS,
+    ) -> None:
         self.proxy = proxy
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
         self._cache: dict[str, Any] | None = None
+        self._cache_built_at: float = 0.0
+        self._cache_ttl_seconds = cache_ttl_seconds
         self._cache_lock = asyncio.Lock()
         self._cp_task: asyncio.Task | None = None
         self._heartbeat_task: asyncio.Task | None = None
@@ -30,13 +41,24 @@ class EventHub:
     # ── Cache ────────────────────────────────────────────────
     async def get_overview(self) -> dict[str, Any]:
         async with self._cache_lock:
-            if self._cache is None:
+            if self._cache is None or self._is_cache_stale():
                 self._cache = await build_overview(self.proxy)
+                self._cache_built_at = asyncio.get_running_loop().time()
             return self._cache
+
+    def _is_cache_stale(self) -> bool:
+        if self._cache_ttl_seconds <= 0:
+            return False
+        try:
+            now = asyncio.get_running_loop().time()
+        except RuntimeError:
+            return False
+        return (now - self._cache_built_at) >= self._cache_ttl_seconds
 
     async def _refresh_cache(self) -> dict[str, Any]:
         async with self._cache_lock:
             self._cache = await build_overview(self.proxy)
+            self._cache_built_at = asyncio.get_running_loop().time()
             return self._cache
 
     # ── Subscribers ──────────────────────────────────────────

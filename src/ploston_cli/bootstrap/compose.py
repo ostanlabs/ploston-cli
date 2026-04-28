@@ -7,6 +7,7 @@ the Ploston Control Plane stack.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -239,3 +240,43 @@ class VolumeManager:
             yaml.dump(seed_config, f, default_flow_style=False, sort_keys=False)
 
         return config_file
+
+    def seed_workflows(self) -> list[Path]:
+        """Seed bundled example workflows into ``<base>/data/workflows/``.
+
+        Copies the workflow YAMLs bundled under
+        ``ploston_cli.bootstrap.assets.workflows`` into the workflows data
+        directory **only when the directory contains no existing ``.yaml`` or
+        ``.yml`` files**. This guarantees a freshly-bootstrapped CP exposes a
+        runnable ``hello_world`` tool through the bridge (so MCP clients see
+        something on first connect) without ever clobbering user content.
+
+        Returns:
+            List of seeded file paths (empty when seeding was skipped because
+            the directory already contains workflow files).
+        """
+        workflows_dir = self.base_dir / "data" / "workflows"
+        workflows_dir.mkdir(parents=True, exist_ok=True)
+
+        existing = [
+            p
+            for p in workflows_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in (".yaml", ".yml")
+        ]
+        if existing:
+            return []
+
+        seeded: list[Path] = []
+        asset_pkg = resources.files("ploston_cli.bootstrap.assets.workflows")
+        for item in asset_pkg.iterdir():
+            if not item.is_file():
+                continue
+            if item.name == "__init__.py" or item.name.endswith(".pyc"):
+                continue
+            if not (item.name.endswith(".yaml") or item.name.endswith(".yml")):
+                continue
+            dest = workflows_dir / item.name
+            dest.write_bytes(item.read_bytes())
+            seeded.append(dest)
+
+        return seeded

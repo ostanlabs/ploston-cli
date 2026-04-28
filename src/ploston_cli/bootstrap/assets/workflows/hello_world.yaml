@@ -1,0 +1,31 @@
+name: hello_world
+version: "0.1.0"
+description: >
+  Minimal hello-world workflow. Takes an optional `name` input and returns
+  {greeting: "Hello, <name>!"}. Use this to smoke-test the ploston
+  workflow runtime (registration, input defaults, code-step execution,
+  output mapping) without touching any external MCP.
+tags:
+  - example
+  - hello-world
+
+inputs:
+  - name:
+      type: string
+      default: "world"
+      description: "Name to greet. Defaults to 'world'."
+
+defaults:
+  timeout: 10
+  on_error: fail
+
+steps:
+  - id: greet
+    code: |
+      who = context.inputs.get("name", "world") or "world"
+      result = {"greeting": "Hello, " + str(who) + "!"}
+
+outputs:
+  greeting:
+    from: steps.greet.output.greeting
+    description: "The greeting string, e.g. 'Hello, world!'"

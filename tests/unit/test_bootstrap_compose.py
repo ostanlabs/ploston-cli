@@ -172,6 +172,51 @@ class TestVolumeManager:
             content = yaml.safe_load(config_file.read_text())
             assert "version" in content
 
+    def test_seed_workflows_into_empty_dir(self):
+        """Seed copies bundled workflows when the dir contains no YAML files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = VolumeManager(base_dir=Path(tmpdir))
+            manager.setup_directories()
+
+            seeded = manager.seed_workflows()
+
+            workflows_dir = Path(tmpdir) / "data" / "workflows"
+            hello = workflows_dir / "hello_world.yaml"
+            assert hello.exists(), "hello_world.yaml should be seeded"
+            assert hello in seeded
+            content = yaml.safe_load(hello.read_text())
+            assert content["name"] == "hello_world"
+            assert "greet" in content["steps"][0]["id"]
+
+    def test_seed_workflows_skips_when_yaml_present(self):
+        """Seed must never overwrite or even add to an already-populated dir."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = VolumeManager(base_dir=Path(tmpdir))
+            manager.setup_directories()
+
+            workflows_dir = Path(tmpdir) / "data" / "workflows"
+            user_wf = workflows_dir / "my_workflow.yaml"
+            user_wf.write_text("name: my_workflow\nsteps: []\n")
+
+            seeded = manager.seed_workflows()
+
+            assert seeded == []
+            assert not (workflows_dir / "hello_world.yaml").exists()
+            # User content untouched
+            assert user_wf.read_text().startswith("name: my_workflow")
+
+    def test_seed_workflows_creates_dir_when_missing(self):
+        """Calling seed before setup_directories still works (creates the dir)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = VolumeManager(base_dir=Path(tmpdir))
+
+            seeded = manager.seed_workflows()
+
+            workflows_dir = Path(tmpdir) / "data" / "workflows"
+            assert workflows_dir.exists()
+            assert (workflows_dir / "hello_world.yaml").exists()
+            assert len(seeded) >= 1
+
 
 class TestAssetManager:
     """Tests for AssetManager."""

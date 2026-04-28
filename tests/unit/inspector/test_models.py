@@ -422,3 +422,89 @@ async def test_virtual_servers_absent_when_no_tools_reported():
     names = {s["name"] for s in result["servers"]}
     assert "ploston" not in names
     assert "ploston-authoring" not in names
+
+
+# ── F-088: learned output schemas surface on tool rows ────────────────
+
+
+@pytest.mark.asyncio
+async def test_rest_tool_picks_up_suggested_output_schema_from_detail():
+    """REST-path tools flagged ``has_learned_output_schema`` get their
+    ``suggested_output_schema`` hydrated from /api/v1/tools/{name}.
+    """
+    proxy = _mk_proxy()
+    proxy.list_tools.return_value = [
+        {
+            "name": "read_file",
+            "source": "mcp",
+            "server": "filesystem",
+            "description": "Reads files",
+            "tags": [],
+            "has_learned_output_schema": True,
+        },
+    ]
+    learned = {
+        "type": "object",
+        "properties": {"content": {"type": "string"}},
+        "x-schema_source": "learned",
+        "x-confidence": 0.87,
+        "x-observation_count": 9,
+    }
+    proxy.get_tool.return_value = {
+        "name": "read_file",
+        "source": "mcp",
+        "server": "filesystem",
+        "input_schema": {"type": "object"},
+        "output_schema": None,
+        "suggested_output_schema": learned,
+    }
+
+    result = await build_overview(proxy)
+    row = next(t for t in result["tools"] if t["name"] == "read_file")
+    assert row["output_schema"] is None
+    assert row["suggested_output_schema"] == learned
+
+
+@pytest.mark.asyncio
+async def test_rest_tool_without_flag_skips_detail_fetch():
+    """No per-tool detail call for tools the CP didn't flag."""
+    proxy = _mk_proxy()
+    # None of the defaults carry has_learned_output_schema=True
+    await build_overview(proxy)
+    proxy.get_tool.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_virtual_tool_learned_schema_moves_to_suggested_slot():
+    """Learned schemas arrive on ``outputSchema`` with x-schema_source;
+    _virtual_tool_row splits them out so the UI shows them as learned,
+    not declared.
+    """
+    proxy = _mk_proxy()
+
+    async def _mcp_tools_list(tags=None):
+        if tags == ["kind:workflow"]:
+            return [
+                {
+                    "name": "workflow_run",
+                    "description": "runs a workflow",
+                    "inputSchema": {"type": "object"},
+                    "outputSchema": {
+                        "type": "object",
+                        "properties": {"ok": {"type": "boolean"}},
+                        "x-schema_source": "learned",
+                        "x-confidence": 0.9,
+                        "x-observation_count": 5,
+                    },
+                    "tags": ["kind:workflow"],
+                }
+            ]
+        return []
+
+    proxy.mcp_tools_list.side_effect = _mcp_tools_list
+
+    result = await build_overview(proxy)
+    row = next(t for t in result["tools"] if t["name"] == "workflow_run")
+    assert row["output_schema"] is None
+    assert row["suggested_output_schema"] is not None
+    assert row["suggested_output_schema"]["x-schema_source"] == "learned"

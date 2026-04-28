@@ -152,20 +152,56 @@ def create_app(proxy: InspectorProxy) -> Starlette:
     return app
 
 
+_LOOPBACK_DEFAULTS = ("127.0.0.1", "localhost")
+
+
+def resolve_bind_hosts(host: str) -> list[str]:
+    """Expand a user-supplied bind host into the concrete addresses to bind.
+
+    Loopback defaults (``"127.0.0.1"`` / ``"localhost"``) expand to both
+    IPv4 and IPv6 loopback so Chrome's ``localhost`` IPv6-first resolution
+    does not get ``ECONNREFUSED``. Any other value (e.g. ``"0.0.0.0"`` or
+    ``"::"``) is returned unchanged so explicit operator intent wins.
+    """
+    if host in _LOOPBACK_DEFAULTS:
+        return ["127.0.0.1", "::1"]
+    return [host]
+
+
 async def run_inspector_server(
     proxy: InspectorProxy,
     host: str,
     port: int,
     shutdown_event: asyncio.Event,
 ) -> None:
-    """Run the inspector Starlette app under uvicorn until ``shutdown_event`` is set."""
-    app = create_app(proxy)
-    config = uvicorn.Config(app, host=host, port=port, log_level="info", lifespan="on")
-    server = uvicorn.Server(config)
+    """Run the inspector Starlette app under uvicorn until ``shutdown_event`` is set.
 
-    serve_task = asyncio.create_task(server.serve())
+    Spins one ``uvicorn.Server`` per address returned by
+    :func:`resolve_bind_hosts`; all servers share the same Starlette app
+    instance (and thus the same EventHub). When a single bind fails (e.g.
+    IPv6 unavailable on the host) the others continue serving — the page
+    is still reachable via the address that did bind.
+    """
+    app = create_app(proxy)
+    bind_hosts = resolve_bind_hosts(host)
+
+    # Only the first server runs the ASGI lifespan; secondary binds share the
+    # same Starlette app (and EventHub) so re-running lifespan would double-
+    # start background tasks.
+    servers: list[uvicorn.Server] = []
+    for idx, bh in enumerate(bind_hosts):
+        lifespan_mode = "on" if idx == 0 else "off"
+        config = uvicorn.Config(app, host=bh, port=port, log_level="info", lifespan=lifespan_mode)
+        servers.append(uvicorn.Server(config))
+
+    serve_tasks = [asyncio.create_task(s.serve()) for s in servers]
     try:
         await shutdown_event.wait()
     finally:
-        server.should_exit = True
-        await serve_task
+        for s in servers:
+            s.should_exit = True
+        for t in serve_tasks:
+            try:
+                await t
+            except Exception:
+                pass

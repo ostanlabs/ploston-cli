@@ -23,6 +23,25 @@ class TestPaths:
 
         assert PID_FILE == PLOSTON_DIR / "runner.pid"
 
+    def test_runner_pid_file_alias(self):
+        """``RUNNER_PID_FILE`` should be the canonical name and ``PID_FILE`` an alias."""
+        from ploston_cli.shared.paths import PID_FILE, PLOSTON_DIR, RUNNER_PID_FILE
+
+        assert RUNNER_PID_FILE == PLOSTON_DIR / "runner.pid"
+        assert PID_FILE == RUNNER_PID_FILE
+
+    def test_inspector_pid_file_location(self):
+        """``INSPECTOR_PID_FILE`` should live alongside the runner PID file."""
+        from ploston_cli.shared.paths import INSPECTOR_PID_FILE, PLOSTON_DIR
+
+        assert INSPECTOR_PID_FILE == PLOSTON_DIR / "inspector.pid"
+
+    def test_inspector_log_file_location(self):
+        """``INSPECTOR_LOG_FILE`` should live alongside the runner log file."""
+        from ploston_cli.shared.paths import INSPECTOR_LOG_FILE, PLOSTON_DIR
+
+        assert INSPECTOR_LOG_FILE == PLOSTON_DIR / "inspector.log"
+
     def test_log_dir_location(self):
         """Test LOG_DIR is same as PLOSTON_DIR."""
         from ploston_cli.shared.paths import LOG_DIR, PLOSTON_DIR

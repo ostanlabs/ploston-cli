@@ -253,6 +253,16 @@ async def build_overview(proxy: InspectorProxy) -> dict[str, Any]:
         else:
             mcp_call_name = tool_name
 
+        # F-088: REST summaries don't carry schemas, but the CP tells us
+        # per-tool whether a learned output schema exists above threshold.
+        # Fetch the full ToolDetail only for those flagged tools so the
+        # inspector can surface ``suggested_output_schema`` without an
+        # N-round-trip over every CP-MCP/runner/native tool.
+        suggested_output_schema = None
+        if tool.get("has_learned_output_schema"):
+            detail = await _safe(proxy.get_tool(tool_name), {})
+            suggested_output_schema = detail.get("suggested_output_schema")
+
         tool_rows.append(
             {
                 "name": tool_name,
@@ -262,6 +272,7 @@ async def build_overview(proxy: InspectorProxy) -> dict[str, Any]:
                 "description": tool.get("description", ""),
                 "input_schema": tool.get("input_schema", {}),
                 "output_schema": tool.get("output_schema"),
+                "suggested_output_schema": suggested_output_schema,
                 "tags": tool.get("tags", []),
                 "status": tool.get("status", "available"),
             }
@@ -381,6 +392,16 @@ def _virtual_server_row(name: str, tool_count: int) -> dict[str, Any]:
 def _virtual_tool_row(mcp_tool: dict[str, Any], server_name: str) -> dict[str, Any]:
     """Normalize one MCP ``tools/list`` entry into an inspector tool row."""
     tool_name = mcp_tool.get("name", "")
+    # F-088: learned schemas arrive tagged with ``x-schema_source: "learned"``
+    # on ``outputSchema`` (ToolDefinition.to_mcp_tool). Split them back out so
+    # the inspector can show a "Suggested output schema (learned)" panel
+    # instead of implying the server declared one.
+    out_schema = mcp_tool.get("outputSchema") or mcp_tool.get("output_schema")
+    output_schema = out_schema
+    suggested_output_schema = None
+    if isinstance(out_schema, dict) and out_schema.get("x-schema_source") == "learned":
+        output_schema = None
+        suggested_output_schema = out_schema
     return {
         "name": tool_name,
         # Virtual servers already expose bare names, so display == canonical.
@@ -393,7 +414,8 @@ def _virtual_tool_row(mcp_tool: dict[str, Any], server_name: str) -> dict[str, A
         # ``tools/list`` returns MCP-shape ``inputSchema`` — keep it under
         # the inspector's existing ``input_schema`` field.
         "input_schema": mcp_tool.get("inputSchema") or mcp_tool.get("input_schema") or {},
-        "output_schema": mcp_tool.get("outputSchema") or mcp_tool.get("output_schema"),
+        "output_schema": output_schema,
+        "suggested_output_schema": suggested_output_schema,
         "tags": list(mcp_tool.get("tags", [])),
         "status": "available",
     }

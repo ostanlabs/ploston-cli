@@ -136,3 +136,55 @@ async def test_queue_full_drops_oldest():
 
     # Must not raise — overflow handling drops oldest
     assert q.qsize() <= 256
+
+
+@pytest.mark.asyncio
+async def test_cache_ttl_triggers_rebuild_on_read():
+    """Stale cache (older than TTL) must rebuild on the next get_overview()."""
+    proxy = _mk_proxy(
+        initial_tools=[{"name": "old_tool", "source": "mcp", "server": "fs"}],
+        follow_up_tools=[{"name": "new_tool", "source": "mcp", "server": "fs"}],
+    )
+    proxy.get_config.return_value = {"tools": {"mcp_servers": {"fs": {}}}}
+    hub = EventHub(proxy, cache_ttl_seconds=0.05)
+
+    first = await hub.get_overview()
+    assert any(t["name"] == "old_tool" for t in first["tools"])
+
+    await asyncio.sleep(0.1)  # let TTL elapse
+    second = await hub.get_overview()
+    assert any(t["name"] == "new_tool" for t in second["tools"])
+    assert proxy.list_tools.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_cache_within_ttl_returns_same_result():
+    """Reads within TTL window must reuse the cached overview."""
+    proxy = _mk_proxy(
+        initial_tools=[{"name": "tool_a", "source": "mcp", "server": "fs"}],
+        follow_up_tools=[{"name": "tool_b", "source": "mcp", "server": "fs"}],
+    )
+    proxy.get_config.return_value = {"tools": {"mcp_servers": {"fs": {}}}}
+    hub = EventHub(proxy, cache_ttl_seconds=60.0)
+
+    first = await hub.get_overview()
+    second = await hub.get_overview()
+    assert first is second  # same cached object
+    assert proxy.list_tools.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_cache_ttl_zero_disables_expiry():
+    """cache_ttl_seconds=0 (or negative) disables TTL — cache lives until invalidated."""
+    proxy = _mk_proxy(
+        initial_tools=[{"name": "tool_a", "source": "mcp", "server": "fs"}],
+        follow_up_tools=[{"name": "tool_b", "source": "mcp", "server": "fs"}],
+    )
+    proxy.get_config.return_value = {"tools": {"mcp_servers": {"fs": {}}}}
+    hub = EventHub(proxy, cache_ttl_seconds=0.0)
+
+    first = await hub.get_overview()
+    await asyncio.sleep(0.05)
+    second = await hub.get_overview()
+    assert first is second
+    assert proxy.list_tools.call_count == 1

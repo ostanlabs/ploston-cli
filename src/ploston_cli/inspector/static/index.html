@@ -451,7 +451,12 @@
                 <template x-if="selectedTool.output_schema">
                   <span x-text="`${Object.keys(selectedTool.output_schema.properties || {}).length || ''} fields`"></span>
                 </template>
-                <template x-if="!selectedTool.output_schema">
+                <template x-if="!selectedTool.output_schema && selectedTool.suggested_output_schema">
+                  <!-- F-088: learned schema marker. Confidence arrives as
+                       x-confidence (0..1); render as a percentage. -->
+                  <span x-text="`learned · ${Math.round((selectedTool.suggested_output_schema['x-confidence'] || 0) * 100)}% conf · ${selectedTool.suggested_output_schema['x-observation_count'] || 0} obs`"></span>
+                </template>
+                <template x-if="!selectedTool.output_schema && !selectedTool.suggested_output_schema">
                   <span>no schema declared</span>
                 </template>
               </span>
@@ -459,7 +464,25 @@
             <template x-if="selectedTool.output_schema">
               <pre class="mono text-[11.5px] leading-[1.55] p-3 overflow-x-auto scrollbar" x-html="renderSchema(selectedTool.output_schema)" style="margin:0"></pre>
             </template>
-            <template x-if="!selectedTool.output_schema">
+            <template x-if="!selectedTool.output_schema && selectedTool.suggested_output_schema">
+              <div>
+                <div class="px-3 py-2 text-[11px]" style="color: var(--dim); border-bottom: 1px solid var(--border)">
+                  Inferred from runtime observations — the server did not declare an <span class="mono">outputSchema</span>.
+                  <template x-if="(selectedTool.suggested_output_schema['x-confidence'] || 0) >= 0.8">
+                    <span>
+                      Agents connecting through <span class="mono">ploston bridge</span> see this schema injected on <span class="mono">tools/list</span>.
+                    </span>
+                  </template>
+                  <template x-if="(selectedTool.suggested_output_schema['x-confidence'] || 0) < 0.8">
+                    <span>
+                      Below 80% threshold (default 0.8) — surfaced here for visibility but <em>not</em> injected on agent-facing <span class="mono">tools/list</span> yet.
+                    </span>
+                  </template>
+                </div>
+                <pre class="mono text-[11.5px] leading-[1.55] p-3 overflow-x-auto scrollbar" x-html="renderSchema(selectedTool.suggested_output_schema)" style="margin:0"></pre>
+              </div>
+            </template>
+            <template x-if="!selectedTool.output_schema && !selectedTool.suggested_output_schema">
               <div class="p-4 text-[12px]" style="color: var(--dim)">
                 This MCP server does not declare an output schema for <span class="mono" x-text="selectedTool.name"></span>.
                 Tools can still return content; the shape is implementation-defined.
@@ -760,6 +783,9 @@ function inspector() {
         tags: t.tags || [],
         input_schema: t.input_schema || { type: "object", properties: {} },
         output_schema: t.output_schema || null,
+        // F-088: learned output schema. Populated when the tool has no
+        // declared schema but the store holds a confident inference.
+        suggested_output_schema: t.suggested_output_schema || null,
       });
     }
     return (overview.servers || []).map(s => ({

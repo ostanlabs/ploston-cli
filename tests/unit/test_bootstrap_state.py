@@ -156,6 +156,10 @@ class TestBootstrapStateManager:
                 patch(
                     "ploston_cli.bootstrap.state.stop_runner",
                 ) as mock_stop,
+                patch(
+                    "ploston_cli.bootstrap.state.inspector_is_running",
+                    return_value=(False, None),
+                ),
             ):
                 mock_run.return_value = MagicMock(returncode=0)
 
@@ -197,6 +201,10 @@ class TestBootstrapStateManager:
                     "ploston_cli.bootstrap.state.runner_is_running",
                     return_value=(False, None),
                 ),
+                patch(
+                    "ploston_cli.bootstrap.state.inspector_is_running",
+                    return_value=(False, None),
+                ),
             ):
                 mock_run.return_value = MagicMock(returncode=0)
 
@@ -227,6 +235,10 @@ class TestBootstrapStateManager:
                     "ploston_cli.bootstrap.state.runner_is_running",
                     return_value=(False, None),
                 ),
+                patch(
+                    "ploston_cli.bootstrap.state.inspector_is_running",
+                    return_value=(False, None),
+                ),
             ):
                 mock_run.return_value = MagicMock(returncode=0)
 
@@ -241,6 +253,63 @@ class TestBootstrapStateManager:
                 assert "-v" not in down_args, (
                     "docker compose down should NOT include -v when preserve_telemetry=True"
                 )
+
+    def test_execute_action_teardown_stops_inspector_daemon(self):
+        """Test that teardown stops a running inspector daemon."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            (base / "docker-compose.yaml").write_text("version: '3'\nservices: {}")
+
+            with (
+                patch("subprocess.run") as mock_run,
+                patch(
+                    "ploston_cli.bootstrap.state.runner_is_running",
+                    return_value=(False, None),
+                ),
+                patch(
+                    "ploston_cli.bootstrap.state.inspector_is_running",
+                    return_value=(True, 7777),
+                ) as mock_inspector_alive,
+                patch(
+                    "ploston_cli.bootstrap.state.stop_inspector",
+                ) as mock_stop_inspector,
+            ):
+                mock_run.return_value = MagicMock(returncode=0)
+
+                manager = BootstrapStateManager(base_dir=base)
+                success, _ = manager.execute_action(BootstrapAction.TEARDOWN)
+
+                assert success is True
+                mock_inspector_alive.assert_called_once()
+                mock_stop_inspector.assert_called_once()
+
+    def test_execute_action_teardown_skips_inspector_when_not_running(self):
+        """Test that teardown does not call stop_inspector when not running."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            (base / "docker-compose.yaml").write_text("version: '3'\nservices: {}")
+
+            with (
+                patch("subprocess.run") as mock_run,
+                patch(
+                    "ploston_cli.bootstrap.state.runner_is_running",
+                    return_value=(False, None),
+                ),
+                patch(
+                    "ploston_cli.bootstrap.state.inspector_is_running",
+                    return_value=(False, None),
+                ),
+                patch(
+                    "ploston_cli.bootstrap.state.stop_inspector",
+                ) as mock_stop_inspector,
+            ):
+                mock_run.return_value = MagicMock(returncode=0)
+
+                manager = BootstrapStateManager(base_dir=base)
+                success, _ = manager.execute_action(BootstrapAction.TEARDOWN)
+
+                assert success is True
+                mock_stop_inspector.assert_not_called()
 
     def test_execute_action_restart(self):
         """Test executing restart action."""

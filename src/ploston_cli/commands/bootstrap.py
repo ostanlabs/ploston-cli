@@ -366,6 +366,7 @@ def bootstrap(
 @bootstrap.command()
 def status():
     """Show current stack status."""
+    from ..inspector import daemon as inspector_daemon
     from ..runner.daemon import is_running as runner_is_running
 
     manager = StackManager()
@@ -424,6 +425,25 @@ def status():
         click.echo(f"Runner: running (PID {pid})")
     else:
         click.echo("Runner: not running")
+
+    # ── Inspector daemon ──
+    from .inspector import _format_bind_url
+
+    insp_alive, insp_pid = inspector_daemon.is_running()
+    if insp_alive:
+        line = f"Inspector: running (PID {insp_pid})"
+        state = inspector_daemon.read_state()
+        if state is not None:
+            port = state.get("port")
+            bind_hosts = state.get("bind_hosts") or (
+                [state.get("host")] if state.get("host") else []
+            )
+            urls = [_format_bind_url(h, port) for h in bind_hosts if h and port]
+            if urls:
+                line += " — " + ", ".join(urls)
+        click.echo(line)
+    else:
+        click.echo("Inspector: not running")
 
 
 @bootstrap.command()
@@ -875,6 +895,11 @@ async def _run_bootstrap(
         volume_manager.setup_directories()
         volume_manager.generate_seed_config()
         click.echo("  ✓ Created data directories")
+
+        seeded = volume_manager.seed_workflows()
+        if seeded:
+            names = ", ".join(p.stem for p in seeded)
+            click.echo(f"  ✓ Seeded example workflow(s): {names}")
 
         if with_observability:
             asset_manager = AssetManager()
