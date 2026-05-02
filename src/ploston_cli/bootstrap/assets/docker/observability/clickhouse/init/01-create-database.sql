@@ -1,0 +1,11 @@
+-- =============================================================================
+-- Ploston ClickHouse bootstrap - first-init only
+-- =============================================================================
+-- ClickHouse `docker-entrypoint-initdb.d` runs SQL files only on first volume
+-- init. This file ensures the `ploston` database exists for both the OTEL
+-- exporter (which writes `otel_logs`/`otel_traces` lazily on first telemetry)
+-- and the schema migration runner (S-295 / T-940), which the CP triggers at
+-- startup to create the owned tables (`executions`, `steps`, `tool_calls`)
+-- and the SQL VIEWs (`ploston.events`, `ploston.traces`).
+-- =============================================================================
+CREATE DATABASE IF NOT EXISTS ploston;

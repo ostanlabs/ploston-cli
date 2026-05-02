@@ -3,8 +3,9 @@
 # =============================================================================
 # Receives telemetry from Ploston and routes to:
 # - Metrics -> Prometheus
-# - Logs -> Loki
-# - Traces -> Tempo
+# - Logs    -> ClickHouse (via OTEL ClickHouse exporter)
+# - Traces  -> ClickHouse (via OTEL ClickHouse exporter)
+# Replaces Loki + Tempo per DEC-191 / M-082.
 # =============================================================================
 
 receivers:
@@ -16,34 +17,30 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 processors:
-  batch:
-    timeout: 1s
-    send_batch_size: 1024
+  # KEEP - defensive against memory pressure
   memory_limiter:
     check_interval: 1s
-    limit_mib: 400
-    spike_limit_mib: 100
+    limit_percentage: 75
+    spike_limit_percentage: 25
+
+  # KEEP - sets service.namespace and environment for multi-env deployments
   resource:
     attributes:
-      - key: environment
-        value: docker-compose
-        action: upsert
       - key: service.namespace
         value: ploston
         action: upsert
-  # Hint processors for Loki label promotion.
-  # The loki exporter reads these hint attributes to decide which
-  # resource/log attributes to promote to Loki index labels.
-  resource/loki_hints:
-    attributes:
-      - key: loki.resource.labels
-        value: service.name, service.namespace
+      - key: environment
+        value: docker-compose
         action: upsert
-  attributes/loki_hints:
-    actions:
-      - key: loki.attribute.labels
-        value: ael_execution_id, ael_workflow_id, ael_step_id, ael_source, ael_bridge, ael_tool_name, ael_runner_id
-        action: insert
+
+  # KEEP - batching for throughput
+  batch:
+    timeout: 5s
+    send_batch_size: 1000
+
+  # REMOVED: attributes/loki_hints - was promoting high-cardinality ael_*
+  #          attributes to Loki stream labels (DEC-154 mistake; DEC-191 fix).
+  # REMOVED: resource/loki_hints  - same reason.
 
 exporters:
   prometheus:
@@ -53,30 +50,40 @@ exporters:
       environment: docker-compose
     resource_to_telemetry_conversion:
       enabled: true
-  loki:
-    endpoint: "http://loki:3100/loki/api/v1/push"
-    default_labels_enabled:
-      exporter: true
-      job: true
-  otlp/tempo:
-    endpoint: "tempo:4317"
-    tls:
-      insecure: true
+
+  # ClickHouse exporter creates `otel_logs` and `otel_traces` tables on first
+  # write using its built-in schema (v0.105.0). DO NOT set logs_table_name or
+  # traces_table_name; the S-295 schema layers VIEWs (`ploston.events`,
+  # `ploston.traces`) on top of the exporter-owned tables.
+  clickhouse:
+    endpoint: tcp://clickhouse:9000
+    database: ploston
+    username: default
+    password: ""
+    timeout: 10s
+    sending_queue:
+      enabled: true
+      queue_size: 5000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
   debug:
     verbosity: basic
 
   # =========================================================================
   # ENTERPRISE LOG EXPORT STUBS (F-068 / DEC-156)
   # Activate by uncommenting the appropriate exporter and adding its name
-  # to the logs pipeline exporters list alongside 'loki'.
+  # to the logs pipeline exporters list alongside 'clickhouse'.
   #
   # SECURITY: Only Ploston-generated structured events are exported.
   # MCP server process logs stay local on the runner machine and are
   # never included in any export pipeline.
   # =========================================================================
 
-  # Generic OTLP forward — works with any OTLP-compatible backend
-  # (OpenSearch Data Prepper, Grafana Cloud, Honeycomb, Signoz, etc.)
+  # Generic OTLP forward - works with any OTLP-compatible backend
   # otlp/enterprise:
   #   endpoint: "https://your-collector.corp.com:4317"
   #   tls:
@@ -111,17 +118,17 @@ service:
   pipelines:
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource]
+      processors: [memory_limiter, resource, batch]
       exporters: [prometheus]
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource, resource/loki_hints, attributes/loki_hints]
-      exporters: [loki]
-      # Enterprise: add your exporter here, e.g.: exporters: [loki, otlp/enterprise]
+      processors: [memory_limiter, resource, batch]
+      exporters: [clickhouse]
+      # Enterprise: add your exporter here, e.g.: exporters: [clickhouse, otlp/enterprise]
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch, resource]
-      exporters: [otlp/tempo]
+      processors: [memory_limiter, resource, batch]
+      exporters: [clickhouse]
   telemetry:
     logs:
       level: info

@@ -43,7 +43,7 @@ class AssetManager:
         """Deploy Docker observability assets to target directory.
 
         Copies the observability compose overlay and all supporting config
-        files (prometheus, grafana, loki, tempo, otel) to the target dir.
+        files (prometheus, grafana, clickhouse, otel) to the target dir.
 
         The compose overlay file is placed at:
             {target_dir}/observability/docker-compose.observability.yaml
@@ -51,7 +51,7 @@ class AssetManager:
         Config files are placed alongside it so that relative volume mounts
         in the compose file resolve correctly:
             {target_dir}/observability/prometheus/prometheus.yml
-            {target_dir}/observability/loki/loki-config.yaml
+            {target_dir}/observability/clickhouse/init/01-create-database.sql
             etc.
 
         Args:

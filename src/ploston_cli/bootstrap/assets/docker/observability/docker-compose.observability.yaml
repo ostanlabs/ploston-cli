@@ -2,10 +2,9 @@
 # Ploston Observability Stack - Docker Compose Overlay
 # =============================================================================
 # Provides full observability:
-# - Prometheus: Metrics collection
-# - Grafana: Visualization and dashboards
-# - Loki: Log aggregation
-# - Tempo: Distributed tracing
+# - Prometheus:    Metrics collection
+# - Grafana:       Visualization and dashboards
+# - ClickHouse:    Logs + traces storage (replaces Loki + Tempo per DEC-191)
 # - OTEL Collector: Telemetry routing
 #
 # Usage: docker compose -f docker-compose.yaml -f observability/docker-compose.observability.yaml up
@@ -39,6 +38,11 @@ services:
   # ---------------------------------------------------------------------------
   # Grafana - Visualization
   # ---------------------------------------------------------------------------
+  # Plugin install: ClickHouse datasource plugin is fetched at startup via
+  # GF_INSTALL_PLUGINS. For air-gapped operation, drop a tarball into
+  # ./observability/grafana/plugins/ and uncomment the GF_PATHS_PLUGINS line
+  # below. See documentation/engineering/specs/s297-otel-collector-clickhouse.md
+  # 'Plugin install — air-gapped-friendly'.
   grafana:
     image: grafana/grafana:10.2.3
     container_name: ploston-grafana
@@ -50,10 +54,14 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+      # Air-gapped path (uncomment + populate plugins/ dir):
+      # - GF_PATHS_PLUGINS=/var/lib/grafana/plugins
     volumes:
       - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      # - ./observability/grafana/plugins:/var/lib/grafana/plugins:ro
       - grafana-data:/var/lib/grafana
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
@@ -63,57 +71,45 @@ services:
     depends_on:
       prometheus:
         condition: service_healthy
+      clickhouse:
+        condition: service_healthy
 
   # ---------------------------------------------------------------------------
-  # Loki - Log Aggregation
+  # ClickHouse - Logs + Traces Storage
   # ---------------------------------------------------------------------------
-  loki:
-    image: grafana/loki:2.9.3
-    container_name: ploston-loki
-    command: -config.file=/etc/loki/loki-config.yaml
+  # Schema is created by the migration runner from S-295 at CP startup; the
+  # init scripts under observability/clickhouse/init/ run only on first volume
+  # init and seed the database in case CP-driven migrations are skipped.
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    container_name: ploston-clickhouse
     ports:
-      - "3100:3100"
+      - "8123:8123"   # HTTP
+      - "9000:9000"   # Native protocol
+    environment:
+      CLICKHOUSE_DB: ploston
+      # CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT intentionally omitted for OSS demo;
+      # default user has full permissions for simpler bootstrap. Premium can
+      # layer access management on top later.
     volumes:
-      - ./observability/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
-      - loki-data:/loki
+      - clickhouse-data:/var/lib/clickhouse
+      - ./observability/clickhouse/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3100/ready"]
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
-
-  # ---------------------------------------------------------------------------
-  # Tempo - Distributed Tracing
-  # ---------------------------------------------------------------------------
-  tempo:
-    image: grafana/tempo:2.3.1
-    container_name: ploston-tempo
-    command: -config.file=/etc/tempo/tempo-config.yaml
-    ports:
-      - "3200:3200"   # HTTP
-      - "4317:4317"   # OTLP gRPC
-      - "4318:4318"   # OTLP HTTP
-    volumes:
-      - ./observability/tempo/tempo-config.yaml:/etc/tempo/tempo-config.yaml:ro
-      - tempo-data:/var/tempo
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3200/ready"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
 
   # ---------------------------------------------------------------------------
   # OTEL Collector - Telemetry Routing
   # ---------------------------------------------------------------------------
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.92.0
+    image: otel/opentelemetry-collector-contrib:0.105.0
     container_name: ploston-otel
     command: --config=/etc/otel/config.yaml
     ports:
-      - "4327:4317"   # OTLP gRPC (different port to avoid conflict with Tempo)
-      - "4328:4318"   # OTLP HTTP
+      - "4317:4317"   # OTLP gRPC (Tempo no longer claims this port)
+      - "4318:4318"   # OTLP HTTP
       - "8889:8889"   # Prometheus metrics
     volumes:
       - ./observability/otel/config.yaml:/etc/otel/config.yaml:ro
@@ -124,13 +120,10 @@ services:
     depends_on:
       prometheus:
         condition: service_healthy
-      loki:
-        condition: service_healthy
-      tempo:
+      clickhouse:
         condition: service_healthy
 
 volumes:
   prometheus-data:
   grafana-data:
-  loki-data:
-  tempo-data:
+  clickhouse-data:

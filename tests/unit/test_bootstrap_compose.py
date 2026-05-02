@@ -233,8 +233,9 @@ class TestAssetManager:
             # Check that config files were copied
             obs_dir = Path(tmpdir) / "observability"
             assert (obs_dir / "prometheus" / "prometheus.yml").exists()
-            assert (obs_dir / "loki" / "loki-config.yaml").exists()
-            assert (obs_dir / "tempo" / "tempo-config.yaml").exists()
+            assert (obs_dir / "clickhouse" / "init" / "01-create-database.sql").exists()
+            assert not (obs_dir / "loki").exists()
+            assert not (obs_dir / "tempo").exists()
             assert (obs_dir / "otel" / "config.yaml").exists()
             assert (
                 obs_dir / "grafana" / "provisioning" / "datasources" / "datasources.yaml"
@@ -252,8 +253,9 @@ class TestAssetManager:
             content = yaml.safe_load(obs_compose.read_text())
             assert "prometheus" in content["services"]
             assert "grafana" in content["services"]
-            assert "loki" in content["services"]
-            assert "tempo" in content["services"]
+            assert "clickhouse" in content["services"]
+            assert "loki" not in content["services"]
+            assert "tempo" not in content["services"]
             assert "otel-collector" in content["services"]
 
     def test_deploy_observability_docker_no_overwrite(self):
@@ -297,8 +299,9 @@ class TestAssetManager:
             assert k8s_dir.exists()
             assert (k8s_dir / "prometheus.yaml").exists()
             assert (k8s_dir / "grafana.yaml").exists()
-            assert (k8s_dir / "loki.yaml").exists()
-            assert (k8s_dir / "tempo.yaml").exists()
+            assert (k8s_dir / "clickhouse.yaml").exists()
+            assert not (k8s_dir / "loki.yaml").exists()
+            assert not (k8s_dir / "tempo.yaml").exists()
             assert (k8s_dir / "kustomization.yaml").exists()
 
     def test_get_observability_compose_path(self):

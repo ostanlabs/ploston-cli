@@ -1,6 +1,9 @@
 # =============================================================================
 # Grafana Datasources for Ploston Docker Compose
 # =============================================================================
+# Replaces Loki + Tempo with the ClickHouse datasource per DEC-191 / M-082.
+# Dashboards reference the literal uid `clickhouse`.
+# =============================================================================
 apiVersion: 1
 datasources:
   - name: Prometheus
@@ -14,35 +17,15 @@ datasources:
       httpMethod: POST
       manageAlerts: true
 
-  - name: Loki
-    type: loki
-    uid: loki
+  - name: ClickHouse
+    type: grafana-clickhouse-datasource
+    uid: clickhouse
     access: proxy
-    url: http://loki:3100
     editable: false
     jsonData:
-      maxLines: 1000
-      derivedFields:
-        - datasourceUid: tempo
-          matcherRegex: '"trace_id":"([a-f0-9]+)"'
-          name: TraceID
-          url: '$${__value.raw}'
-
-  - name: Tempo
-    type: tempo
-    access: proxy
-    url: http://tempo:3200
-    uid: tempo
-    editable: false
-    jsonData:
-      httpMethod: GET
-      tracesToLogs:
-        datasourceUid: loki
-        tags: ['service.name', 'workflow_id']
-      tracesToMetrics:
-        datasourceUid: prometheus
-        tags: [{ key: 'service.name', value: 'service' }]
-      nodeGraph:
-        enabled: true
-      lokiSearch:
-        datasourceUid: loki
+      server: clickhouse
+      port: 9000
+      username: default
+      defaultDatabase: ploston
+      protocol: native
+      tlsSkipVerify: true

@@ -8,8 +8,7 @@ namespace: observability
 
 resources:
   - namespace.yaml
-  - loki.yaml
-  - tempo.yaml
+  - clickhouse.yaml
   - prometheus.yaml
   - otel-collector.yaml
   - grafana-dashboards.yaml

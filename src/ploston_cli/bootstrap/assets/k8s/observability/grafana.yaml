@@ -20,37 +20,18 @@ data:
           httpMethod: POST
           manageAlerts: true
 
-      - name: Loki
-        type: loki
+      - name: ClickHouse
+        type: grafana-clickhouse-datasource
+        uid: clickhouse
         access: proxy
-        url: http://loki.observability.svc:3100
         editable: false
         jsonData:
-          maxLines: 1000
-          derivedFields:
-            - datasourceUid: tempo
-              matcherRegex: '"trace_id":"([a-f0-9]+)"'
-              name: TraceID
-              url: '$${__value.raw}'
-
-      - name: Tempo
-        type: tempo
-        access: proxy
-        url: http://tempo.observability.svc:3200
-        uid: tempo
-        editable: false
-        jsonData:
-          httpMethod: GET
-          tracesToLogs:
-            datasourceUid: loki
-            tags: ['service.name', 'workflow_id']
-          tracesToMetrics:
-            datasourceUid: prometheus
-            tags: [{ key: 'service.name', value: 'service' }]
-          nodeGraph:
-            enabled: true
-          lokiSearch:
-            datasourceUid: loki
+          server: clickhouse.observability.svc
+          port: 9000
+          username: default
+          defaultDatabase: ploston
+          protocol: native
+          tlsSkipVerify: true
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -104,6 +85,8 @@ spec:
               value: "true"
             - name: GF_AUTH_ANONYMOUS_ORG_ROLE
               value: Viewer
+            - name: GF_INSTALL_PLUGINS
+              value: grafana-clickhouse-datasource
           volumeMounts:
             - name: datasources
               mountPath: /etc/grafana/provisioning/datasources

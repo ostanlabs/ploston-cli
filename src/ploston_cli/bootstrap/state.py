@@ -42,10 +42,12 @@ _GENERATED_ARTIFACTS: list[tuple[str, str]] = [
     (STACK_CONFIG_FILE, "file"),
     ("observability", "dir"),
     # Stale directories auto-created by Docker when bind-mount sources
-    # didn't exist (old overlay had wrong relative paths).
+    # didn't exist (old overlay had wrong relative paths). loki/tempo are
+    # kept so existing installs (pre-DEC-191) get cleaned on re-bootstrap.
     ("prometheus", "dir"),
     ("loki", "dir"),
     ("tempo", "dir"),
+    ("clickhouse", "dir"),
     ("otel", "dir"),
     ("grafana", "dir"),
     # Redis bind-mount data — must be wiped so the runner registry

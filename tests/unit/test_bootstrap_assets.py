@@ -3,10 +3,9 @@
 These tests validate the observability configuration files bundled as CLI assets.
 They check:
 - Prometheus configuration structure
-- OTEL Collector configuration structure
-- Loki configuration structure
-- Tempo configuration structure
-- Grafana datasource provisioning
+- OTEL Collector configuration structure (post-S-297: ClickHouse exporter)
+- ClickHouse init scripts (post-S-297, replaces Loki + Tempo per DEC-191)
+- Grafana datasource provisioning (Prometheus + ClickHouse)
 - Grafana dashboard JSON files
 """
 
@@ -70,11 +69,40 @@ class TestOtelCollectorConfig:
         assert "exporters" in otel_config
         assert "prometheus" in otel_config["exporters"]
 
-    def test_has_loki_exporter(self, otel_config: dict):
-        assert "loki" in otel_config["exporters"]
+    def test_has_clickhouse_exporter(self, otel_config: dict):
+        assert "clickhouse" in otel_config["exporters"]
+        ch = otel_config["exporters"]["clickhouse"]
+        assert ch["endpoint"].startswith("tcp://clickhouse")
+        assert ch["database"] == "ploston"
+        # Spec: do NOT override exporter table names.
+        assert "logs_table_name" not in ch
+        assert "traces_table_name" not in ch
 
-    def test_has_tempo_exporter(self, otel_config: dict):
-        assert "otlp/tempo" in otel_config["exporters"]
+    def test_no_loki_or_tempo_exporters(self, otel_config: dict):
+        """DEC-191: Loki and Tempo exporters fully removed."""
+        assert "loki" not in otel_config["exporters"]
+        assert "otlp/tempo" not in otel_config["exporters"]
+
+    def test_no_loki_hints_processors(self, otel_config: dict):
+        """DEC-154's loki_hints processors are the high-cardinality mistake;
+        DEC-191 removes both."""
+        processors = otel_config.get("processors", {})
+        assert "attributes/loki_hints" not in processors
+        assert "resource/loki_hints" not in processors
+
+    def test_keeps_memory_limiter_resource_batch(self, otel_config: dict):
+        for proc in ("memory_limiter", "resource", "batch"):
+            assert proc in otel_config["processors"], f"missing processor: {proc}"
+
+    def test_logs_pipeline_routes_to_clickhouse(self, otel_config: dict):
+        logs = otel_config["service"]["pipelines"]["logs"]
+        assert "clickhouse" in logs["exporters"]
+        assert "loki" not in logs["exporters"]
+
+    def test_traces_pipeline_routes_to_clickhouse(self, otel_config: dict):
+        traces = otel_config["service"]["pipelines"]["traces"]
+        assert "clickhouse" in traces["exporters"]
+        assert "otlp/tempo" not in traces["exporters"]
 
     def test_has_metrics_pipeline(self, otel_config: dict):
         assert "service" in otel_config
@@ -88,46 +116,24 @@ class TestOtelCollectorConfig:
         assert "traces" in otel_config["service"]["pipelines"]
 
 
-class TestLokiConfig:
-    """Tests for Loki configuration."""
+class TestClickHouseInitScripts:
+    """Tests for ClickHouse init SQL scripts (S-297)."""
 
-    @pytest.fixture
-    def loki_config(self) -> dict:
-        config_path = ASSETS_DIR / "loki" / "loki-config.yaml"
-        with open(config_path) as f:
-            return yaml.safe_load(f)
+    INIT_DIR = ASSETS_DIR / "clickhouse" / "init"
 
-    def test_loki_config_exists(self):
-        assert (ASSETS_DIR / "loki" / "loki-config.yaml").exists()
+    def test_init_dir_exists(self):
+        assert self.INIT_DIR.is_dir()
 
-    def test_has_server_config(self, loki_config: dict):
-        assert "server" in loki_config
-        assert "http_listen_port" in loki_config["server"]
+    def test_create_database_script_exists(self):
+        script = self.INIT_DIR / "01-create-database.sql"
+        assert script.exists()
+        content = script.read_text()
+        assert "CREATE DATABASE IF NOT EXISTS ploston" in content
 
-    def test_has_schema_config(self, loki_config: dict):
-        assert "schema_config" in loki_config
-
-
-class TestTempoConfig:
-    """Tests for Tempo configuration."""
-
-    @pytest.fixture
-    def tempo_config(self) -> dict:
-        config_path = ASSETS_DIR / "tempo" / "tempo-config.yaml"
-        with open(config_path) as f:
-            return yaml.safe_load(f)
-
-    def test_tempo_config_exists(self):
-        assert (ASSETS_DIR / "tempo" / "tempo-config.yaml").exists()
-
-    def test_has_server_config(self, tempo_config: dict):
-        assert "server" in tempo_config
-
-    def test_has_distributor_config(self, tempo_config: dict):
-        assert "distributor" in tempo_config
-
-    def test_has_storage_config(self, tempo_config: dict):
-        assert "storage" in tempo_config
+    def test_no_loki_or_tempo_assets(self):
+        """DEC-191: loki/ and tempo/ asset directories are gone."""
+        assert not (ASSETS_DIR / "loki").exists()
+        assert not (ASSETS_DIR / "tempo").exists()
 
 
 class TestGrafanaDatasources:
@@ -148,15 +154,21 @@ class TestGrafanaDatasources:
         names = [ds.get("name") for ds in datasources]
         assert "Prometheus" in names
 
-    def test_has_loki_datasource(self, datasources_config: dict):
+    def test_has_clickhouse_datasource(self, datasources_config: dict):
+        """DEC-191: Loki + Tempo replaced by ClickHouse datasource."""
         datasources = datasources_config.get("datasources", [])
         names = [ds.get("name") for ds in datasources]
-        assert "Loki" in names
+        assert "ClickHouse" in names
+        ch = next(ds for ds in datasources if ds["name"] == "ClickHouse")
+        assert ch["type"] == "grafana-clickhouse-datasource"
+        assert ch["uid"] == "clickhouse"
+        assert ch["jsonData"]["server"] == "clickhouse"
+        assert ch["jsonData"]["defaultDatabase"] == "ploston"
 
-    def test_has_tempo_datasource(self, datasources_config: dict):
-        datasources = datasources_config.get("datasources", [])
-        names = [ds.get("name") for ds in datasources]
-        assert "Tempo" in names
+    def test_no_loki_or_tempo_datasource(self, datasources_config: dict):
+        names = [ds.get("name") for ds in datasources_config.get("datasources", [])]
+        assert "Loki" not in names
+        assert "Tempo" not in names
 
 
 class TestGrafanaDashboards:
@@ -264,32 +276,10 @@ class TestGrafanaDashboards:
         assert "runner" in var_names
         assert "search" in var_names
 
-    def test_otel_config_promotes_source_label(self):
-        """OTEL config must promote 'ael_source' to a Loki label (ael_ prefix)."""
-        config_path = ASSETS_DIR / "otel" / "config.yaml"
-        with open(config_path) as f:
-            otel_config = yaml.safe_load(f)
-        processors = otel_config.get("processors", {})
-        loki_hints = processors.get("attributes/loki_hints", {})
-        actions = loki_hints.get("actions", [])
-        for action in actions:
-            if action.get("key") == "loki.attribute.labels":
-                value = action.get("value", "")
-                assert "ael_source" in value, "loki.attribute.labels must include 'ael_source'"
-                # Verify all required ael_ prefixed labels are present
-                for label in [
-                    "ael_execution_id",
-                    "ael_workflow_id",
-                    "ael_step_id",
-                    "ael_source",
-                    "ael_bridge",
-                    "ael_tool_name",
-                    "ael_runner_id",
-                ]:
-                    assert label in value, f"loki.attribute.labels must include '{label}'"
-                break
-        else:
-            pytest.fail("No loki.attribute.labels action found in OTEL config")
+    # NOTE: test_otel_config_promotes_source_label removed per S-297/T-951.
+    # DEC-154's loki_hints processors (and the ael_ prefixed Loki label
+    # promotion they configured) were eliminated by DEC-191. ael_source and
+    # related context fields are now ClickHouse columns, not stream labels.
 
 
 class TestObservabilityComposeFile:
@@ -310,11 +300,32 @@ class TestObservabilityComposeFile:
     def test_has_grafana_service(self, compose_config: dict):
         assert "grafana" in compose_config.get("services", {})
 
-    def test_has_loki_service(self, compose_config: dict):
-        assert "loki" in compose_config.get("services", {})
+    def test_has_clickhouse_service(self, compose_config: dict):
+        """DEC-191: replaces Loki + Tempo."""
+        services = compose_config.get("services", {})
+        assert "clickhouse" in services
+        ch = services["clickhouse"]
+        assert ch["image"].startswith("clickhouse/clickhouse-server")
+        # Healthcheck uses clickhouse-client (portable across alpine/debian).
+        hc_test = ch["healthcheck"]["test"]
+        assert "clickhouse-client" in hc_test
 
-    def test_has_tempo_service(self, compose_config: dict):
-        assert "tempo" in compose_config.get("services", {})
+    def test_no_loki_or_tempo_service(self, compose_config: dict):
+        services = compose_config.get("services", {})
+        assert "loki" not in services
+        assert "tempo" not in services
 
     def test_has_otel_collector_service(self, compose_config: dict):
         assert "otel-collector" in compose_config.get("services", {})
+
+    def test_otel_collector_image_version(self, compose_config: dict):
+        """S-297: bumped to contrib 0.105.0."""
+        otel = compose_config["services"]["otel-collector"]
+        assert otel["image"] == "otel/opentelemetry-collector-contrib:0.105.0"
+
+    def test_otel_collector_ports_restored(self, compose_config: dict):
+        """4317/4318 restored once Tempo no longer claims those ports."""
+        otel = compose_config["services"]["otel-collector"]
+        port_mappings = otel.get("ports", [])
+        assert "4317:4317" in port_mappings
+        assert "4318:4318" in port_mappings
