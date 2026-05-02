@@ -23,7 +23,14 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MARKER = Path.home() / ".ploston" / "observability" / "grafana" / ".cleanup_v1"
-_LEGACY_DATASOURCES = ("loki", "tempo")
+# Datasource ``type`` values (lowercase per Grafana API) we want gone after the
+# M-082 ClickHouse switchover. Filtering by type instead of name avoids
+# guessing case (``Loki`` vs ``loki``) and tolerates user-renamed datasources.
+_LEGACY_TYPES = ("loki", "tempo")
+# Default Grafana admin password matches GF_SECURITY_ADMIN_PASSWORD in the
+# bootstrap compose overlay. The helper accepts an override for K8s/custom
+# stacks that rotate it.
+_DEFAULT_ADMIN_CREDS = ("admin", "ploston")
 # Polling shape mirrors HealthPoller defaults; Grafana boots in a few seconds
 # but we keep headroom for slow hosts and image pulls on first run.
 _READY_MAX_ATTEMPTS = 30
@@ -62,17 +69,22 @@ def _wait_for_grafana(grafana_url: str) -> bool:
 
 def cleanup_orphaned_grafana_datasources(
     grafana_url: str = "http://localhost:3000",
-    admin_creds: tuple[str, str] = ("admin", "admin"),
+    admin_creds: tuple[str, str] = _DEFAULT_ADMIN_CREDS,
     *,
     marker_path: Path | None = None,
 ) -> int:
     """Delete legacy Loki/Tempo datasources from upgraded Grafana volumes.
 
+    The helper enumerates ``/api/datasources`` and deletes by ``uid`` for any
+    datasource whose ``type`` is in :data:`_LEGACY_TYPES`. This is robust to
+    renamed datasources and to Grafana's case-sensitive ``/name/`` lookup.
+
     Args:
         grafana_url: Base URL of the Grafana instance to clean (compose-host
             local default).
         admin_creds: ``(username, password)`` for Grafana basic auth. The OSS
-            default is ``admin/admin`` and matches the bundled provisioning.
+            default is ``admin/ploston`` and matches the bundled provisioning;
+            override for K8s/custom stacks that rotate the password.
         marker_path: Override for the idempotency marker (tests).
 
     Returns:
@@ -92,15 +104,24 @@ def cleanup_orphaned_grafana_datasources(
 
     deleted = 0
     with httpx.Client(timeout=_HTTP_TIMEOUT_SECONDS, auth=admin_creds) as client:
-        for ds_name in _LEGACY_DATASOURCES:
-            resp = client.delete(f"{grafana_url}/api/datasources/name/{ds_name}")
-            if resp.status_code == 200:
+        list_resp = client.get(f"{grafana_url}/api/datasources")
+        list_resp.raise_for_status()
+        datasources = list_resp.json() or []
+        targets = [
+            (ds.get("uid"), ds.get("name"), ds.get("type"))
+            for ds in datasources
+            if ds.get("type") in _LEGACY_TYPES and ds.get("uid")
+        ]
+        for uid, name, ds_type in targets:
+            del_resp = client.delete(f"{grafana_url}/api/datasources/uid/{uid}")
+            if del_resp.status_code == 200:
                 deleted += 1
-            elif resp.status_code == 404:
-                # Already absent (fresh install or earlier cleanup without marker).
+                logger.info("Deleted legacy Grafana datasource: %s (%s)", name, ds_type)
+            elif del_resp.status_code == 404:
+                # Raced with another cleanup; treat as already gone.
                 continue
             else:
-                resp.raise_for_status()
+                del_resp.raise_for_status()
 
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(f"v1\n{datetime.now(UTC).isoformat()}\n")

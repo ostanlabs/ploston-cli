@@ -278,6 +278,11 @@ class TestAssetManager:
             obs_dir = Path(tmpdir) / "observability"
             assert (obs_dir / "prometheus" / "prometheus.yml").exists()
             assert (obs_dir / "clickhouse" / "init" / "01-create-database.sql").exists()
+            # users.d override drops the image-bundled localhost-only network
+            # restriction; without this CP cannot connect to ClickHouse.
+            users_xml = obs_dir / "clickhouse" / "users.d" / "default-user.xml"
+            assert users_xml.exists()
+            assert "<ip>::/0</ip>" in users_xml.read_text()
             assert not (obs_dir / "loki").exists()
             assert not (obs_dir / "tempo").exists()
             assert (obs_dir / "otel" / "config.yaml").exists()
@@ -301,6 +306,10 @@ class TestAssetManager:
             assert "loki" not in content["services"]
             assert "tempo" not in content["services"]
             assert "otel-collector" in content["services"]
+            ch_volumes = content["services"]["clickhouse"]["volumes"]
+            assert any("/etc/clickhouse-server/users.d" in v for v in ch_volumes), (
+                f"users.d mount missing from clickhouse volumes: {ch_volumes!r}"
+            )
 
     def test_deploy_observability_docker_no_overwrite(self):
         """Test that existing files are not overwritten by default."""
@@ -347,6 +356,26 @@ class TestAssetManager:
             assert not (k8s_dir / "loki.yaml").exists()
             assert not (k8s_dir / "tempo.yaml").exists()
             assert (k8s_dir / "kustomization.yaml").exists()
+
+    def test_clickhouse_k8s_mounts_users_d_override(self):
+        """The K8s manifest must ship a ``clickhouse-users`` ConfigMap and
+        mount it at /etc/clickhouse-server/users.d so the network restriction
+        on the bundled ``default-user.xml`` is shadowed (mirrors the docker
+        compose users.d mount)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = AssetManager(target_dir=Path(tmpdir))
+            k8s_dir = manager.deploy_observability_k8s()
+            docs = list(yaml.safe_load_all((k8s_dir / "clickhouse.yaml").read_text()))
+            kinds = {(d.get("kind"), d.get("metadata", {}).get("name")) for d in docs if d}
+            assert ("ConfigMap", "clickhouse-users") in kinds
+            users_cm = next(
+                d for d in docs if d and d.get("metadata", {}).get("name") == "clickhouse-users"
+            )
+            assert "<ip>::/0</ip>" in users_cm["data"]["default-user.xml"]
+            deployment = next(d for d in docs if d and d.get("kind") == "Deployment")
+            container = deployment["spec"]["template"]["spec"]["containers"][0]
+            mount_paths = [m["mountPath"] for m in container["volumeMounts"]]
+            assert "/etc/clickhouse-server/users.d" in mount_paths
 
     def test_get_observability_compose_path(self):
         """Test getting expected observability compose path."""

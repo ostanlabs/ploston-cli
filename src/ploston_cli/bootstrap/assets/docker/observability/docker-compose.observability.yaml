@@ -88,12 +88,14 @@ services:
       - "9000:9000"   # Native protocol
     environment:
       CLICKHOUSE_DB: ploston
-      # CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT intentionally omitted for OSS demo;
-      # default user has full permissions for simpler bootstrap. Premium can
-      # layer access management on top later.
+      # OSS demo: passwordless ``default`` user for simpler bootstrap. Premium
+      # can layer access management on top later. The users.d/ override below
+      # drops the image-bundled localhost-only network restriction so CP and
+      # the OTEL collector can connect over the docker network.
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - ./observability/clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - ./observability/clickhouse/users.d:/etc/clickhouse-server/users.d:ro
     healthcheck:
       test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
       interval: 10s

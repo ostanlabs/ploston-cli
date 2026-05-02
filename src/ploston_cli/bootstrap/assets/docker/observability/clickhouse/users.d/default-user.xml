@@ -1,0 +1,27 @@
+<!--
+  Ploston ClickHouse default-user override (S-303 follow-up).
+
+  The official clickhouse/clickhouse-server image ships
+  /etc/clickhouse-server/users.d/default-user.xml that restricts the
+  ``default`` user to ``::1`` and ``127.0.0.1``. That breaks every
+  cross-container connection from CP, the OTEL collector, and any host
+  client reaching ClickHouse over Docker port forwarding.
+
+  M-082 commits the bootstrap stack to a passwordless ``default`` user
+  for OSS demo simplicity (premium can layer access management on top
+  later). To make that intent actually work we ship this override which
+  drops the network restriction. Mounted into ``users.d`` it shadows
+  the image-bundled file and applies on first start without a restart.
+-->
+<clickhouse>
+  <users>
+    <default>
+      <networks>
+        <ip>::/0</ip>
+      </networks>
+      <profile>default</profile>
+      <quota>default</quota>
+      <access_management>1</access_management>
+    </default>
+  </users>
+</clickhouse>

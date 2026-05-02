@@ -39,6 +39,9 @@ spec:
             - name: init
               mountPath: /docker-entrypoint-initdb.d
               readOnly: true
+            - name: users
+              mountPath: /etc/clickhouse-server/users.d
+              readOnly: true
           resources:
             requests:
               memory: "1Gi"
@@ -63,6 +66,9 @@ spec:
         - name: init
           configMap:
             name: clickhouse-init
+        - name: users
+          configMap:
+            name: clickhouse-users
 ---
 apiVersion: v1
 kind: Service
@@ -101,3 +107,27 @@ data:
     -- See assets/docker/observability/clickhouse/init/01-create-database.sql
     -- Schema migration runs from CP startup (S-295 / T-940).
     CREATE DATABASE IF NOT EXISTS ploston;
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-users
+  namespace: observability
+data:
+  # Override the image-bundled users.d/default-user.xml that restricts the
+  # ``default`` user to localhost. Without this CP and the OTEL collector
+  # (running in pods on the K8s network) cannot authenticate.
+  default-user.xml: |
+    <clickhouse>
+      <users>
+        <default>
+          <networks>
+            <ip>::/0</ip>
+          </networks>
+          <profile>default</profile>
+          <quota>default</quota>
+          <access_management>1</access_management>
+        </default>
+      </users>
+    </clickhouse>
