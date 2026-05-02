@@ -1,0 +1,281 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 100,
+      "title": "Recent Sessions",
+      "description": "Click a session_id row to drill in. Solves the 'how does the user get a session_id' problem (S-299).",
+      "type": "table",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" }, "links": [] },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "session_id" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  { "title": "Inspect this session", "url": "${__url.path}?var-session_id=${__data.fields.session_id}" }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT session_id, min(started_at) AS first_seen, max(started_at) AS last_seen, count() AS tool_calls, countDistinct(tool_name) AS unique_tools, countIf(error_code IS NOT NULL AND error_code != '') AS errors FROM ploston.tool_calls WHERE session_id IS NOT NULL AND session_id != '' AND $__timeFilter(started_at) GROUP BY session_id ORDER BY last_seen DESC LIMIT 50"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Tool Calls",
+      "type": "stat",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 4, "w": 5, "x": 0, "y": 9 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value" },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT count() FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at)"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Errors",
+      "type": "stat",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 4, "w": 5, "x": 5, "y": 9 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value" },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT countIf(error_code IS NOT NULL AND error_code != '') FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at)"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Total Response Bytes",
+      "type": "stat",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 4, "w": 5, "x": 10, "y": 9 },
+      "fieldConfig": { "defaults": { "unit": "decbytes" } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value" },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT sum(response_bytes) FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at)"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Total Duration",
+      "type": "stat",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 4, "w": 5, "x": 15, "y": 9 },
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value" },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT sum(duration_ms) FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at)"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Unique Tools",
+      "type": "stat",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 9 },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value" },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT countDistinct(tool_name) FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Workflow Executions",
+      "description": "Workflow runs that ran inside this session.",
+      "type": "table",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT started_at, execution_id, workflow_id, status, duration_ms, step_count, tool_call_count, coalesce(error_message, '') AS error FROM ploston.executions WHERE session_id = '$session_id' AND execution_type = 'workflow' AND $__timeFilter(started_at) ORDER BY started_at DESC"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Tool Call Timeline",
+      "description": "The centerpiece. Click a row to drill into Panel 4. 'Tool' filter is multi-select with CSV format.",
+      "type": "table",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 21 },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "displayMode": "auto" }, "links": [] },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "call_id" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  { "title": "Inspect call", "url": "${__url.path}?var-call_id=${__data.fields.call_id}" }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT started_at, if(execution_id != '', 'workflow', 'direct') AS kind, tool_name, duration_ms, params_bytes, response_bytes, runner_id, coalesce(if(error_code = '', NULL, error_code), 'ok') AS status, substring(params, 1, 200) AS params_preview, call_id FROM ploston.tool_calls WHERE session_id = '$session_id' AND ('$tool_name' = '' OR has(splitByChar(',', '$tool_name'), tool_name)) AND $__timeFilter(started_at) ORDER BY started_at ASC"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Inspect One Tool Call",
+      "description": "Click a row in the timeline above to inspect a specific call. Shows full untruncated params and result.",
+      "type": "table",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 14, "w": 12, "x": 0, "y": 33 },
+      "options": { "showHeader": true, "cellHeight": "lg" },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT started_at, tool_name, duration_ms, params, result, coalesce(error_code, '') AS error_code, coalesce(error_message, '') AS error_message, runner_id, source FROM ploston.tool_calls WHERE call_id = '$call_id' LIMIT 1"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Tool Usage Distribution",
+      "type": "piechart",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 14, "w": 12, "x": 12, "y": 33 },
+      "options": { "legend": { "displayMode": "list", "placement": "right" }, "pieType": "donut" },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT tool_name, count() AS calls FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at) GROUP BY tool_name ORDER BY calls DESC"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Free-form Events",
+      "description": "Free-form OTEL log events emitted from this session via ploston.events view.",
+      "type": "table",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 47 },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT timestamp, severity, component, message, attributes FROM ploston.events WHERE session_id = '$session_id' AND $__timeFilter(timestamp) ORDER BY timestamp DESC LIMIT 500"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["ploston", "sessions", "clickhouse"],
+  "templating": {
+    "list": [
+      {
+        "name": "session_id",
+        "type": "textbox",
+        "label": "Session ID",
+        "current": { "selected": false, "text": "", "value": "" },
+        "query": "",
+        "hide": 0
+      },
+      {
+        "name": "execution_id",
+        "type": "query",
+        "label": "Execution ID",
+        "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+        "query": "SELECT DISTINCT execution_id FROM ploston.executions WHERE session_id = '$session_id' ORDER BY started_at DESC",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": "",
+        "multi": false,
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "hide": 0
+      },
+      {
+        "name": "tool_name",
+        "type": "query",
+        "label": "Tool",
+        "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+        "query": "SELECT DISTINCT tool_name FROM ploston.tool_calls WHERE session_id = '$session_id' ORDER BY tool_name",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": "",
+        "multi": true,
+        "current": { "selected": false, "text": "All", "value": "" },
+        "hide": 0
+      },
+      {
+        "name": "call_id",
+        "type": "textbox",
+        "label": "Call ID (drill-down)",
+        "current": { "selected": false, "text": "", "value": "" },
+        "query": "",
+        "hide": 2
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Agent Session Inspector",
+  "uid": "ploston-session-inspector",
+  "version": 1
+}

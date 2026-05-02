@@ -26,6 +26,7 @@ DASHBOARDS = [
     "token-savings.json",
     "execution-logs.json",
     "direct-tool-logs.json",
+    "session-inspector.json",
 ]
 
 
