@@ -1,7 +1,7 @@
 """Asset manager for bundled deployment configuration files.
 
 This module provides the AssetManager class which copies static configuration
-files (Prometheus, Grafana, Loki, Tempo, OTEL, etc.) from the bundled assets
+files (Prometheus, Grafana, ClickHouse, OTEL Collector, etc.) from the bundled assets
 directory to the target deployment directory (~/.ploston/).
 
 Assets are bundled inside the ploston-cli package and accessed via

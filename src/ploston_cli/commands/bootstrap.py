@@ -248,7 +248,7 @@ def _handle_network_conflict(
 @click.option(
     "--with-observability",
     is_flag=True,
-    help="Include Prometheus + Grafana + Loki",
+    help="Include Prometheus + Grafana + ClickHouse + OTEL Collector",
 )
 @click.option(
     "--with-native-tools",
