@@ -60,6 +60,12 @@ class K8sConfig:
     ingress_class_name: str | None = None
     ingress_annotations: dict[str, str] = field(default_factory=dict)
     ingress_hosts: list[K8sIngressHost] = field(default_factory=list)
+    # Observability stack toggle (S-303 T-976): when True, the generated
+    # ploston Deployment receives ClickHouse + OTEL env vars so the CP
+    # selects the ClickHouse telemetry backend and forwards traces/logs
+    # to the OTEL Collector. Host names match the in-cluster Service
+    # names in the bundled K8s observability assets.
+    with_observability: bool = False
 
 
 class K8sManifestGenerator:
@@ -374,6 +380,35 @@ class K8sManifestGenerator:
         ]
         if config.native_tools_enabled:
             env.append({"name": "NATIVE_TOOLS_URL", "value": "http://native-tools:8081"})
+
+        # Observability wiring (S-303 T-976 / DEC-193 / DEC-149). Mirrors the
+        # docker-compose path in ComposeGenerator. ClickHouse and OTEL
+        # endpoints resolve to the in-cluster Services shipped under
+        # bootstrap/assets/k8s/observability/. The CP runs in the `ploston`
+        # namespace; the observability stack runs in `observability`, hence
+        # the cross-namespace short form. The CP awaits run_migrations on
+        # startup so the Deployment is robust to ClickHouse coming up second.
+        if config.with_observability:
+            env.extend(
+                [
+                    {"name": "PLOSTON_LOGS_ENABLED", "value": "true"},
+                    {
+                        "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+                        "value": "http://otel-collector.observability.svc:4317",
+                    },
+                    {"name": "OTEL_EXPORTER_OTLP_INSECURE", "value": "true"},
+                    {"name": "PLOSTON_TELEMETRY_BACKEND", "value": "clickhouse"},
+                    {
+                        "name": "PLOSTON_CLICKHOUSE_HOST",
+                        "value": "clickhouse.observability.svc",
+                    },
+                    {"name": "PLOSTON_CLICKHOUSE_PORT", "value": "8123"},
+                    {"name": "PLOSTON_CLICKHOUSE_DATABASE", "value": "ploston"},
+                    {"name": "PLOSTON_CLICKHOUSE_USERNAME", "value": "default"},
+                    {"name": "PLOSTON_CLICKHOUSE_PASSWORD", "value": ""},
+                    {"name": "PLOSTON_CLICKHOUSE_SECURE", "value": "false"},
+                ]
+            )
 
         # Deployment
         deployment = {

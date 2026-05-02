@@ -114,13 +114,24 @@ class ComposeGenerator:
         }
 
         # When observability is enabled, inject OTEL env vars so the
-        # ploston container forwards logs/traces to the collector (DEC-149).
+        # ploston container forwards logs/traces to the collector (DEC-149),
+        # and ClickHouse env vars so the CP selects the ClickHouse telemetry
+        # backend and runs schema migrations on startup (DEC-193 / S-303 T-976).
+        # Host name is the compose service name `clickhouse` (resolves via the
+        # observability overlay's network); not the container_name.
         if config.with_observability:
             services["ploston"]["environment"].update(
                 {
                     "PLOSTON_LOGS_ENABLED": "true",
                     "OTEL_EXPORTER_OTLP_ENDPOINT": "http://otel-collector:4317",
                     "OTEL_EXPORTER_OTLP_INSECURE": "true",
+                    "PLOSTON_TELEMETRY_BACKEND": "clickhouse",
+                    "PLOSTON_CLICKHOUSE_HOST": "clickhouse",
+                    "PLOSTON_CLICKHOUSE_PORT": "8123",
+                    "PLOSTON_CLICKHOUSE_DATABASE": "ploston",
+                    "PLOSTON_CLICKHOUSE_USERNAME": "default",
+                    "PLOSTON_CLICKHOUSE_PASSWORD": "",
+                    "PLOSTON_CLICKHOUSE_SECURE": "false",
                 }
             )
 

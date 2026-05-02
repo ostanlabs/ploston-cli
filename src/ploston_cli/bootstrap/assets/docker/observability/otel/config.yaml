@@ -58,8 +58,10 @@ exporters:
   clickhouse:
     endpoint: tcp://clickhouse:9000
     database: ploston
-    username: default
-    password: ""
+    # No username/password: ClickHouse default user is passwordless.
+    # The clickhouse exporter at v0.105.0 transmits a non-empty native-protocol
+    # auth packet when given an explicit empty password, which ClickHouse
+    # rejects with code: 516. Omit the keys entirely (T-975 / S-303).
     timeout: 10s
     sending_queue:
       enabled: true

@@ -507,6 +507,51 @@ class TestK8sNativeToolsToggle:
             generator.generate(config_off)
             assert not (Path(tmpdir) / "native-tools.yaml").exists()
 
+    def test_observability_injects_clickhouse_env_vars(self):
+        """S-303 T-976: with_observability=True wires ClickHouse selection
+        on the generated ploston Deployment, parallel to the compose path.
+        Host name uses the cross-namespace short form because the
+        observability stack lives in the `observability` namespace and the
+        CP runs in `ploston`."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = K8sConfig(output_dir=Path(tmpdir), with_observability=True)
+            generator = K8sManifestGenerator()
+            manifest_dir = generator.generate(config)
+
+            docs = list(yaml.safe_load_all((manifest_dir / "ploston.yaml").read_text()))
+            deployment = next(d for d in docs if d["kind"] == "Deployment")
+            container = deployment["spec"]["template"]["spec"]["containers"][0]
+            env_map = {e["name"]: e["value"] for e in container["env"]}
+            assert env_map["PLOSTON_TELEMETRY_BACKEND"] == "clickhouse"
+            assert env_map["PLOSTON_CLICKHOUSE_HOST"] == "clickhouse.observability.svc"
+            assert env_map["PLOSTON_CLICKHOUSE_PORT"] == "8123"
+            assert env_map["PLOSTON_CLICKHOUSE_DATABASE"] == "ploston"
+            assert env_map["PLOSTON_CLICKHOUSE_USERNAME"] == "default"
+            assert env_map["PLOSTON_CLICKHOUSE_PASSWORD"] == ""
+            assert env_map["PLOSTON_CLICKHOUSE_SECURE"] == "false"
+            assert (
+                env_map["OTEL_EXPORTER_OTLP_ENDPOINT"]
+                == "http://otel-collector.observability.svc:4317"
+            )
+
+    def test_no_observability_no_clickhouse_env_vars(self):
+        """K8s default leaves the CP on its sqlite default."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = K8sConfig(output_dir=Path(tmpdir), with_observability=False)
+            generator = K8sManifestGenerator()
+            manifest_dir = generator.generate(config)
+
+            docs = list(yaml.safe_load_all((manifest_dir / "ploston.yaml").read_text()))
+            deployment = next(d for d in docs if d["kind"] == "Deployment")
+            container = deployment["spec"]["template"]["spec"]["containers"][0]
+            env_names = [e["name"] for e in container["env"]]
+            for key in (
+                "PLOSTON_TELEMETRY_BACKEND",
+                "PLOSTON_CLICKHOUSE_HOST",
+                "OTEL_EXPORTER_OTLP_ENDPOINT",
+            ):
+                assert key not in env_names
+
 
 class TestK8sConfigMap:
     """Tests for ConfigMap (config file injection)."""

@@ -936,6 +936,7 @@ async def _run_bootstrap(
             native_tools_enabled=with_native_tools,
             ingress_enabled=bool(domain),
             ingress_hosts=ingress_hosts,
+            with_observability=with_observability,
         )
         k8s_generator = K8sManifestGenerator()
         manifest_dir = k8s_generator.generate(k8s_config)
@@ -990,6 +991,23 @@ async def _run_bootstrap(
             click.echo(f"  📝 Full debug log: {log_path}", err=True)
             return BootstrapResult(success=False, error=msg)
         click.echo("  ✓ Stack started")
+
+        # S-303 T-977 (DEC-194): On observability bootstraps, prune any
+        # legacy Loki/Tempo datasources left over from pre-M-082 Grafana
+        # volumes. The helper polls Grafana for readiness, is idempotent
+        # via a marker file, and is a no-op for fresh installs.
+        if with_observability:
+            try:
+                from ..bootstrap.grafana_cleanup import (
+                    cleanup_orphaned_grafana_datasources,
+                )
+
+                removed = cleanup_orphaned_grafana_datasources()
+                if removed:
+                    click.echo(f"  ✓ Removed {removed} orphaned Grafana datasource(s)")
+            except Exception as e:
+                # Cleanup failure must not fail the bootstrap.
+                click.echo(f"  ⚠ Grafana datasource cleanup skipped: {e}", err=True)
     else:
         deployer = KubectlDeployer(kubeconfig)
         success, msg = deployer.apply(manifest_dir)

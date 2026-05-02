@@ -117,6 +117,50 @@ class TestComposeGenerator:
             assert "OTEL_EXPORTER_OTLP_ENDPOINT" not in env
             assert "OTEL_EXPORTER_OTLP_INSECURE" not in env
 
+    def test_observability_injects_clickhouse_env_vars(self):
+        """S-303 T-976: with_observability=True wires ClickHouse selection."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = ComposeConfig(
+                output_dir=Path(tmpdir),
+                with_observability=True,
+            )
+            generator = ComposeGenerator()
+            compose_file = generator.generate(config)
+
+            content = yaml.safe_load(compose_file.read_text())
+            env = content["services"]["ploston"]["environment"]
+            assert env["PLOSTON_TELEMETRY_BACKEND"] == "clickhouse"
+            assert env["PLOSTON_CLICKHOUSE_HOST"] == "clickhouse"
+            assert env["PLOSTON_CLICKHOUSE_PORT"] == "8123"
+            assert env["PLOSTON_CLICKHOUSE_DATABASE"] == "ploston"
+            assert env["PLOSTON_CLICKHOUSE_USERNAME"] == "default"
+            assert env["PLOSTON_CLICKHOUSE_PASSWORD"] == ""
+            assert env["PLOSTON_CLICKHOUSE_SECURE"] == "false"
+
+    def test_no_observability_no_clickhouse_env_vars(self):
+        """Without observability, the ClickHouse vars must be absent so the
+        CP keeps its sqlite default (DEC-193 fail-safe)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = ComposeConfig(
+                output_dir=Path(tmpdir),
+                with_observability=False,
+            )
+            generator = ComposeGenerator()
+            compose_file = generator.generate(config)
+
+            content = yaml.safe_load(compose_file.read_text())
+            env = content["services"]["ploston"]["environment"]
+            for key in (
+                "PLOSTON_TELEMETRY_BACKEND",
+                "PLOSTON_CLICKHOUSE_HOST",
+                "PLOSTON_CLICKHOUSE_PORT",
+                "PLOSTON_CLICKHOUSE_DATABASE",
+                "PLOSTON_CLICKHOUSE_USERNAME",
+                "PLOSTON_CLICKHOUSE_PASSWORD",
+                "PLOSTON_CLICKHOUSE_SECURE",
+            ):
+                assert key not in env
+
     def test_generate_custom_port(self):
         """Test generating compose with custom port."""
         with tempfile.TemporaryDirectory() as tmpdir:

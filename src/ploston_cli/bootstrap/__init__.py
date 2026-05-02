@@ -11,6 +11,7 @@ This package provides the `ploston bootstrap` command which:
 from .asset_manager import AssetManager
 from .builder import BuildError, build_from_source
 from .compose import ComposeConfig, ComposeGenerator, VolumeManager
+from .grafana_cleanup import cleanup_orphaned_grafana_datasources
 from .health import HealthCheckResult, HealthPoller
 from .image_resolver import ImageConfig, ImageResolverError, resolve_images
 from .integration import AutoChainDetector, AutoChainResult, ImportHandoff, RunnerAutoStart
@@ -92,4 +93,6 @@ __all__ = [
     "K8sManifestGenerator",
     "KubectlDeployer",
     "K8sHealthCheck",
+    # Grafana datasource cleanup (S-303 / DEC-194)
+    "cleanup_orphaned_grafana_datasources",
 ]
