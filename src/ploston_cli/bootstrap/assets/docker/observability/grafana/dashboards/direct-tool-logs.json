@@ -1,7 +1,5 @@
 {
-  "annotations": {
-    "list": []
-  },
+  "annotations": { "list": [] },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -11,112 +9,76 @@
   "panels": [
     {
       "id": 1,
-      "title": "Direct Tool Call Logs",
-      "description": "All direct tool call events. Filter by Level, Tool, Runner, or type anything in Search to match against any field in the log line (regex). Sorted oldest-first for chronological session reading. Expand any line to see full JSON fields.",
-      "type": "logs",
-      "datasource": {"type": "loki", "uid": "loki"},
-      "gridPos": {"h": 16, "w": 24, "x": 0, "y": 0},
-      "options": {
-        "dedupStrategy": "none",
-        "enableLogDetails": true,
-        "sortOrder": "Ascending",
-        "wrapLogMessage": true,
-        "showTime": true,
-        "showLabels": false,
-        "showCommonLabels": false
-      },
-      "targets": [{
-        "expr": "{job=\"ploston/ael\", ael_source=\"tool\"} | json | level=~\"($level)\" | ael_bridge=~\"($bridge|)\" | ael_tool_name=~\"($tool_name|)\" | ael_runner_id=~\"($runner|)\" |~ \"$search\"",
-        "refId": "A"
-      }]
+      "title": "Direct Tool Calls",
+      "description": "All direct tool calls (source='direct'). Filter by Tool or Runner; '' means All. Sorted newest-first.",
+      "type": "table",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 0 },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT started_at, tool_name, runner_id, session_id, duration_ms, params_bytes, response_bytes, substring(params, 1, 200) AS params_preview, coalesce(error_code, '') AS error_code, coalesce(error_message, '') AS error FROM ploston.tool_calls WHERE source = 'direct' AND $__timeFilter(started_at) AND ('$tool_name' = '' OR tool_name = '$tool_name') AND ('$runner_id' = '' OR runner_id = '$runner_id') ORDER BY started_at DESC LIMIT 1000"
+        }
+      ]
     },
     {
       "id": 2,
-      "title": "Errors — always shown (not affected by Level filter)",
-      "description": "Hardcoded to ERROR level. Remains visible even when Level is set to INFO or WARN. Shows direct_tool_failed events with error and error_type. Search filter still applies.",
-      "type": "logs",
-      "datasource": {"type": "loki", "uid": "loki"},
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 16},
-      "options": {
-        "dedupStrategy": "none",
-        "enableLogDetails": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": true,
-        "showTime": true
-      },
-      "targets": [{
-        "expr": "{job=\"ploston/ael\", ael_source=\"tool\"} | json | level=\"ERROR\" | ael_bridge=~\"($bridge|)\" | ael_tool_name=~\"($tool_name|)\" | ael_runner_id=~\"($runner|)\" |~ \"$search\"",
-        "refId": "A"
-      }]
+      "title": "Errors — direct tool calls (always shown)",
+      "description": "Tool calls with non-empty error_code. Tool/Runner filters apply.",
+      "type": "table",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT started_at, tool_name, runner_id, session_id, duration_ms, error_code, error_message FROM ploston.tool_calls WHERE source = 'direct' AND error_code IS NOT NULL AND error_code != '' AND $__timeFilter(started_at) AND ('$tool_name' = '' OR tool_name = '$tool_name') AND ('$runner_id' = '' OR runner_id = '$runner_id') ORDER BY started_at DESC LIMIT 500"
+        }
+      ]
     }
   ],
   "refresh": "30s",
   "schemaVersion": 38,
-  "tags": ["ploston", "logs", "loki", "tools"],
+  "tags": ["ploston", "tools", "clickhouse"],
   "templating": {
     "list": [
       {
-        "name": "level",
-        "type": "custom",
-        "query": "DEBUG,INFO,WARN,ERROR",
-        "multi": true,
-        "includeAll": true,
-        "current": {"selected": true, "text": "All", "value": "$__all"},
-        "label": "Level",
-        "hide": 0
-      },
-      {
-        "name": "bridge",
-        "type": "query",
-        "datasource": {"type": "loki", "uid": "loki"},
-        "definition": "label_values({job=\"ploston/ael\", ael_source=\"tool\"}, ael_bridge)",
-        "query": "label_values({job=\"ploston/ael\", ael_source=\"tool\"}, ael_bridge)",
-        "multi": true,
-        "includeAll": true,
-        "label": "Bridge",
-        "refresh": 2,
-        "sort": 1,
-        "hide": 0
-      },
-      {
         "name": "tool_name",
         "type": "query",
-        "datasource": {"type": "loki", "uid": "loki"},
-        "definition": "label_values({job=\"ploston/ael\", ael_source=\"tool\"}, ael_tool_name)",
-        "query": "label_values({job=\"ploston/ael\", ael_source=\"tool\"}, ael_tool_name)",
-        "multi": true,
-        "includeAll": true,
+        "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
         "label": "Tool",
-        "refresh": 2,
-        "sort": 1,
-        "hide": 0
-      },
-      {
-        "name": "runner",
-        "type": "query",
-        "datasource": {"type": "loki", "uid": "loki"},
-        "definition": "label_values({job=\"ploston/ael\", ael_source=\"tool\"}, ael_runner_id)",
-        "query": "label_values({job=\"ploston/ael\", ael_source=\"tool\"}, ael_runner_id)",
-        "multi": true,
+        "query": "SELECT DISTINCT tool_name FROM ploston.tool_calls WHERE source='direct' ORDER BY tool_name",
+        "refresh": 1,
+        "multi": false,
         "includeAll": true,
-        "label": "Runner",
-        "refresh": 2,
+        "allValue": "",
+        "current": { "selected": false, "text": "All", "value": "" },
         "sort": 1,
         "hide": 0
       },
       {
-        "name": "search",
-        "type": "textbox",
-        "label": "Search",
-        "current": {"value": ""},
+        "name": "runner_id",
+        "type": "query",
+        "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+        "label": "Runner",
+        "query": "SELECT DISTINCT runner_id FROM ploston.tool_calls WHERE source='direct' AND runner_id IS NOT NULL ORDER BY runner_id",
+        "refresh": 1,
+        "multi": false,
+        "includeAll": true,
+        "allValue": "",
+        "current": { "selected": false, "text": "All", "value": "" },
+        "sort": 1,
         "hide": 0
       }
     ]
   },
-  "time": {"from": "now-1h", "to": "now"},
+  "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "",
   "title": "Direct Tool Logs",
   "uid": "ploston-direct-tool-logs",
-  "version": 1
+  "version": 2
 }

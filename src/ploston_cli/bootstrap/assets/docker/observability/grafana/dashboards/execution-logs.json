@@ -1,7 +1,5 @@
 {
-  "annotations": {
-    "list": []
-  },
+  "annotations": { "list": [] },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -10,164 +8,94 @@
   "liveNow": false,
   "panels": [
     {
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "description": "Full log timeline for the selected execution, filterable by step and log level.",
-      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 0 },
       "id": 1,
-      "options": {
-        "dedupStrategy": "none",
-        "enableLogDetails": true,
-        "prettifyLogMessage": false,
-        "showCommonLabels": false,
-        "showLabels": true,
-        "showTime": true,
-        "sortOrder": "Ascending",
-        "wrapLogMessage": true
-      },
-      "targets": [
-        {
-          "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=\"ploston/ael\", ael_source=\"workflow\", ael_execution_id=~\"${execution_id:regex}\"} | json | ael_step_id=~\"${step_id:regex}\" | level=~\"$level\"",
-          "maxLines": 500,
-          "refId": "A"
-        }
-      ],
-      "title": "Log Timeline",
-      "type": "logs"
-    },
-    {
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "description": "Number of log events per step over time.",
+      "title": "Recent Workflow Executions",
+      "description": "Click an execution_id to drill into the step timeline and tool calls below.",
+      "type": "table",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "options": { "showHeader": true, "cellHeight": "sm" },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "unit": "short"
+          "custom": { "align": "auto", "displayMode": "auto" },
+          "links": []
         },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
-      "id": 2,
-      "options": {
-        "barRadius": 0.1,
-        "barWidth": 0.8,
-        "groupWidth": 0.7,
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "orientation": "auto",
-        "showValue": "auto",
-        "stacking": "normal",
-        "tooltip": { "mode": "multi", "sort": "desc" },
-        "xTickLabelRotation": 0
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "execution_id" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Inspect this execution",
+                    "url": "${__url.path}?var-execution_id=${__data.fields.execution_id}"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum by (ael_step_id) (count_over_time({job=\"ploston/ael\", ael_source=\"workflow\", ael_execution_id=~\"${execution_id:regex}\"}[$__interval]))",
-          "refId": "A"
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT started_at, execution_id, workflow_id, status, duration_ms, step_count, tool_call_count, coalesce(error_message, '') AS error FROM ploston.executions WHERE execution_type = 'workflow' AND $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 100"
         }
-      ],
-      "title": "Events by Step",
-      "type": "barchart"
+      ]
     },
     {
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "description": "Error-level logs for the selected execution. Always shown regardless of level filter.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
-      "id": 3,
-      "options": {
-        "dedupStrategy": "none",
-        "enableLogDetails": true,
-        "prettifyLogMessage": false,
-        "showCommonLabels": false,
-        "showLabels": true,
-        "showTime": true,
-        "sortOrder": "Ascending",
-        "wrapLogMessage": true
-      },
+      "id": 2,
+      "title": "Step Timeline (execution: $execution_id)",
+      "description": "Visible when an execution_id is selected. Sequential view of step lifecycle.",
+      "type": "table",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+      "options": { "showHeader": true, "cellHeight": "sm" },
       "targets": [
         {
-          "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{job=\"ploston/ael\", ael_source=\"workflow\", ael_execution_id=~\"${execution_id:regex}\"} | json | level=\"ERROR\"",
-          "maxLines": 500,
-          "refId": "A"
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT step_id, attempt, step_type, status, started_at, duration_ms, tool_name, coalesce(error_message, '') AS error FROM ploston.steps WHERE execution_id = '$execution_id' ORDER BY started_at, attempt"
         }
-      ],
-      "title": "Errors (always shown)",
-      "type": "logs"
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Tool Calls Within Steps (execution: $execution_id)",
+      "description": "Visible when an execution_id is selected. Shows params/response byte sizes and a 200-char preview.",
+      "type": "table",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT step_id, sequence, tool_name, started_at, duration_ms, params_bytes, response_bytes, substring(params, 1, 200) AS params_preview FROM ploston.tool_calls WHERE execution_id = '$execution_id' ORDER BY started_at, sequence"
+        }
+      ]
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["ploston", "logs", "loki"],
+  "tags": ["ploston", "executions", "clickhouse"],
   "templating": {
     "list": [
       {
-        "current": { "selected": true, "text": "All", "value": "$__all" },
-        "datasource": { "type": "loki", "uid": "loki" },
-        "definition": "",
-        "hide": 0,
-        "includeAll": true,
-        "label": "Execution ID",
-        "multi": false,
         "name": "execution_id",
-        "options": [],
-        "query": {
-          "label": "ael_execution_id",
-          "stream": "",
-          "type": 1,
-          "refId": "LokiVariableQueryEditor-VariableQuery"
-        },
+        "type": "query",
+        "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+        "label": "Execution ID",
+        "query": "SELECT DISTINCT execution_id FROM ploston.executions WHERE execution_type='workflow' AND $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 200",
         "refresh": 2,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 2,
-        "type": "query"
-      },
-      {
-        "current": { "selected": true, "text": "All", "value": "$__all" },
-        "datasource": { "type": "loki", "uid": "loki" },
-        "definition": "",
-        "hide": 0,
+        "multi": false,
         "includeAll": true,
-        "label": "Step",
-        "multi": true,
-        "name": "step_id",
-        "options": [],
-        "query": {
-          "label": "ael_step_id",
-          "stream": "",
-          "type": 1,
-          "refId": "LokiVariableQueryEditor-VariableQuery"
-        },
-        "refresh": 2,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
-      },
-      {
-        "current": { "selected": true, "text": "All", "value": "$__all" },
-        "includeAll": true,
-        "label": "Log Level",
-        "multi": true,
-        "name": "level",
-        "options": [
-          { "selected": true, "text": "All", "value": "$__all" },
-          { "selected": false, "text": "DEBUG", "value": "DEBUG" },
-          { "selected": false, "text": "INFO", "value": "INFO" },
-          { "selected": false, "text": "WARN", "value": "WARN" },
-          { "selected": false, "text": "ERROR", "value": "ERROR" }
-        ],
-        "type": "custom",
-        "query": "DEBUG,INFO,WARN,ERROR"
+        "allValue": "",
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "sort": 0,
+        "hide": 0
       }
     ]
   },
@@ -176,5 +104,5 @@
   "timezone": "",
   "title": "Workflow Execution Logs",
   "uid": "ploston-workflow-execution-logs",
-  "version": 1
+  "version": 2
 }

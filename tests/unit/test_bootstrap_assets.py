@@ -231,17 +231,19 @@ class TestGrafanaDashboards:
         assert dashboard["title"] == "Workflow Execution Logs"
         assert dashboard["uid"] == "ploston-workflow-execution-logs"
 
-    def test_workflow_execution_logs_queries_have_source_workflow(self):
-        """All LogQL queries in execution-logs must include ael_source='workflow'."""
+    def test_workflow_execution_logs_queries_target_executions_table(self):
+        """Post-S-298: every rawSql panel must hit ploston.executions/steps/tool_calls."""
         with open(self.DASHBOARDS_DIR / "execution-logs.json") as f:
             dashboard = json.load(f)
+        targets_with_sql = []
         for panel in dashboard.get("panels", []):
             for target in panel.get("targets", []):
-                expr = target.get("expr", "")
-                if "{" in expr:
-                    assert 'ael_source="workflow"' in expr, (
-                        f"Panel '{panel.get('title')}' query missing ael_source=\"workflow\": {expr}"
-                    )
+                if "rawSql" in target:
+                    targets_with_sql.append(target["rawSql"])
+        assert targets_with_sql, "execution-logs.json has no rawSql panels"
+        for sql in targets_with_sql:
+            assert "ploston." in sql
+            assert "loki" not in sql.lower()
 
     def test_direct_tool_logs_dashboard_exists(self):
         assert (self.DASHBOARDS_DIR / "direct-tool-logs.json").exists()
@@ -253,28 +255,26 @@ class TestGrafanaDashboards:
         assert dashboard["title"] == "Direct Tool Logs"
         assert dashboard["uid"] == "ploston-direct-tool-logs"
 
-    def test_direct_tool_logs_queries_have_source_tool(self):
-        """All LogQL queries in direct-tool-logs must include ael_source='tool'."""
+    def test_direct_tool_logs_queries_filter_source_direct(self):
+        """Post-S-298: SQL queries scope to source='direct' on tool_calls."""
         with open(self.DASHBOARDS_DIR / "direct-tool-logs.json") as f:
             dashboard = json.load(f)
         for panel in dashboard.get("panels", []):
             for target in panel.get("targets", []):
-                expr = target.get("expr", "")
-                if "{" in expr:
-                    assert 'ael_source="tool"' in expr, (
-                        f"Panel '{panel.get('title')}' query missing ael_source=\"tool\": {expr}"
-                    )
+                sql = target.get("rawSql", "")
+                if not sql:
+                    continue
+                assert "ploston.tool_calls" in sql
+                assert "source = 'direct'" in sql
 
     def test_direct_tool_logs_has_required_variables(self):
-        """Direct tool logs dashboard must have level, bridge, tool_name, runner, search variables."""
+        """Post-S-298: filter variables are tool_name + runner_id (LogQL-era
+        bridge/level/search were tied to Loki labels and no longer apply)."""
         with open(self.DASHBOARDS_DIR / "direct-tool-logs.json") as f:
             dashboard = json.load(f)
         var_names = [v["name"] for v in dashboard.get("templating", {}).get("list", [])]
-        assert "level" in var_names
-        assert "bridge" in var_names
         assert "tool_name" in var_names
-        assert "runner" in var_names
-        assert "search" in var_names
+        assert "runner_id" in var_names
 
     # NOTE: test_otel_config_promotes_source_label removed per S-297/T-951.
     # DEC-154's loki_hints processors (and the ael_ prefixed Loki label

@@ -623,6 +623,22 @@
       ],
       "title": "Top Chain Candidates",
       "type": "table"
+    },
+    {
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "description": "Recent multi-tool sessions (≥3 calls) detected from ploston.tool_calls. Numbers may differ from Prometheus chain-detection panels above — those use sliding windows with a different chain definition; this view is a literal session call sequence.",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 34 },
+      "id": 11,
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "refId": "A",
+          "rawSql": "SELECT session_id, arrayStringConcat(groupArray(tool_name), ' → ') AS chain, count() AS calls, min(started_at) AS chain_start FROM ploston.tool_calls WHERE $__timeFilter(started_at) GROUP BY session_id HAVING calls >= 3 ORDER BY chain_start DESC LIMIT 50"
+        }
+      ],
+      "title": "Recent Detected Chains (ClickHouse)",
+      "type": "table"
     }
   ],
   "refresh": "30s",
