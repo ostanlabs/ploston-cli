@@ -11,7 +11,7 @@ from click.testing import CliRunner
 
 from ploston_cli.bridge.proxy import BridgeProxy
 from ploston_cli.bridge.server import BridgeServer
-from ploston_cli.commands.bridge import bridge_command
+from ploston_cli.commands.bridge import _friendly_bridge_name, bridge_command
 
 pytestmark = [pytest.mark.bridge, pytest.mark.bridge_unit]
 
@@ -253,3 +253,40 @@ class TestTagsCliFlag:
         for sugar in ("workflows", "authoring", "all", "local", "native"):
             server = BridgeServer(proxy=mock_proxy, expose=sugar)
             assert server._is_server_expose is False, f"Failed for sugar={sugar}"
+
+
+# =============================================================================
+# _friendly_bridge_name tests
+# =============================================================================
+
+
+class TestFriendlyBridgeName:
+    """``_friendly_bridge_name`` keeps the X-MCP-Session-ID readable."""
+
+    def test_none_returns_none(self):
+        assert _friendly_bridge_name(None) is None
+
+    def test_empty_returns_none(self):
+        assert _friendly_bridge_name("") is None
+
+    def test_sugar_passthrough(self):
+        for sugar in ("workflows", "authoring", "all", "local", "native"):
+            assert _friendly_bridge_name(sugar) == sugar
+
+    def test_server_name_passthrough(self):
+        assert _friendly_bridge_name("filesystem") == "filesystem"
+        assert _friendly_bridge_name("obsidian-mcp") == "obsidian-mcp"
+
+    def test_strips_tag_and_namespace(self):
+        assert _friendly_bridge_name("tag:kind:workflow_mgmt") == "workflow_mgmt"
+        assert _friendly_bridge_name("tag:kind:workflow") == "workflow"
+
+    def test_strips_namespace_for_each_token(self):
+        # AND-ed tags within a single --tags flag are space-separated.
+        assert _friendly_bridge_name("tag:kind:workflow source:runner") == "workflow+runner"
+
+    def test_token_without_namespace_kept_verbatim(self):
+        assert _friendly_bridge_name("tag:plain") == "plain"
+
+    def test_empty_tag_expression_falls_back_to_input(self):
+        assert _friendly_bridge_name("tag:") == "tag:"

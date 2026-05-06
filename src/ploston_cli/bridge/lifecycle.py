@@ -13,8 +13,9 @@ import logging
 import signal
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from queue import Full, Queue
+from time import monotonic as _monotonic
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -27,6 +28,43 @@ DEFAULT_RETRY_ATTEMPTS = 3
 DEFAULT_RETRY_DELAY = 1.0
 DEFAULT_DRAIN_TIMEOUT = 5.0
 DEFAULT_MAX_QUEUE_SIZE = 10
+# Idle window after which the next request rotates session_start (S-304).
+DEFAULT_IDLE_RESET_SECONDS = 1800  # 30 minutes
+
+
+def _now_session_start() -> str:
+    """Render the current local time in the bridge session_start format.
+
+    Uses ``MMM-D-HH:MM`` (e.g. ``May-3-15:31``) so the value is short and
+    immediately human-readable in dashboards and HTTP headers, while still
+    being unique enough at minute resolution within a bridge process
+    lifetime to compose a stable session id with ``bridge_id``.
+
+    Local time is used so the timestamp matches the operator's wall clock
+    (the bridge runs on the same machine as the user reading the Session
+    Inspector).  ClickHouse-side timestamps remain UTC; only this display
+    string is local.
+
+    The day is unpadded and the month is the abbreviated English name.
+    Locale is forced via the explicit month-name table to avoid surprises
+    on systems where ``%b`` is locale-dependent.
+    """
+    now = datetime.now()  # naive local time
+    month = (
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+    )[now.month - 1]
+    return f"{month}-{now.day}-{now.strftime('%H:%M')}"
 
 
 class BridgeLifecycle:
@@ -40,6 +78,7 @@ class BridgeLifecycle:
         drain_timeout: float = DEFAULT_DRAIN_TIMEOUT,
         max_queue_size: int = DEFAULT_MAX_QUEUE_SIZE,
         bridge_name: str | None = None,
+        idle_reset_seconds: int = DEFAULT_IDLE_RESET_SECONDS,
     ):
         """Initialize BridgeLifecycle.
 
@@ -51,6 +90,10 @@ class BridgeLifecycle:
             max_queue_size: Max requests to queue during reconnection
             bridge_name: Human-readable bridge name (e.g. the --expose value).
                 Falls back to a UUID if not provided.
+            idle_reset_seconds: When the gap between requests exceeds this
+                window, the next ``mark_activity()`` rotates ``session_start``
+                so a stale conversation does not keep its old session id
+                forever (S-304).
         """
         self.proxy = proxy
         self.retry_attempts = retry_attempts
@@ -69,11 +112,40 @@ class BridgeLifecycle:
 
         # Bridge context propagation (DEC-142)
         self.bridge_id: str = bridge_name or str(uuid.uuid4())
-        self.session_start: str = datetime.now(timezone.utc).isoformat()
+        self.session_start: str = _now_session_start()
         self._queue_drops_since_connect: int = 0
+
+        # Idle-driven session rotation (S-304).
+        self.idle_reset_seconds: int = idle_reset_seconds
+        self._last_activity_at: float = _monotonic()
 
         # Wire bridge context into proxy headers
         self.proxy.set_lifecycle(self)
+
+    def mark_activity(self) -> bool:
+        """Record bridge activity and rotate ``session_start`` if idle expired.
+
+        Called by :class:`BridgeServer` on every incoming request before it is
+        forwarded to the CP.  When the gap since the previous activity exceeds
+        ``idle_reset_seconds``, the bridge picks a new ``session_start`` so the
+        derived ``X-MCP-Session-ID`` rolls.  ``BridgeProxy`` reads the value
+        live, so the next outbound request carries the new session id.
+
+        Returns:
+            True when a rotation happened, False otherwise.
+        """
+        now = _monotonic()
+        rotated = False
+        if (now - self._last_activity_at) > self.idle_reset_seconds:
+            old = self.session_start
+            self.session_start = _now_session_start()
+            logger.info(
+                f"[bridge] Idle window exceeded ({self.idle_reset_seconds}s); "
+                f"rotating session_start: {old} -> {self.session_start}"
+            )
+            rotated = True
+        self._last_activity_at = now
+        return rotated
 
     @property
     def is_running(self) -> bool:

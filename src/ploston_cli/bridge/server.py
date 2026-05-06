@@ -159,6 +159,16 @@ class BridgeServer:
             f"Handling request: method={method} id={request_id} notification={is_notification}"
         )
 
+        # S-304: mark activity so BridgeLifecycle can rotate session_start when
+        # the previous request was more than idle_reset_seconds ago.  Done
+        # before any forwarding so outbound headers carry the rotated id.
+        lifecycle = getattr(self.proxy, "_lifecycle", None)
+        if lifecycle is not None:
+            try:
+                lifecycle.mark_activity()
+            except Exception as e:
+                logger.debug(f"mark_activity failed (non-fatal): {e}")
+
         try:
             if method == "initialize":
                 logger.debug("Handling initialize request")

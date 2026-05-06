@@ -4,6 +4,7 @@ Tests UT-B061 to UT-B079: Startup, shutdown, reconnection, logging.
 """
 
 import asyncio
+import re
 import signal
 from unittest.mock import AsyncMock, MagicMock
 
@@ -322,3 +323,52 @@ class TestSSEReconnection:
         assert lifecycle.is_degraded is False
         assert lifecycle.is_running is True
         await _cleanup_lifecycle(lifecycle)
+
+
+class TestSessionStartFormat:
+    """S-304: session_start uses human-readable ``MMM-D-HH:MM`` shape."""
+
+    def test_session_start_matches_human_readable_format(self):
+        proxy = MagicMock(spec=BridgeProxy)
+        lifecycle = BridgeLifecycle(proxy=proxy)
+        # MMM-D-HH:MM where MMM is a 3-letter English month, D is 1-31 unpadded,
+        # HH is 00-23 zero-padded, MM is 00-59 zero-padded.
+        pattern = (
+            r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+            r"-(?:[1-9]|[12]\d|3[01])"
+            r"-(?:[01]\d|2[0-3]):[0-5]\d"
+        )
+        assert re.fullmatch(pattern, lifecycle.session_start), lifecycle.session_start
+
+
+class TestIdleReset:
+    """S-304: idle window rotates session_start on next mark_activity()."""
+
+    def test_mark_activity_within_window_keeps_session(self):
+        proxy = MagicMock(spec=BridgeProxy)
+        lifecycle = BridgeLifecycle(proxy=proxy, idle_reset_seconds=1800)
+        original = lifecycle.session_start
+        rotated = lifecycle.mark_activity()
+        assert rotated is False
+        assert lifecycle.session_start == original
+
+    def test_mark_activity_over_window_rotates_session(self, monkeypatch):
+        proxy = MagicMock(spec=BridgeProxy)
+        lifecycle = BridgeLifecycle(proxy=proxy, idle_reset_seconds=10)
+        original = lifecycle.session_start
+
+        # Force the next mark_activity to look like 30s have elapsed.
+        lifecycle._last_activity_at -= 30
+        # Pretend the wall clock advanced into the next minute so the new
+        # session_start string actually differs.
+        from ploston_cli.bridge import lifecycle as lifecycle_mod
+
+        new_value = "Jan-1-00:00"
+        if original == new_value:
+            new_value = "Jan-1-00:01"
+        monkeypatch.setattr(lifecycle_mod, "_now_session_start", lambda: new_value)
+
+        rotated = lifecycle.mark_activity()
+        assert rotated is True
+        assert lifecycle.session_start == new_value
+        assert lifecycle.session_start != original

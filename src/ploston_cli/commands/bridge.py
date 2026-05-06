@@ -57,6 +57,41 @@ def validate_url(ctx: click.Context, param: click.Parameter, value: str) -> str:
     return value
 
 
+def _friendly_bridge_name(expose: str | None) -> str | None:
+    """Derive a short, human-readable bridge name from the ``--expose`` value.
+
+    The CP receives ``bridge_id`` as part of the ``X-MCP-Session-ID`` header
+    (composed as ``"{bridge_id}@{session_start}"``) and surfaces it in the
+    Session Inspector dashboard.  When the user invokes the bridge via
+    ``--tags kind:workflow_mgmt`` we synthesize ``expose="tag:kind:workflow_mgmt"``
+    upstream — passing that raw glob through as ``bridge_id`` produces noisy
+    session ids like ``tag:kind:workflow_mgmt@May-3-12:05``.
+
+    Rule:
+      * ``None``                       → ``None`` (lifecycle falls back to UUID)
+      * ``tag:<expr>``                 → strip ``tag:`` and each token's
+        ``<namespace>:`` prefix, join with ``+``.  E.g.
+        ``tag:kind:workflow_mgmt``         → ``workflow_mgmt``
+        ``tag:kind:workflow source:runner``→ ``workflow+runner``
+      * any other value (sugar like ``workflows``, ``authoring``, or a bare
+        server name) is returned unchanged.
+    """
+    if not expose:
+        return None
+    if not expose.startswith("tag:"):
+        return expose
+    raw = expose[4:].strip()
+    if not raw:
+        return expose
+    tokens: list[str] = []
+    for tok in raw.split():
+        # Strip the leading namespace ("kind:", "server:", "source:") if present.
+        # Keep any later colons intact in case a value itself contains one.
+        _, sep, value = tok.partition(":")
+        tokens.append(value if sep else tok)
+    return "+".join(t for t in tokens if t) or expose
+
+
 def setup_logging(log_level: str, log_file: str | None) -> None:
     """Configure logging for bridge.
 
@@ -285,14 +320,17 @@ async def run_bridge(
     proxy = BridgeProxy(url=url, token=token, timeout=timeout, insecure=insecure)
 
     # Wire BridgeLifecycle to propagate bridge_id via X-Bridge-ID header (DEC-142)
-    # Use --expose value as human-readable bridge name (e.g. "obsidian-mcp", "workflows")
+    # Use a friendly form of --expose as the bridge name so session ids stay
+    # readable in the Session Inspector (e.g. "workflow_mgmt" rather than the
+    # raw "tag:kind:workflow_mgmt" glob synthesized from --tags).
     BridgeLifecycle(
         proxy=proxy,
         retry_attempts=retry_attempts,
         retry_delay=retry_delay,
-        bridge_name=expose,
+        bridge_name=_friendly_bridge_name(expose),
     )
-    # Propagate --expose value so CP can see which filter this bridge uses
+    # Propagate the original --expose value so CP can see which filter this
+    # bridge uses (kept verbatim — the friendly form is only for display).
     if expose:
         proxy.bridge_expose = expose
     # DEC-157: Propagate runner name for workflow tool resolution.

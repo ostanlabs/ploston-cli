@@ -73,10 +73,29 @@ class BridgeProxy:
         self._lifecycle: Any | None = None  # back-ref for queue drops
 
     def set_lifecycle(self, lifecycle: Any) -> None:
-        """Attach lifecycle for bridge context propagation."""
+        """Attach lifecycle for bridge context propagation.
+
+        ``session_start`` is read live from the lifecycle on every request so
+        idle-driven rotation (S-304) is reflected in outbound headers without
+        rebuilding the HTTP client.  ``self.bridge_session_start`` is kept as a
+        snapshot for backward compatibility with tests that set it directly.
+        """
         self._lifecycle = lifecycle
         self.bridge_id = lifecycle.bridge_id
         self.bridge_session_start = lifecycle.session_start
+
+    def _current_session_start(self) -> str | None:
+        """Resolve the active ``session_start`` for header injection.
+
+        Prefers the live value on the attached lifecycle so the value rotates
+        with idle resets; falls back to the snapshot for tests / contexts that
+        do not wire a lifecycle.
+        """
+        if self._lifecycle is not None:
+            live = getattr(self._lifecycle, "session_start", None)
+            if live:
+                return live
+        return self.bridge_session_start
 
     def _get_headers(self) -> dict[str, str]:
         """Get HTTP headers including auth and bridge context."""
@@ -90,11 +109,17 @@ class BridgeProxy:
             headers["X-Bridge-Expose"] = self.bridge_expose
         if self._lifecycle:
             headers["X-Bridge-Queue-Drops"] = str(self._lifecycle._queue_drops_since_connect)
-        if self.bridge_session_start:
-            headers["X-Bridge-Session-Start"] = self.bridge_session_start
+        session_start = self._current_session_start()
+        if session_start:
+            headers["X-Bridge-Session-Start"] = session_start
         # DEC-157/DEC-159: Runner name for workflow tool resolution
         if self.bridge_runner:
             headers["X-Ploston-Runner"] = self.bridge_runner
+        # S-304/M-082: stable per-conversation session id for telemetry.
+        # Composite of (bridge_id, session_start) so it rolls on bridge restart
+        # or when the bridge rotates session_start due to an idle window.
+        if self.bridge_id and session_start:
+            headers["X-MCP-Session-ID"] = f"{self.bridge_id}@{session_start}"
         return headers
 
     async def _ensure_client(self) -> httpx.AsyncClient:
@@ -169,7 +194,9 @@ class BridgeProxy:
         logger.debug(f"HTTP POST {url} - method={method} id={request_id}")
 
         try:
-            response = await client.post(url, json=request)
+            # Pass headers per-request so X-MCP-Session-ID/X-Bridge-Session-Start
+            # reflect the latest lifecycle state (S-304 idle rotation).
+            response = await client.post(url, json=request, headers=self._get_headers())
 
             logger.debug(
                 f"HTTP response: status={response.status_code} "
@@ -309,7 +336,7 @@ class BridgeProxy:
         url = f"{self.url}/health"
 
         try:
-            response = await client.get(url)
+            response = await client.get(url, headers=self._get_headers())
             if response.status_code >= 400:
                 error = map_http_error(response.status_code, response.text)
                 raise BridgeProxyError(
@@ -341,7 +368,7 @@ class BridgeProxy:
         url = f"{self.url}/api/v1/runners/{runner_name}/mcps/{mcp_name}/status"
 
         try:
-            response = await client.get(url)
+            response = await client.get(url, headers=self._get_headers())
             if response.status_code >= 400:
                 error = map_http_error(response.status_code, response.text)
                 raise BridgeProxyError(

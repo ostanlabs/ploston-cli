@@ -426,3 +426,56 @@ class TestBridgeProxyClose:
         # Subsequent calls should fail gracefully
         with pytest.raises(BridgeProxyError):
             await proxy.initialize()
+
+
+class TestBridgeProxySessionHeader:
+    """S-304/M-082: bridge forwards X-MCP-Session-ID built from (bridge_id, session_start)."""
+
+    def test_session_header_present_when_both_pieces_known(self):
+        proxy = BridgeProxy(url="http://test")
+        proxy.bridge_id = "bridge-A"
+        proxy.bridge_session_start = "2026-05-02T01:00:00"
+        headers = proxy._get_headers()
+        assert headers.get("X-MCP-Session-ID") == "bridge-A@2026-05-02T01:00:00"
+
+    def test_session_header_absent_without_session_start(self):
+        proxy = BridgeProxy(url="http://test")
+        proxy.bridge_id = "bridge-A"
+        proxy.bridge_session_start = None
+        headers = proxy._get_headers()
+        assert "X-MCP-Session-ID" not in headers
+
+    def test_session_header_absent_without_bridge_id(self):
+        proxy = BridgeProxy(url="http://test")
+        proxy.bridge_id = None
+        proxy.bridge_session_start = "2026-05-02T01:00:00"
+        headers = proxy._get_headers()
+        assert "X-MCP-Session-ID" not in headers
+
+
+class TestBridgeProxyLiveSessionRead:
+    """S-304: proxy reads session_start live from lifecycle so idle resets show up."""
+
+    def test_get_headers_reflects_lifecycle_rotation(self):
+        proxy = BridgeProxy(url="http://test")
+
+        # Minimal lifecycle stand-in with the attributes BridgeProxy reads.
+        class _Lifecycle:
+            bridge_id = "bridge-A"
+            session_start = "0101-0001"
+            _queue_drops_since_connect = 0
+
+        lifecycle = _Lifecycle()
+        proxy.set_lifecycle(lifecycle)
+
+        # Initial header reflects the bound value.
+        headers_before = proxy._get_headers()
+        assert headers_before["X-MCP-Session-ID"] == "bridge-A@0101-0001"
+        assert headers_before["X-Bridge-Session-Start"] == "0101-0001"
+
+        # Rotate session_start in place.  Without live read, the cached snapshot
+        # would still be "0101-0001"; with live read the new value wins.
+        lifecycle.session_start = "0101-0002"
+        headers_after = proxy._get_headers()
+        assert headers_after["X-MCP-Session-ID"] == "bridge-A@0101-0002"
+        assert headers_after["X-Bridge-Session-Start"] == "0101-0002"
