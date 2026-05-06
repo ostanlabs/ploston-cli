@@ -634,6 +634,7 @@
         {
           "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
           "refId": "A",
+          "format": 1,
           "rawSql": "SELECT session_id, arrayStringConcat(groupArray(tool_name), ' → ') AS chain, count() AS calls, min(started_at) AS chain_start FROM ploston.tool_calls WHERE $__timeFilter(started_at) GROUP BY session_id HAVING calls >= 3 ORDER BY chain_start DESC LIMIT 50"
         }
       ],
