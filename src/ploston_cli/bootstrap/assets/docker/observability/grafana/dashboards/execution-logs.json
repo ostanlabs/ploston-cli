@@ -34,6 +34,20 @@
                 ]
               }
             ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "session_id" },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open session in Session Inspector",
+                    "url": "/d/ploston-session-inspector?var-session_id=${__data.fields.session_id}"
+                  }
+                ]
+              }
+            ]
           }
         ]
       },
@@ -41,39 +55,73 @@
         {
           "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
           "refId": "A",
-          "rawSql": "SELECT started_at, execution_id, workflow_id, status, duration_ms, step_count, tool_call_count, coalesce(error_message, '') AS error FROM ploston.executions WHERE execution_type = 'workflow' AND $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 100"
+          "format": 1,
+          "rawSql": "SELECT started_at, execution_id, workflow_id, session_id, status, duration_ms, step_count, tool_call_count, coalesce(error_message, '') AS error FROM ploston.executions WHERE execution_type = 'workflow' AND $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 100"
         }
       ]
     },
     {
-      "id": 2,
-      "title": "Step Timeline (execution: $execution_id)",
-      "description": "Visible when an execution_id is selected. Sequential view of step lifecycle.",
-      "type": "table",
-      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
-      "options": { "showHeader": true, "cellHeight": "sm" },
-      "targets": [
+      "id": 99,
+      "type": "row",
+      "title": "Execution Detail — execution: $execution_id",
+      "collapsed": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 10 },
+      "panels": [
         {
+          "id": 2,
+          "title": "Step Timeline (execution: $execution_id)",
+          "description": "Sequential view of step lifecycle. step_type=tool means a single tool call; step_type=code means a Python/JS block that may dispatch any number of tools (see panel below).",
+          "type": "table",
           "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-          "refId": "A",
-          "rawSql": "SELECT step_id, attempt, step_type, status, started_at, duration_ms, tool_name, coalesce(error_message, '') AS error FROM ploston.steps WHERE execution_id = '$execution_id' ORDER BY started_at, attempt"
-        }
-      ]
-    },
-    {
-      "id": 3,
-      "title": "Tool Calls Within Steps (execution: $execution_id)",
-      "description": "Visible when an execution_id is selected. Shows params/response byte sizes and a 200-char preview.",
-      "type": "table",
-      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
-      "options": { "showHeader": true, "cellHeight": "sm" },
-      "targets": [
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 11 },
+          "options": { "showHeader": true, "cellHeight": "sm" },
+          "targets": [
+            {
+              "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+              "refId": "A",
+              "format": 1,
+              "rawSql": "SELECT step_id, attempt, step_type, status, started_at, duration_ms, tool_name, coalesce(error_message, '') AS error FROM ploston.steps WHERE execution_id = '$execution_id' ORDER BY started_at, attempt"
+            }
+          ]
+        },
         {
+          "id": 3,
+          "title": "Tool Calls Within Steps (execution: $execution_id)",
+          "description": "Every tool call recorded under this execution. The 'source' column shows whether a call came from a tool step ('tool_step') or was dispatched from inside a code block ('code_block'). Click call_id to drill into the Agent Tool Call Inspector.",
+          "type": "table",
           "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-          "refId": "A",
-          "rawSql": "SELECT step_id, sequence, tool_name, started_at, duration_ms, params_bytes, response_bytes, substring(params, 1, 200) AS params_preview FROM ploston.tool_calls WHERE execution_id = '$execution_id' ORDER BY started_at, sequence"
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 21 },
+          "options": { "showHeader": true, "cellHeight": "sm" },
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "align": "auto", "displayMode": "auto" },
+              "links": []
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "call_id" },
+                "properties": [
+                  {
+                    "id": "links",
+                    "value": [
+                      {
+                        "title": "Inspect this call",
+                        "url": "/d/ploston-call-inspector?var-session_id=${__data.fields.session_id}&var-call_id=${__data.fields.call_id}"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+              "refId": "A",
+              "format": 1,
+              "rawSql": "SELECT step_id, sequence, source, tool_name, call_id, session_id, started_at, duration_ms, params_bytes, response_bytes, substring(params, 1, 200) AS params_preview FROM ploston.tool_calls WHERE execution_id = '$execution_id' ORDER BY started_at, sequence"
+            }
+          ]
         }
       ]
     }
@@ -104,5 +152,5 @@
   "timezone": "",
   "title": "Workflow Execution Logs",
   "uid": "ploston-workflow-execution-logs",
-  "version": 2
+  "version": 4
 }

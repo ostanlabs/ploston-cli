@@ -25,8 +25,8 @@ DASHBOARDS = [
     "chain-detection.json",
     "token-savings.json",
     "execution-logs.json",
-    "direct-tool-logs.json",
     "session-inspector.json",
+    "call-inspector.json",
 ]
 
 
@@ -115,9 +115,9 @@ def test_execution_logs_filename_canonical() -> None:
     assert not os.path.exists(os.path.join(_DOCKER_DIR, "workflow-execution-logs.json"))
 
 
-@pytest.mark.parametrize("filename", ["execution-logs.json", "direct-tool-logs.json"])
+@pytest.mark.parametrize("filename", ["execution-logs.json"])
 def test_migrated_log_dashboards_have_clickhouse_panels(filename: str) -> None:
-    """The two migrated dashboards must have at least one rawSql panel."""
+    """Dashboards migrated from Loki to ClickHouse must have at least one rawSql panel."""
     dashboard = _load(os.path.join(_DOCKER_DIR, filename))
     found = False
     for panel in _iter_panels(dashboard):
@@ -126,3 +126,39 @@ def test_migrated_log_dashboards_have_clickhouse_panels(filename: str) -> None:
                 found = True
                 break
     assert found, f"{filename} has no rawSql panel after migration"
+
+
+@pytest.mark.parametrize("filename", DASHBOARDS)
+def test_clickhouse_rawsql_targets_set_format(filename: str) -> None:
+    """Every ClickHouse rawSql target must set ``format`` to match its panel.
+
+    Without an explicit format, ``grafana-clickhouse-datasource`` auto-pivots
+    the result into a ``timeseries-wide`` frame: string columns get crammed
+    into the field labels and panels render as a single mangled row.
+    Reproducible via ``POST /api/ds/query`` against a live Grafana with vs
+    without the field. The plugin enum is
+    ``0=Auto, 1=Table, 2=Logs, 3=Time series, 4=Trace``.
+
+    Mapping per panel type:
+      - ``logs`` panel  -> ``format=2``
+      - everything else (``table``, ``stat``, ``piechart``, ``timeseries``)
+        is rendered from a table frame -> ``format=1``.
+    """
+    dashboard = _load(os.path.join(_DOCKER_DIR, filename))
+    bad: list[str] = []
+    for panel in _iter_panels(dashboard):
+        panel_ds_uid = _datasource_uid(panel.get("datasource"))
+        expected_format = 2 if panel.get("type") == "logs" else 1
+        for target in panel.get("targets", []) or []:
+            if "rawSql" not in target:
+                continue
+            target_ds_uid = _datasource_uid(target.get("datasource"))
+            if (target_ds_uid or panel_ds_uid) != "clickhouse":
+                continue
+            if target.get("format") != expected_format:
+                bad.append(
+                    f"panel '{panel.get('title')}' (type={panel.get('type')}) "
+                    f"refId={target.get('refId')!r} "
+                    f"format={target.get('format')!r}, expected {expected_format}"
+                )
+    assert not bad, f"{filename} ClickHouse targets have wrong format: {bad}"
