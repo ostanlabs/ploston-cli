@@ -1,5 +1,7 @@
 {
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -8,21 +10,51 @@
   "liveNow": false,
   "panels": [
     {
-      "id": 1,
+      "id": 10,
+      "type": "row",
       "title": "Recent Workflow Executions",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "title": "",
       "description": "Click an execution_id to drill into the step timeline and tool calls below.",
       "type": "table",
-      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
-      "options": { "showHeader": true, "cellHeight": "sm" },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
       "fieldConfig": {
         "defaults": {
-          "custom": { "align": "auto", "displayMode": "auto" },
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          },
           "links": []
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "execution_id" },
+            "matcher": {
+              "id": "byName",
+              "options": "execution_id"
+            },
             "properties": [
               {
                 "id": "links",
@@ -36,7 +68,10 @@
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "session_id" },
+            "matcher": {
+              "id": "byName",
+              "options": "session_id"
+            },
             "properties": [
               {
                 "id": "links",
@@ -53,101 +88,443 @@
       },
       "targets": [
         {
-          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
           "refId": "A",
           "format": 1,
-          "rawSql": "SELECT started_at, execution_id, workflow_id, session_id, status, duration_ms, step_count, tool_call_count, coalesce(error_message, '') AS error FROM ploston.executions WHERE execution_type = 'workflow' AND $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 100"
+          "rawSql": "SELECT started_at, execution_id, coalesce(if(workflow_id = '', NULL, workflow_id), tool_name) AS workflow_id, session_id, status, duration_ms, step_count, tool_call_count, coalesce(error_message, '') AS error FROM ploston.executions WHERE workflow_id != '' AND $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 100"
         }
       ]
     },
     {
-      "id": 99,
+      "id": 11,
       "type": "row",
-      "title": "Execution Detail — execution: $execution_id",
-      "collapsed": true,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 10 },
-      "panels": [
+      "title": "Step Timeline",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "title": "",
+      "description": "Sequential view of step lifecycle. step_type=tool means a single tool call; step_type=code means a Python/JS block that may dispatch any number of tools (see panel below).",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
         {
-          "id": 2,
-          "title": "Step Timeline (execution: $execution_id)",
-          "description": "Sequential view of step lifecycle. step_type=tool means a single tool call; step_type=code means a Python/JS block that may dispatch any number of tools (see panel below).",
-          "type": "table",
-          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 11 },
-          "options": { "showHeader": true, "cellHeight": "sm" },
-          "targets": [
-            {
-              "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-              "refId": "A",
-              "format": 1,
-              "rawSql": "SELECT step_id, attempt, step_type, status, started_at, duration_ms, tool_name, coalesce(error_message, '') AS error FROM ploston.steps WHERE execution_id = '$execution_id' ORDER BY started_at, attempt"
-            }
-          ]
-        },
-        {
-          "id": 3,
-          "title": "Tool Calls Within Steps (execution: $execution_id)",
-          "description": "Every tool call recorded under this execution. The 'source' column shows whether a call came from a tool step ('tool_step') or was dispatched from inside a code block ('code_block'). Click call_id to drill into the Agent Tool Call Inspector.",
-          "type": "table",
-          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 21 },
-          "options": { "showHeader": true, "cellHeight": "sm" },
-          "fieldConfig": {
-            "defaults": {
-              "custom": { "align": "auto", "displayMode": "auto" },
-              "links": []
-            },
-            "overrides": [
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT step_id, attempt, step_type, status, started_at, duration_ms, tool_name, coalesce(error_message, '') AS error FROM ploston.steps WHERE execution_id = '$execution_id' ORDER BY started_at, attempt"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Tooling tokens",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 16,
+        "y": 18
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
               {
-                "matcher": { "id": "byName", "options": "call_id" },
-                "properties": [
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "value",
+        "textMode": "value",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT toUInt64(sum(response_bytes) / 4) AS value FROM ploston.tool_calls WHERE execution_id = '$execution_id' AND source != 'direct'"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Workflow output tokens",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 16,
+        "y": 21
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "value",
+        "textMode": "value",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT toUInt64(response_bytes / 4) AS value FROM ploston.tool_calls WHERE execution_id = '$execution_id' AND source = 'direct' LIMIT 1"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Savings %",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
+      },
+      "gridPos": {
+        "h": 3,
+        "w": 8,
+        "x": 16,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "graphMode": "none",
+        "colorMode": "value",
+        "textMode": "value",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "SELECT if(tools.sum_bytes > 0, round((1 - direct.response_bytes / tools.sum_bytes) * 100, 1), 0) AS value FROM (SELECT response_bytes FROM ploston.tool_calls WHERE execution_id = '$execution_id' AND source = 'direct' LIMIT 1) direct CROSS JOIN (SELECT sum(response_bytes) AS sum_bytes FROM ploston.tool_calls WHERE execution_id = '$execution_id' AND source != 'direct') tools"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Tool Calls Within Steps",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "panels": []
+    },
+    {
+      "id": 3,
+      "title": "",
+      "description": "Every tool call recorded under this execution. The 'source' column shows whether a call came from a tool step ('tool_step') or was dispatched from inside a code block ('code_block'). Click call_id to drill into the Agent Tool Call Inspector.",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 18
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          },
+          "links": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "call_id"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
                   {
-                    "id": "links",
-                    "value": [
-                      {
-                        "title": "Inspect this call",
-                        "url": "/d/ploston-call-inspector?var-session_id=${__data.fields.session_id}&var-call_id=${__data.fields.call_id}"
-                      }
-                    ]
+                    "title": "Inspect this call",
+                    "url": "/d/ploston-call-inspector?var-session_id=${__data.fields.session_id}&var-call_id=${__data.fields.call_id}"
                   }
                 ]
+              },
+              {
+                "id": "custom.width",
+                "value": 130
               }
             ]
           },
-          "targets": [
-            {
-              "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-              "refId": "A",
-              "format": 1,
-              "rawSql": "SELECT step_id, sequence, source, tool_name, call_id, session_id, started_at, duration_ms, params_bytes, response_bytes, substring(params, 1, 200) AS params_preview FROM ploston.tool_calls WHERE execution_id = '$execution_id' ORDER BY started_at, sequence"
-            }
-          ]
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "session_id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "step_id"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 75
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sequence"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 65
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "source"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 75
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "runner"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "mcp_server"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_ms"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 75
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "response_tokens"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 105
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 1,
+          "rawSql": "WITH parts AS (SELECT *, splitByString('__', tool_name) AS _p FROM ploston.tool_calls WHERE execution_id = '$execution_id') SELECT step_id, sequence, source, if(length(_p) = 3, _p[1], '') AS runner, if(length(_p) >= 2, _p[length(_p) - 1], '') AS mcp_server, _p[length(_p)] AS tool_name, call_id, session_id, duration_ms, toUInt64(response_bytes / 4) AS response_tokens, substring(params, 1, 200) AS params_preview FROM parts ORDER BY started_at, sequence"
         }
       ]
     }
   ],
   "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["ploston", "executions", "clickhouse"],
+  "tags": [
+    "ploston",
+    "executions",
+    "clickhouse"
+  ],
   "templating": {
     "list": [
       {
         "name": "execution_id",
         "type": "query",
-        "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "clickhouse"
+        },
         "label": "Execution ID",
-        "query": "SELECT DISTINCT execution_id FROM ploston.executions WHERE execution_type='workflow' AND $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 200",
+        "query": "SELECT DISTINCT execution_id FROM ploston.executions WHERE workflow_id != '' AND $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 200",
         "refresh": 2,
         "multi": false,
         "includeAll": true,
         "allValue": "",
-        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
         "sort": 0,
         "hide": 0
       }
     ]
   },
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "",
   "title": "Workflow Execution Logs",
