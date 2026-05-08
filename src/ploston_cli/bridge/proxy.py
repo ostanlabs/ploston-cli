@@ -15,7 +15,12 @@ from urllib.parse import urlparse
 import httpx
 from httpx_sse import aconnect_sse
 
-from .errors import BridgeError, map_connection_error, map_http_error
+from .errors import (
+    JSONRPC_SERVER_ERROR,
+    BridgeError,
+    map_connection_error,
+    map_http_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +198,18 @@ class BridgeProxy:
         request_id = request.get("id", "notification")
         logger.debug(f"HTTP POST {url} - method={method} id={request_id}")
 
+        if method == "tools/call":
+            try:
+                _params = request.get("params") or {}
+                _name = _params.get("name")
+                _args = _params.get("arguments")
+                logger.info(
+                    f"[trace] bridge->cp method=tools/call id={request_id} "
+                    f"name={_name} arguments={json.dumps(_args, default=str)}"
+                )
+            except Exception:
+                pass
+
         try:
             # Pass headers per-request so X-MCP-Session-ID/X-Bridge-Session-Start
             # reflect the latest lifecycle state (S-304 idle rotation).
@@ -223,7 +240,26 @@ class BridgeProxy:
                     data=error.data,
                 )
 
-            result = response.json()
+            try:
+                result = response.json()
+            except (json.JSONDecodeError, ValueError) as e:
+                # CP returned a non-JSON response (e.g. HTML error page,
+                # empty body after a crash). Surface a structured error
+                # instead of letting a raw exception propagate.
+                body_preview = response.text[:200] if response.text else "(empty)"
+                logger.warning(
+                    f"[bridge] CP returned non-JSON response: "
+                    f"status={response.status_code} body={body_preview}"
+                )
+                raise BridgeProxyError(
+                    code=JSONRPC_SERVER_ERROR,
+                    message=(
+                        f"Control Plane returned a non-JSON response "
+                        f"(HTTP {response.status_code}). This may indicate "
+                        f"a CP crash or misconfiguration."
+                    ),
+                    retryable=True,
+                ) from e
 
             # Log response summary
             if "error" in result:

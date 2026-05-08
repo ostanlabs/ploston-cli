@@ -479,3 +479,51 @@ class TestBridgeProxyLiveSessionRead:
         headers_after = proxy._get_headers()
         assert headers_after["X-MCP-Session-ID"] == "bridge-A@0101-0002"
         assert headers_after["X-Bridge-Session-Start"] == "0101-0002"
+
+
+# =============================================================================
+# UT-B020: Non-JSON response handling
+# =============================================================================
+
+
+class TestBridgeProxyNonJsonResponse:
+    """Tests for handling non-JSON responses from the CP."""
+
+    @pytest.mark.asyncio
+    async def test_ut_b020_non_json_response_raises_proxy_error(self):
+        """UT-B020: Non-JSON response from CP raises BridgeProxyError."""
+        skip_if_not_implemented()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.side_effect = ValueError("No JSON object")
+        mock_response.text = "<html>Internal Server Error</html>"
+
+        proxy = BridgeProxy(url="http://test")
+        proxy._client = AsyncMock()
+        proxy._client.post = AsyncMock(return_value=mock_response)
+
+        with pytest.raises(BridgeProxyError) as exc_info:
+            await proxy.send_request(
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "test"}}
+            )
+        assert "non-JSON response" in exc_info.value.message
+        assert exc_info.value.retryable is True
+
+    @pytest.mark.asyncio
+    async def test_ut_b020b_empty_body_raises_proxy_error(self):
+        """UT-B020b: Empty body from CP raises BridgeProxyError."""
+        skip_if_not_implemented()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.side_effect = ValueError("No JSON")
+        mock_response.text = ""
+
+        proxy = BridgeProxy(url="http://test")
+        proxy._client = AsyncMock()
+        proxy._client.post = AsyncMock(return_value=mock_response)
+
+        with pytest.raises(BridgeProxyError) as exc_info:
+            await proxy.send_request({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        assert "non-JSON response" in exc_info.value.message
