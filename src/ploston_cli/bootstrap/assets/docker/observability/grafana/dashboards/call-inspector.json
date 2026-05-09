@@ -1,5 +1,7 @@
 {
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -10,12 +12,26 @@
     {
       "id": 5,
       "title": "Stats",
-      "description": "Duration and payload sizes for the selected call. Color thresholds: green ≤ 500ms, yellow ≤ 2000ms, red > 2000ms (durations); green ≤ 16KB, yellow ≤ 256KB, red > 256KB (payloads).",
+      "description": "Duration and payload sizes for the selected call. Color thresholds: green \u2264 500ms, yellow \u2264 2000ms, red > 2000ms (durations); green \u2264 16KB, yellow \u2264 256KB, red > 256KB (payloads).",
       "type": "stat",
-      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto",
         "graphMode": "none",
         "justifyMode": "auto",
@@ -26,9 +42,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 500 },
-              { "color": "red", "value": 2000 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 2000
+              }
             ]
           },
           "unit": "ms",
@@ -36,32 +61,77 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "params bytes" },
+            "matcher": {
+              "id": "byName",
+              "options": "params bytes"
+            },
             "properties": [
-              { "id": "unit", "value": "bytes" },
-              { "id": "thresholds", "value": { "mode": "absolute", "steps": [
-                { "color": "green", "value": null },
-                { "color": "yellow", "value": 16384 },
-                { "color": "red", "value": 262144 }
-              ] } }
+              {
+                "id": "unit",
+                "value": "bytes"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 16384
+                    },
+                    {
+                      "color": "red",
+                      "value": 262144
+                    }
+                  ]
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "result bytes" },
+            "matcher": {
+              "id": "byName",
+              "options": "result bytes"
+            },
             "properties": [
-              { "id": "unit", "value": "bytes" },
-              { "id": "thresholds", "value": { "mode": "absolute", "steps": [
-                { "color": "green", "value": null },
-                { "color": "yellow", "value": 16384 },
-                { "color": "red", "value": 262144 }
-              ] } }
+              {
+                "id": "unit",
+                "value": "bytes"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 16384
+                    },
+                    {
+                      "color": "red",
+                      "value": 262144
+                    }
+                  ]
+                }
+              }
             ]
           }
         ]
       },
       "targets": [
         {
-          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
           "refId": "A",
           "format": 1,
           "rawSql": "SELECT duration_ms AS duration, length(params) AS \"params bytes\", length(result) AS \"result bytes\" FROM ploston.tool_calls WHERE call_id = '$call_id' LIMIT 1"
@@ -77,40 +147,83 @@
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse"
       },
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 4 },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
       "options": {
         "showHeader": true,
         "cellHeight": "sm"
       },
       "fieldConfig": {
         "defaults": {
-          "custom": { "align": "auto", "displayMode": "auto" },
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          },
           "links": []
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "duration_ms" },
+            "matcher": {
+              "id": "byName",
+              "options": "duration_ms"
+            },
             "properties": [
-              { "id": "displayName", "value": "duration" },
-              { "id": "unit", "value": "ms" }
+              {
+                "id": "displayName",
+                "value": "duration"
+              },
+              {
+                "id": "unit",
+                "value": "ms"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "response_tokens" },
-            "properties": [{ "id": "displayName", "value": "tokens" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "params_bytes" },
+            "matcher": {
+              "id": "byName",
+              "options": "response_tokens"
+            },
             "properties": [
-              { "id": "displayName", "value": "params bytes" },
-              { "id": "unit", "value": "bytes" }
+              {
+                "id": "displayName",
+                "value": "tokens"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "result_bytes" },
+            "matcher": {
+              "id": "byName",
+              "options": "params_bytes"
+            },
             "properties": [
-              { "id": "displayName", "value": "result bytes" },
-              { "id": "unit", "value": "bytes" }
+              {
+                "id": "displayName",
+                "value": "params bytes"
+              },
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "result_bytes"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "result bytes"
+              },
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
             ]
           }
         ]
@@ -123,35 +236,64 @@
           },
           "refId": "A",
           "format": 1,
-          "rawSql": "WITH parent AS (SELECT min(started_at) AS first_started FROM ploston.tool_calls WHERE execution_id = (SELECT execution_id FROM ploston.tool_calls WHERE call_id = '$call_id' LIMIT 1)) SELECT started_at, tool_name, multiIf((SELECT first_started FROM parent) < started_at, 'wrapped', tool_name IN ('workflow_call_tool','workflow_run'), 'wrapper', 'direct') AS kind, duration_ms, toUInt64(response_bytes / 4) AS response_tokens, length(params) AS params_bytes, length(result) AS result_bytes, coalesce(if(error_code = '', NULL, error_code), 'ok') AS status, runner_id, source, session_id, execution_id FROM ploston.tool_calls WHERE call_id = '$call_id' LIMIT 1"
+          "rawSql": "WITH parent AS (SELECT min(started_at) AS first_started FROM ploston.tool_calls WHERE execution_id = (SELECT execution_id FROM ploston.tool_calls WHERE call_id = '$call_id' LIMIT 1)) SELECT started_at, tool_name, multiIf((SELECT first_started FROM parent) < started_at, 'wrapped', source = 'wrapper', 'wrapper', 'direct') AS kind, duration_ms, toUInt64(response_bytes / 4) AS response_tokens, length(params) AS params_bytes, length(result) AS result_bytes, coalesce(if(error_code = '', NULL, error_code), 'ok') AS status, runner_id, source, session_id, execution_id FROM ploston.tool_calls WHERE call_id = '$call_id' LIMIT 1"
         }
       ]
     },
     {
       "id": 6,
       "title": "Sibling Calls",
-      "description": "Other calls that share this call's execution_id. For wrapper calls (workflow_call_tool, workflow_run) this is the inner forwarded call(s). For wrapped calls this is the parent wrapper. The current call is highlighted with `▸` and a column header note. Click any other row to inspect that call instead.",
+      "description": "Other calls that share this call's execution_id. For wrapper calls (workflow_call_tool, workflow_run) this is the inner forwarded call(s). For wrapped calls this is the parent wrapper. The current call is highlighted with `\u25b8` and a column header note. Click any other row to inspect that call instead.",
       "type": "table",
-      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 10 },
-      "options": { "showHeader": true, "cellHeight": "sm" },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 10
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
       "fieldConfig": {
         "defaults": {
-          "custom": { "align": "auto", "displayMode": "auto" },
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          },
           "links": []
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "duration_ms" },
+            "matcher": {
+              "id": "byName",
+              "options": "duration_ms"
+            },
             "properties": [
-              { "id": "displayName", "value": "duration" },
-              { "id": "unit", "value": "ms" }
+              {
+                "id": "displayName",
+                "value": "duration"
+              },
+              {
+                "id": "unit",
+                "value": "ms"
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "call_id" },
+            "matcher": {
+              "id": "byName",
+              "options": "call_id"
+            },
             "properties": [
-              { "id": "custom.width", "value": 280 },
+              {
+                "id": "custom.width",
+                "value": 280
+              },
               {
                 "id": "links",
                 "value": [
@@ -164,30 +306,46 @@
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "session_id" },
-            "properties": [{ "id": "custom.hidden", "value": true }]
+            "matcher": {
+              "id": "byName",
+              "options": "session_id"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
           }
         ]
       },
       "targets": [
         {
-          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
           "refId": "A",
           "format": 1,
-          "rawSql": "WITH this_exec AS (SELECT execution_id FROM ploston.tool_calls WHERE call_id = '$call_id' LIMIT 1) SELECT if(call_id = '$call_id', '▸', '') AS cur, started_at, tool_name, duration_ms, coalesce(if(error_code = '', NULL, error_code), 'ok') AS status, call_id, session_id FROM ploston.tool_calls WHERE execution_id = (SELECT execution_id FROM this_exec) AND execution_id != '' ORDER BY started_at ASC"
+          "rawSql": "WITH this_exec AS (SELECT execution_id FROM ploston.tool_calls WHERE call_id = '$call_id' LIMIT 1) SELECT if(call_id = '$call_id', '\u25b8', '') AS cur, started_at, tool_name, duration_ms, coalesce(if(error_code = '', NULL, error_code), 'ok') AS status, call_id, session_id FROM ploston.tool_calls WHERE execution_id = (SELECT execution_id FROM this_exec) AND execution_id != '' ORDER BY started_at ASC"
         }
       ]
     },
     {
       "id": 2,
       "title": "Params",
-      "description": "Full untruncated params rendered in a logs panel so newlines display as visible line breaks (Grafana 11 table panels collapse \\n; line-break support landed in 12.2 behind the tableNextGen flag — out of reach here). The SQL pretty-prints JSON server-side: every {/[ opens a new line and every key:value pair is on its own line. Indentation is flat (depth-aware indent isn't possible in re2 — no lookahead), so nested levels share the same 2-space indent; readability is still vastly better than a single-line blob. Non-JSON strings keep their original newlines.",
+      "description": "Full untruncated params rendered in a logs panel so newlines display as visible line breaks (Grafana 11 table panels collapse \\n; line-break support landed in 12.2 behind the tableNextGen flag \u2014 out of reach here). The SQL pretty-prints JSON server-side: every {/[ opens a new line and every key:value pair is on its own line. Indentation is flat (depth-aware indent isn't possible in re2 \u2014 no lookahead), so nested levels share the same 2-space indent; readability is still vastly better than a single-line blob. Non-JSON strings keep their original newlines.",
       "type": "logs",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse"
       },
-      "gridPos": { "h": 16, "w": 12, "x": 0, "y": 16 },
+      "gridPos": {
+        "h": 16,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
       "options": {
         "showTime": false,
         "showLabels": false,
@@ -213,13 +371,18 @@
     {
       "id": 3,
       "title": "Result",
-      "description": "Full untruncated result rendered in a logs panel so newlines display as visible line breaks (Grafana 11 table panels collapse \\n; line-break support landed in 12.2 behind the tableNextGen flag — out of reach here). The SQL pretty-prints JSON server-side: every {/[ opens a new line and every key:value pair is on its own line. Indentation is flat (depth-aware indent isn't possible in re2 — no lookahead), so nested levels share the same 2-space indent; readability is still vastly better than a single-line blob. Non-JSON strings keep their original newlines.",
+      "description": "Full untruncated result rendered in a logs panel so newlines display as visible line breaks (Grafana 11 table panels collapse \\n; line-break support landed in 12.2 behind the tableNextGen flag \u2014 out of reach here). The SQL pretty-prints JSON server-side: every {/[ opens a new line and every key:value pair is on its own line. Indentation is flat (depth-aware indent isn't possible in re2 \u2014 no lookahead), so nested levels share the same 2-space indent; readability is still vastly better than a single-line blob. Non-JSON strings keep their original newlines.",
       "type": "logs",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse"
       },
-      "gridPos": { "h": 16, "w": 12, "x": 12, "y": 16 },
+      "gridPos": {
+        "h": 16,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
       "options": {
         "showTime": false,
         "showLabels": false,
@@ -251,7 +414,12 @@
         "type": "grafana-clickhouse-datasource",
         "uid": "clickhouse"
       },
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 32 },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
       "options": {
         "showHeader": true,
         "cellHeight": "auto"
@@ -262,7 +430,10 @@
             "align": "auto",
             "displayMode": "auto",
             "inspect": true,
-            "cellOptions": { "type": "auto", "wrapText": true }
+            "cellOptions": {
+              "type": "auto",
+              "wrapText": true
+            }
           }
         },
         "overrides": []
@@ -282,38 +453,79 @@
     {
       "id": 7,
       "title": "Events",
-      "description": "Free-form events recorded for this call's execution_id. Events are not tagged with call_id today, so the panel scopes by execution_id — for direct calls (1:1 with execution_id) this is exact; for wrappers it includes the wrapper's and the wrapped child's events.",
+      "description": "Free-form events recorded for this call's execution_id. Events are not tagged with call_id today, so the panel scopes by execution_id \u2014 for direct calls (1:1 with execution_id) this is exact; for wrappers it includes the wrapper's and the wrapped child's events.",
       "type": "table",
-      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 38 },
-      "options": { "showHeader": true, "cellHeight": "sm" },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
       "fieldConfig": {
         "defaults": {
           "custom": {
             "align": "auto",
             "displayMode": "auto",
             "inspect": true,
-            "cellOptions": { "type": "auto", "wrapText": true }
+            "cellOptions": {
+              "type": "auto",
+              "wrapText": true
+            }
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "message" },
-            "properties": [{ "id": "custom.width", "value": 480 }]
+            "matcher": {
+              "id": "byName",
+              "options": "message"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 480
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "event" },
-            "properties": [{ "id": "custom.width", "value": 220 }]
+            "matcher": {
+              "id": "byName",
+              "options": "event"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 220
+              }
+            ]
           },
           {
-            "matcher": { "id": "byName", "options": "severity" },
-            "properties": [{ "id": "custom.width", "value": 90 }]
+            "matcher": {
+              "id": "byName",
+              "options": "severity"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
           }
         ]
       },
       "targets": [
         {
-          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
           "refId": "A",
           "format": 1,
           "rawSql": "SELECT timestamp, severity, component, event, message, attributes FROM ploston.events WHERE execution_id = (SELECT execution_id FROM ploston.tool_calls WHERE call_id = '$call_id' LIMIT 1) AND execution_id != '' ORDER BY timestamp ASC LIMIT 500"
@@ -323,36 +535,58 @@
   ],
   "refresh": "",
   "schemaVersion": 39,
-  "tags": ["ploston", "sessions", "clickhouse", "drill-down"],
+  "tags": [
+    "ploston",
+    "sessions",
+    "clickhouse",
+    "drill-down"
+  ],
   "templating": {
     "list": [
       {
         "name": "session_id",
         "type": "query",
         "label": "Session",
-        "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "clickhouse"
+        },
         "query": "SELECT session_id FROM ploston.tool_calls WHERE $__timeFilter(started_at) AND session_id != '' GROUP BY session_id ORDER BY max(started_at) DESC",
         "refresh": 2,
         "includeAll": false,
         "multi": false,
-        "current": { "selected": false, "text": "", "value": "" },
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
         "hide": 0
       },
       {
         "name": "call_id",
         "type": "query",
         "label": "Call",
-        "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "clickhouse"
+        },
         "query": "SELECT call_id AS value, concat(formatDateTime(started_at, '%H:%i:%S'), '  ', tool_name, '  (', toString(duration_ms), 'ms)  [', coalesce(if(error_code = '', NULL, error_code), 'ok'), ']') AS displayValue FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at) ORDER BY started_at DESC",
         "refresh": 2,
         "includeAll": false,
         "multi": false,
-        "current": { "selected": false, "text": "", "value": "" },
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
         "hide": 0
       }
     ]
   },
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "",
   "title": "Agent Tool Call Inspector",

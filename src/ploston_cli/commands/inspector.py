@@ -87,10 +87,11 @@ _LOOPBACK_LITERALS = {"127.0.0.1", "::1", "0.0.0.0", "::"}
 def _display_host(host: str) -> str:
     """Map a bind literal to the host users actually want in their URL bar.
 
-    Loopback IPs (and the wildcard binds, which always include loopback)
-    render as ``localhost``; everything else is preserved verbatim.
+    Returns ``127.0.0.1`` for loopback/wildcard binds so the browser
+    connects over the IPv4 loopback address (avoids DNS-rebinding issues
+    and IPv6-only ``localhost`` resolution on some systems).
     """
-    return "localhost" if host in _LOOPBACK_LITERALS else host
+    return "127.0.0.1" if host in _LOOPBACK_LITERALS else host
 
 
 def _open_browser_if_requested(open_browser: bool, host: str, port: int) -> None:
@@ -240,11 +241,19 @@ def start_command(
     if daemon:
         if token:
             _persist_inspector_token(token)
+
+        # Build an on_ready callback that fires in the parent process
+        # *after* the daemon is confirmed healthy but *before* sys.exit(0).
+        # This is the only reliable place to open the browser in daemon mode.
+        def _on_daemon_ready() -> None:
+            _open_browser_if_requested(open_browser, host, port)
+
         try:
             inspector_daemon.start_daemon(
                 run_inspector_daemon,
                 host=host,
                 port=port,
+                on_ready=_on_daemon_ready,
                 url=url,
                 token=effective_token,
                 insecure=insecure,
@@ -256,11 +265,6 @@ def start_command(
             )
         except SystemExit:
             raise
-        # Parent reached this point: child exited the process tree via
-        # ``sys.exit(0)`` from ``start_daemon``. Below executes only when the
-        # forked grandchild is still going (it isn't, because the parent
-        # ``sys.exit(0)``s); kept as a defensive no-op.
-        _open_browser_if_requested(open_browser, host, port)
         return
 
     # Foreground path — preserves the original blocking behaviour.

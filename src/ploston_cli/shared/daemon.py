@@ -73,6 +73,8 @@ def _tail_lines(path: Path, n: int = 20) -> str:
 def start_daemon(
     spec: DaemonSpec,
     run_func: Callable[..., Any],
+    *,
+    on_ready: Callable[[], None] | None = None,
     **kwargs: Any,
 ) -> None:
     """Fork-detach ``run_func`` as a daemon described by ``spec``.
@@ -81,6 +83,11 @@ def start_daemon(
     the grandchild to write its PID file, then (if configured) waits for
     ``spec.health_probe`` to return True. On health-probe failure the parent
     prints a tail of the log and exits non-zero.
+
+    ``on_ready`` fires in the parent process after the daemon is confirmed
+    healthy but before the parent ``sys.exit(0)``s. Use this for side-effects
+    like opening a browser that must happen after the daemon is ready but
+    cannot happen in the grandchild.
     """
     alive, pid = is_running(spec)
     if alive:
@@ -126,6 +133,8 @@ def start_daemon(
                 sys.exit(1)
         print(f"{spec.name.capitalize()} started (PID {child_pid})")
         print(f"Logs: {spec.log_file}")
+        if on_ready is not None:
+            on_ready()
         sys.exit(0)
 
     os.setsid()

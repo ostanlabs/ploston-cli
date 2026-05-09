@@ -94,7 +94,7 @@
           },
           "refId": "A",
           "format": 1,
-          "rawSql": "SELECT started_at, execution_id, coalesce(if(workflow_id = '', NULL, workflow_id), tool_name) AS workflow_id, session_id, status, duration_ms, step_count, tool_call_count, coalesce(error_message, '') AS error FROM ploston.executions WHERE workflow_id != '' AND $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 100"
+          "rawSql": "SELECT started_at, execution_id, workflow_id, session_id, status, duration_ms, step_count, tool_call_count, coalesce(error_message, '') AS error FROM ploston.executions WHERE (execution_type = 'workflow' OR workflow_id != '') AND ('$session_id' = '' OR session_id = '$session_id') AND $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 100"
         }
       ]
     },
@@ -196,7 +196,7 @@
           },
           "refId": "A",
           "format": 1,
-          "rawSql": "SELECT toUInt64(sum(response_bytes) / 4) AS value FROM ploston.tool_calls WHERE execution_id = '$execution_id' AND source != 'direct'"
+          "rawSql": "SELECT toUInt64(sum(response_bytes) / 4) AS value FROM ploston.tool_calls WHERE execution_id = '$execution_id' AND source NOT IN ('direct', 'wrapper')"
         }
       ]
     },
@@ -254,7 +254,7 @@
           },
           "refId": "A",
           "format": 1,
-          "rawSql": "SELECT toUInt64(response_bytes / 4) AS value FROM ploston.tool_calls WHERE execution_id = '$execution_id' AND source = 'direct' LIMIT 1"
+          "rawSql": "SELECT toUInt64(response_bytes / 4) AS value FROM ploston.tool_calls WHERE execution_id = '$execution_id' AND source IN ('direct', 'wrapper') LIMIT 1"
         }
       ]
     },
@@ -312,7 +312,7 @@
           },
           "refId": "A",
           "format": 1,
-          "rawSql": "SELECT if(tools.sum_bytes > 0, round((1 - direct.response_bytes / tools.sum_bytes) * 100, 1), 0) AS value FROM (SELECT response_bytes FROM ploston.tool_calls WHERE execution_id = '$execution_id' AND source = 'direct' LIMIT 1) direct CROSS JOIN (SELECT sum(response_bytes) AS sum_bytes FROM ploston.tool_calls WHERE execution_id = '$execution_id' AND source != 'direct') tools"
+          "rawSql": "SELECT if(tools.sum_bytes > 0, round((1 - direct.response_bytes / tools.sum_bytes) * 100, 1), 0) AS value FROM (SELECT response_bytes FROM ploston.tool_calls WHERE execution_id = '$execution_id' AND source IN ('direct', 'wrapper') LIMIT 1) direct CROSS JOIN (SELECT sum(response_bytes) AS sum_bytes FROM ploston.tool_calls WHERE execution_id = '$execution_id' AND source NOT IN ('direct', 'wrapper')) tools"
         }
       ]
     },
@@ -499,6 +499,18 @@
   "templating": {
     "list": [
       {
+        "name": "session_id",
+        "type": "textbox",
+        "label": "Session ID",
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "query": "",
+        "hide": 0
+      },
+      {
         "name": "execution_id",
         "type": "query",
         "datasource": {
@@ -506,7 +518,7 @@
           "uid": "clickhouse"
         },
         "label": "Execution ID",
-        "query": "SELECT DISTINCT execution_id FROM ploston.executions WHERE workflow_id != '' AND $__timeFilter(started_at) ORDER BY started_at DESC LIMIT 200",
+        "query": "SELECT DISTINCT execution_id FROM ploston.executions WHERE (execution_type = 'workflow' OR workflow_id != '') AND ('$session_id' = '' OR session_id = '$session_id') AND $__timeFilter(started_at) ORDER BY execution_id DESC",
         "refresh": 2,
         "multi": false,
         "includeAll": true,

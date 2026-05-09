@@ -125,14 +125,13 @@ class TestStartCommandAlreadyRunning:
             result = runner.invoke(inspector_cmd.inspector_command, ["start"])
         assert result.exit_code == 0
         assert "already running" in result.output
-        # User-facing URL should be ``localhost``, not the bind literal.
-        assert "http://localhost:7777" in result.output
-        assert "127.0.0.1:7777" not in result.output
+        # User-facing URL uses the IPv4 loopback literal.
+        assert "http://127.0.0.1:7777" in result.output
         # Cache-busting ``?t=<epoch>`` query string defeats Chrome's tab-
         # reuse heuristic so a stop/start cycle force-navigates the tab.
         mock_open.assert_called_once()
         opened_url = mock_open.call_args.args[0]
-        assert opened_url.startswith("http://localhost:7777/?t=")
+        assert opened_url.startswith("http://127.0.0.1:7777/?t=")
 
     def test_foreground_refuses_when_daemon_alive(self, runner: CliRunner):
         with patch.object(inspector_cmd.inspector_daemon, "is_running", return_value=(True, 12345)):
@@ -217,31 +216,29 @@ class TestFormatBindUrl:
 
 @pytest.mark.cli_unit
 class TestDisplayHost:
-    """Browser/echo URL maps loopback literals to ``localhost``.
+    """Browser/echo URL maps loopback literals to ``127.0.0.1``.
 
-    Operators paste these URLs into chats, docs, and curl commands; raw
-    ``127.0.0.1`` carries no useful information beyond what ``localhost``
-    already conveys, and ``localhost`` works in every browser regardless of
-    IPv4/IPv6 resolution preference (the daemon dual-binds both stacks).
+    Using ``127.0.0.1`` avoids DNS-rebinding issues and systems where
+    ``localhost`` resolves to IPv6-only ``::1`` while the daemon may not
+    have dual-stack bound yet.
     """
 
     @pytest.mark.parametrize("host", ["127.0.0.1", "::1", "0.0.0.0", "::"])
-    def test_loopback_and_wildcards_become_localhost(self, host: str):
-        assert inspector_cmd._display_host(host) == "localhost"
+    def test_loopback_and_wildcards_become_127(self, host: str):
+        assert inspector_cmd._display_host(host) == "127.0.0.1"
 
     def test_explicit_host_is_preserved(self):
         assert inspector_cmd._display_host("10.0.0.5") == "10.0.0.5"
         assert inspector_cmd._display_host("inspector.local") == "inspector.local"
 
-    def test_open_browser_uses_localhost_for_loopback(self):
+    def test_open_browser_uses_127_for_loopback(self):
         with patch.object(inspector_cmd.webbrowser, "open") as mock_open:
             inspector_cmd._open_browser_if_requested(True, "127.0.0.1", 7777)
         mock_open.assert_called_once()
         opened_url = mock_open.call_args.args[0]
-        # ``localhost``, not the bind literal, plus a ``?t=<epoch>`` cache-
-        # buster so Chrome doesn't reuse a stale tab from a previous
-        # start/stop cycle.
-        assert opened_url.startswith("http://localhost:7777/?t=")
+        # ``127.0.0.1``, plus a ``?t=<epoch>`` cache-buster so Chrome
+        # doesn't reuse a stale tab from a previous start/stop cycle.
+        assert opened_url.startswith("http://127.0.0.1:7777/?t=")
         # Token must be a positive integer (epoch seconds).
         token = opened_url.rsplit("=", 1)[1]
         assert token.isdigit() and int(token) > 0

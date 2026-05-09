@@ -394,7 +394,33 @@ async def _complete_import_flow(
             else:
                 click.echo(f"  ✓ Updated {label} config ({path})")
 
-    # Step 7: Print summary
+    # Step 7: Auto-start the runner (same as bootstrap does)
+    click.echo("\n🚀 Starting local runner...")
+    from ..bootstrap import RunnerAutoStart
+
+    runner_starter = RunnerAutoStart(cp_url)
+    runner_running, runner_msg = runner_starter.check_runner_status()
+    if runner_running:
+        click.echo("  ✓ Runner already running — restarting to pick up new config...")
+        # Stop and restart so it picks up the updated MCP config
+        import subprocess
+
+        subprocess.run(["ploston", "runner", "stop"], capture_output=True)
+        success, msg = runner_starter.start_runner(daemon=True)
+        if success:
+            click.echo("  ✓ Runner restarted")
+        else:
+            click.echo(f"  ⚠ Failed to restart runner: {msg}")
+    else:
+        success, msg = runner_starter.start_runner(daemon=True)
+        if success:
+            click.echo("  ✓ Runner started")
+        else:
+            click.echo(f"  ⚠ Failed to start runner: {msg}")
+            click.echo("    You can start it manually:")
+            click.echo("      ploston runner start --daemon")
+
+    # Step 8: Print summary
     click.echo("\n" + "=" * 60)
     click.echo("✅ Import Complete!")
     click.echo("=" * 60)
@@ -415,18 +441,11 @@ async def _complete_import_flow(
         click.echo()
         click.echo("  A new 'ploston' entry exposes your Ploston workflows.")
         click.echo()
-        click.echo("  Next steps:")
-        click.echo("    1. Start the local runner:")
-        click.echo("         ploston runner start --daemon")
-        click.echo("    2. Restart Claude Desktop to apply config changes.")
+        click.echo("  Next step:")
+        click.echo("    Restart Claude Desktop to apply config changes.")
         click.echo()
         click.echo("  To restore original config:")
         click.echo("    Swap 'mcpServers' with '_ploston_imported' in your Claude Desktop config.")
     else:
-        click.echo("Next steps:")
-        click.echo("  1. Start the local runner:")
-        click.echo(
-            f"     ploston runner start --daemon --cp {cp_url.replace('http', 'ws')}/api/v1/runner/ws"
-            f" --token {runner_token} --name {effective_runner_name}"
-        )
-        click.echo()
+        click.echo("Next step:")
+        click.echo("  Restart Claude Desktop to apply config changes.")

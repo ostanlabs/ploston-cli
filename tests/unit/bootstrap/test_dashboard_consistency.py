@@ -162,3 +162,34 @@ def test_clickhouse_rawsql_targets_set_format(filename: str) -> None:
                     f"format={target.get('format')!r}, expected {expected_format}"
                 )
     assert not bad, f"{filename} ClickHouse targets have wrong format: {bad}"
+
+
+def test_execution_logs_has_session_id_variable() -> None:
+    """Execution-logs dashboard must expose a session_id textbox variable
+    so users (and drill-down links from Session Inspector) can scope the
+    workflow executions list to a single agent conversation."""
+    dashboard = _load(os.path.join(_DOCKER_DIR, "execution-logs.json"))
+    var_names = {v["name"] for v in dashboard.get("templating", {}).get("list", [])}
+    assert "session_id" in var_names, (
+        f"execution-logs.json missing session_id template variable, got {var_names!r}"
+    )
+
+
+def test_execution_logs_recent_executions_filters_by_session_id() -> None:
+    """The Recent Workflow Executions table must include the optional
+    session_id filter so it respects the variable when set."""
+    dashboard = _load(os.path.join(_DOCKER_DIR, "execution-logs.json"))
+    # Panel [1] is the unnamed table under the "Recent Workflow Executions" row
+    table_panel = None
+    for panel in dashboard.get("panels", []):
+        if panel.get("type") == "table" and "executions" in (
+            panel.get("targets", [{}])[0].get("rawSql", "")
+        ):
+            table_panel = panel
+            break
+    assert table_panel is not None, "Could not find the executions table panel"
+    sql = table_panel["targets"][0]["rawSql"]
+    assert "session_id" in sql, "Recent Workflow Executions SQL must filter by session_id"
+    assert "'$session_id' = ''" in sql, (
+        "session_id filter must be optional (bypass when variable is empty)"
+    )

@@ -64,7 +64,7 @@
           },
           "refId": "A",
           "format": 1,
-          "rawSql": "SELECT session_id, min(started_at) AS first_seen, max(started_at) AS last_seen, count() AS tool_calls, countDistinct(tool_name) AS unique_tools, countIf(error_code IS NOT NULL AND error_code != '') AS errors FROM ploston.tool_calls WHERE session_id IS NOT NULL AND session_id != '' AND $__timeFilter(started_at) GROUP BY session_id ORDER BY last_seen DESC LIMIT 50"
+          "rawSql": "SELECT session_id, min(started_at) AS first_seen, max(started_at) AS last_seen, countIf(source != 'wrapper') AS tool_calls, countDistinctIf(tool_name, source != 'wrapper') AS unique_tools, countIf(error_code IS NOT NULL AND error_code != '') AS errors FROM ploston.tool_calls WHERE session_id IS NOT NULL AND session_id != '' AND source IN ('direct', 'wrapped', 'wrapper') AND $__timeFilter(started_at) GROUP BY session_id ORDER BY last_seen DESC LIMIT 50"
         }
       ]
     },
@@ -98,7 +98,7 @@
           },
           "refId": "A",
           "format": 1,
-          "rawSql": "SELECT count() FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at)"
+          "rawSql": "SELECT count() FROM ploston.tool_calls WHERE session_id = '$session_id' AND source IN ('direct', 'wrapped') AND $__timeFilter(started_at)"
         }
       ]
     },
@@ -149,7 +149,7 @@
           },
           "refId": "A",
           "format": 1,
-          "rawSql": "SELECT countIf(error_code IS NOT NULL AND error_code != '') FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at)"
+          "rawSql": "SELECT countIf(error_code IS NOT NULL AND error_code != '') FROM ploston.tool_calls WHERE session_id = '$session_id' AND source IN ('direct', 'wrapped', 'wrapper') AND $__timeFilter(started_at)"
         }
       ]
     },
@@ -188,7 +188,7 @@
           },
           "refId": "A",
           "format": 1,
-          "rawSql": "SELECT toUInt64(sum(response_bytes) / 4) FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at)"
+          "rawSql": "SELECT toUInt64(sum(response_bytes) / 4) FROM ploston.tool_calls WHERE session_id = '$session_id' AND source IN ('direct', 'wrapper') AND $__timeFilter(started_at)"
         }
       ]
     },
@@ -227,7 +227,7 @@
           },
           "refId": "A",
           "format": 1,
-          "rawSql": "SELECT sum(duration_ms) FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at)"
+          "rawSql": "SELECT sum(duration_ms) FROM ploston.tool_calls WHERE session_id = '$session_id' AND source IN ('direct', 'wrapper') AND $__timeFilter(started_at)"
         }
       ]
     },
@@ -261,14 +261,14 @@
           },
           "refId": "A",
           "format": 1,
-          "rawSql": "SELECT countDistinct(tool_name) FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at)"
+          "rawSql": "SELECT countDistinct(tool_name) FROM ploston.tool_calls WHERE session_id = '$session_id' AND source IN ('direct', 'wrapped') AND $__timeFilter(started_at)"
         }
       ]
     },
     {
       "id": 3,
       "title": "Tool Call Timeline",
-      "description": "All tool calls for the selected session. The 'kind' column distinguishes 'direct' (a normal tool call), 'wrapper' (a workflow_call_tool or workflow_run that fans out into other calls), and 'wrapped' (a child tool call dispatched by a wrapper). Wrappers are rendered as parent rows with their wrapped children indented (└─) underneath, sharing the same execution_id. Sort by 'started_at' to see the raw chronological stream instead.",
+      "description": "All tool calls for the selected session. The 'kind' column distinguishes 'direct' (a normal tool call), 'wrapper' (a workflow_call_tool or workflow_run that fans out into other calls), and 'wrapped' (a child tool call dispatched by a wrapper). Wrappers are rendered as parent rows with their wrapped children indented (\u2514\u2500) underneath, sharing the same execution_id. Sort by 'started_at' to see the raw chronological stream instead.",
       "type": "table",
       "datasource": {
         "type": "grafana-clickhouse-datasource",
@@ -294,91 +294,182 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "started_at" },
-            "properties": [{ "id": "custom.width", "value": 180 }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "kind" },
-            "properties": [{ "id": "custom.width", "value": 90 }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "tool_name" },
-            "properties": [{ "id": "custom.width", "value": 260 }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "depth" },
+            "matcher": {
+              "id": "byName",
+              "options": "started_at"
+            },
             "properties": [
-              { "id": "custom.hidden", "value": true }
+              {
+                "id": "custom.width",
+                "value": 160
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "group_key" },
+            "matcher": {
+              "id": "byName",
+              "options": "kind"
+            },
             "properties": [
-              { "id": "custom.hidden", "value": true }
+              {
+                "id": "custom.width",
+                "value": 70
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "group_started_at" },
+            "matcher": {
+              "id": "byName",
+              "options": "tool_name"
+            },
             "properties": [
-              { "id": "custom.hidden", "value": true }
+              {
+                "id": "custom.width",
+                "value": 250
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "duration_ms" },
+            "matcher": {
+              "id": "byName",
+              "options": "mcp_server"
+            },
             "properties": [
-              { "id": "displayName", "value": "duration" },
-              { "id": "unit", "value": "ms" },
-              { "id": "custom.width", "value": 90 }
+              {
+                "id": "custom.width",
+                "value": 120
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "response_tokens" },
+            "matcher": {
+              "id": "byName",
+              "options": "runner_id"
+            },
             "properties": [
-              { "id": "displayName", "value": "tokens" },
-              { "id": "custom.width", "value": 90 }
+              {
+                "id": "custom.width",
+                "value": 120
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "status" },
-            "properties": [{ "id": "custom.width", "value": 80 }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "runner_id" },
-            "properties": [{ "id": "custom.width", "value": 130 }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "source" },
-            "properties": [{ "id": "custom.width", "value": 100 }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "params" },
+            "matcher": {
+              "id": "byName",
+              "options": "duration_ms"
+            },
             "properties": [
-              { "id": "custom.inspect", "value": true }
+              {
+                "id": "displayName",
+                "value": "Duration"
+              },
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "result" },
+            "matcher": {
+              "id": "byName",
+              "options": "response_tokens"
+            },
             "properties": [
-              { "id": "custom.inspect", "value": true }
+              {
+                "id": "displayName",
+                "value": "~Tokens"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "error_message" },
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
             "properties": [
-              { "id": "custom.width", "value": 200 },
-              { "id": "custom.inspect", "value": true }
+              {
+                "id": "custom.width",
+                "value": 80
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "call_id" },
+            "matcher": {
+              "id": "byName",
+              "options": "source"
+            },
             "properties": [
-              { "id": "custom.width", "value": 220 },
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "params"
+            },
+            "properties": [
+              {
+                "id": "custom.inspect",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "result"
+            },
+            "properties": [
+              {
+                "id": "custom.inspect",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "error_message"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              },
+              {
+                "id": "custom.inspect",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "execution_id"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              },
               {
                 "id": "links",
                 "value": [
                   {
-                    "title": "Inspect this call",
-                    "url": "/d/ploston-call-inspector?var-session_id=${session_id}&var-call_id=${__data.fields.call_id}"
+                    "title": "View in Call Inspector",
+                    "url": "/d/ploston-call-inspector/call-inspector?var-session_id=${__data.fields.session_id}&var-call_id=${__value.text}&${__url_time_range}",
+                    "targetBlank": true
                   }
                 ]
               }
@@ -394,7 +485,7 @@
           },
           "refId": "A",
           "format": 1,
-          "rawSql": "WITH base AS (SELECT started_at, execution_id, tool_name, duration_ms, response_bytes, error_code, error_message, runner_id, source, params, result, call_id FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at)), grouped AS (SELECT started_at, execution_id, tool_name, duration_ms, response_bytes, error_code, error_message, runner_id, source, params, result, call_id, if(execution_id = '', call_id, argMin(call_id, started_at) OVER (PARTITION BY execution_id)) AS group_key FROM base) SELECT started_at, multiIf(call_id != group_key, 'wrapped', tool_name IN ('workflow_call_tool','workflow_run'), 'wrapper', 'direct') AS kind, if(call_id = group_key, tool_name, concat('└─ ', tool_name)) AS tool_name, duration_ms, toUInt64(response_bytes / 4) AS response_tokens, coalesce(if(error_code = '', NULL, error_code), 'ok') AS status, runner_id, source, if(length(params) > 65536, concat(substring(params, 1, 65536), ' ... [truncated, ', toString(length(params)), ' bytes total]'), params) AS params, if(length(result) > 65536, concat(substring(result, 1, 65536), ' ... [truncated, ', toString(length(result)), ' bytes total]'), result) AS result, coalesce(error_message, '') AS error_message, call_id, group_key, if(call_id = group_key, toUInt8(0), toUInt8(1)) AS depth, min(started_at) OVER (PARTITION BY group_key) AS group_started_at FROM grouped ORDER BY group_started_at ASC, depth ASC, started_at ASC"
+          "rawSql": "WITH base AS (SELECT started_at, tool_name, runner_id, duration_ms, response_bytes, error_code, error_message, source, params, result, execution_id, splitByString('__', tool_name) AS _parts, length(splitByString('__', tool_name)) AS _nparts FROM ploston.tool_calls WHERE session_id = '$session_id' AND source IN ('direct', 'wrapper', 'wrapped') AND $__timeFilter(started_at)) SELECT started_at, source AS kind, multiIf(source = 'wrapped', concat('\u2514\u2500\u2500 ', multiIf(_nparts >= 3, arrayElement(_parts, _nparts), _nparts = 2, arrayElement(_parts, 2), tool_name)), multiIf(_nparts >= 3, arrayElement(_parts, _nparts), _nparts = 2, arrayElement(_parts, 2), tool_name)) AS tool_name, multiIf(_nparts >= 3, arrayElement(_parts, 2), _nparts = 2, arrayElement(_parts, 1), '') AS mcp_server, runner_id, duration_ms, toUInt64(response_bytes / 4) AS response_tokens, coalesce(if(error_code = '', NULL, error_code), 'ok') AS status, source, if(length(params) > 65536, concat(substring(params, 1, 65536), ' ... [truncated, ', toString(length(params)), ' bytes total]'), params) AS params, if(length(result) > 65536, concat(substring(result, 1, 65536), ' ... [truncated, ', toString(length(result)), ' bytes total]'), result) AS result, coalesce(error_message, '') AS error_message, execution_id FROM base ORDER BY started_at ASC"
         }
       ]
     },
@@ -416,16 +507,23 @@
         "legend": {
           "displayMode": "table",
           "placement": "right",
-          "values": ["value", "percent"]
+          "values": [
+            "value",
+            "percent"
+          ]
         },
         "tooltip": {
           "mode": "single",
           "sort": "desc"
         },
         "pieType": "donut",
-        "displayLabels": ["percent"],
+        "displayLabels": [
+          "percent"
+        ],
         "reduceOptions": {
-          "calcs": ["sum"],
+          "calcs": [
+            "sum"
+          ],
           "fields": "/^calls$/",
           "values": true
         }
@@ -438,7 +536,7 @@
           },
           "refId": "A",
           "format": 1,
-          "rawSql": "SELECT tool_name, count() AS calls FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at) GROUP BY tool_name ORDER BY calls DESC"
+          "rawSql": "SELECT tool_name, count() AS calls FROM ploston.tool_calls WHERE session_id = '$session_id' AND source IN ('direct', 'wrapped') AND $__timeFilter(started_at) GROUP BY tool_name ORDER BY calls DESC"
         }
       ]
     },
@@ -481,9 +579,31 @@
               },
               "refId": "A",
               "format": 1,
-              "rawSql": "SELECT started_at, execution_id, workflow_id, status, duration_ms, step_count, tool_call_count, coalesce(error_message, '') AS error FROM ploston.executions WHERE session_id = '$session_id' AND execution_type = 'workflow' AND $__timeFilter(started_at) ORDER BY started_at DESC"
+              "rawSql": "SELECT started_at, execution_id, workflow_id, status, duration_ms, step_count, tool_call_count, coalesce(error_message, '') AS error FROM ploston.executions WHERE session_id = '$session_id' AND (execution_type = 'workflow' OR workflow_id != '') AND $__timeFilter(started_at) ORDER BY started_at DESC"
             }
-          ]
+          ],
+          "fieldConfig": {
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "execution_id"
+                },
+                "properties": [
+                  {
+                    "id": "links",
+                    "value": [
+                      {
+                        "title": "View Workflow Execution Logs",
+                        "url": "/d/ploston-workflow-execution-logs/workflow-execution-logs?var-execution_id=${__value.text}&${__url_time_range}",
+                        "targetBlank": true
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
         }
       ]
     },
@@ -510,20 +630,52 @@
         "defaults": {},
         "overrides": [
           {
-            "matcher": {"id": "byName", "options": "timestamp"},
-            "properties": [{"id": "custom.width", "value": 155}]
+            "matcher": {
+              "id": "byName",
+              "options": "timestamp"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 155
+              }
+            ]
           },
           {
-            "matcher": {"id": "byName", "options": "severity"},
-            "properties": [{"id": "custom.width", "value": 75}]
+            "matcher": {
+              "id": "byName",
+              "options": "severity"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 75
+              }
+            ]
           },
           {
-            "matcher": {"id": "byName", "options": "component"},
-            "properties": [{"id": "custom.width", "value": 85}]
+            "matcher": {
+              "id": "byName",
+              "options": "component"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 85
+              }
+            ]
           },
           {
-            "matcher": {"id": "byName", "options": "message"},
-            "properties": [{"id": "custom.width", "value": 430}]
+            "matcher": {
+              "id": "byName",
+              "options": "message"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 430
+              }
+            ]
           }
         ]
       },

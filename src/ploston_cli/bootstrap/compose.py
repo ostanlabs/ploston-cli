@@ -91,6 +91,7 @@ class ComposeGenerator:
                     "PLOSTON_HOST": "0.0.0.0",
                     "PLOSTON_LOG_LEVEL": config.log_level,
                     "PLOSTON_REDIS_URL": "redis://redis:6379/0",
+                    "PLOSTON_CONFIG_PATH": "/etc/ploston/config.yaml",
                     "NATIVE_TOOLS_URL": "http://native-tools:8081",
                 },
                 "volumes": [

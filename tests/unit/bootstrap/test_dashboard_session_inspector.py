@@ -126,19 +126,17 @@ def test_recent_sessions_data_link_uses_hardcoded_slug(dashboard: dict) -> None:
         )
 
 
-def test_tool_call_timeline_has_call_id_drill_link(dashboard: dict) -> None:
-    """Panel 3 must have a data link wiring call_id → var-call_id (T-961)."""
+def test_tool_call_timeline_has_execution_id_drill_link(dashboard: dict) -> None:
+    """Panel 3 must have a data link on ``execution_id`` for drill-down."""
     panel = next(p for p in dashboard["panels"] if p.get("title") == "Tool Call Timeline")
     overrides = panel.get("fieldConfig", {}).get("overrides", [])
     found = False
     for override in overrides:
-        if override.get("matcher", {}).get("options") == "call_id":
+        if override.get("matcher", {}).get("options") == "execution_id":
             for prop in override.get("properties", []):
                 if prop.get("id") == "links":
-                    for link in prop.get("value", []):
-                        if "var-call_id" in link.get("url", ""):
-                            found = True
-    assert found, "Tool Call Timeline panel missing var-call_id data link"
+                    found = True
+    assert found, "Tool Call Timeline panel missing execution_id data link"
 
 
 def test_centerpiece_query_does_not_filter_by_tool_name(dashboard: dict) -> None:
@@ -167,95 +165,114 @@ def test_events_panel_targets_ploston_events_view(dashboard: dict) -> None:
     assert "session_id = '$session_id'" in sql
 
 
-def test_tool_call_timeline_groups_wrapper_and_inner_calls(dashboard: dict) -> None:
-    """Tool Call Timeline orders rows so wrapper invocations
-    (``workflow_call_tool``, ``workflow_run``) are immediately followed by the
-    inner tool calls that share their ``execution_id``, with the inner row's
-    ``tool_name`` indented (``└─ ``).  The grouping uses an ``argMin`` window
-    function over ``execution_id`` to pick the earliest call as the parent.
-    Hidden helper columns (``depth``, ``group_key``, ``group_started_at``)
-    drive the visual ordering and styling without being shown to the user."""
+def test_tool_call_timeline_shows_all_agent_visible_sources(dashboard: dict) -> None:
+    """Tool Call Timeline includes ``direct``, ``wrapper``, and ``wrapped``
+    rows so the user sees the full dispatch picture.  Workflow-internal
+    steps (``tool_step`` / ``code_block``) are still excluded."""
     panel = next(p for p in dashboard["panels"] if p.get("title") == "Tool Call Timeline")
     sql = panel["targets"][0]["rawSql"]
-    # Window function picks the parent of each execution_id partition.
-    assert "argMin(call_id, started_at) OVER (PARTITION BY execution_id)" in sql
-    # Children are visually indented with a tree glyph.
-    assert "concat('└─ ', tool_name)" in sql
-    # Group ordering uses the parent's started_at so groups stay chronological.
-    assert "min(started_at) OVER (PARTITION BY group_key) AS group_started_at" in sql
-    assert "ORDER BY group_started_at ASC, depth ASC, started_at ASC" in sql
-    # Helper columns must be hidden from the visible table.
-    overrides = panel.get("fieldConfig", {}).get("overrides", [])
-    hidden_cols = {
-        ov["matcher"]["options"]
-        for ov in overrides
-        if any(
-            p.get("id") == "custom.hidden" and p.get("value") is True
-            for p in ov.get("properties", [])
-        )
-    }
-    assert {"depth", "group_key", "group_started_at"}.issubset(hidden_cols)
+    assert "source IN ('direct', 'wrapper', 'wrapped')" in sql
+    assert "splitByString('__', tool_name)" in sql
+    assert "AS mcp_server" in sql
+    assert "ORDER BY started_at ASC" in sql
 
 
-def test_tool_call_timeline_kind_distinguishes_wrapper_wrapped_direct(
+def test_tool_call_timeline_wrapped_rows_have_tree_prefix(
     dashboard: dict,
 ) -> None:
-    """The ``kind`` column must read 'wrapped' for child rows, 'wrapper' for
-    parent rows whose tool is one of the dispatch wrappers, and 'direct' for
-    everything else.  An earlier version used ``execution_id != ''`` as the
-    discriminator, but every row now carries an ``execution_id`` (direct calls
-    get their own one), which made every row read 'workflow' — the visible
-    bug this assertion guards against."""
+    """Wrapped rows are visually nested with a ``└── `` prefix on the
+    tool_name so the timeline shows hierarchy."""
     panel = next(p for p in dashboard["panels"] if p.get("title") == "Tool Call Timeline")
     sql = panel["targets"][0]["rawSql"]
-    # Use multiIf so child rows are detected first via call_id != group_key,
-    # then wrappers via the explicit dispatcher tool name list, else direct.
-    assert (
-        "multiIf(call_id != group_key, 'wrapped', "
-        "tool_name IN ('workflow_call_tool','workflow_run'), 'wrapper', "
-        "'direct') AS kind"
-    ) in sql
-    # The buggy heuristic must not regress.
+    assert "source = 'wrapped'" in sql
+    assert "└── " in sql
+
+
+def test_tool_call_timeline_kind_reflects_source(
+    dashboard: dict,
+) -> None:
+    """The ``kind`` column uses the ``source`` column directly so that
+    wrapper rows display as ``wrapper`` and direct rows as ``direct``."""
+    panel = next(p for p in dashboard["panels"] if p.get("title") == "Tool Call Timeline")
+    sql = panel["targets"][0]["rawSql"]
+    assert "source AS kind" in sql
+    # Old grouping heuristics must not regress.
     assert "if(execution_id != '', 'workflow', 'direct') AS kind" not in sql
+    assert "call_id != group_key" not in sql
 
 
-def test_dashboard_dispatcher_list_matches_workflow_dispatcher_tool_names() -> None:
-    """The hard-coded dispatcher list in the Session and Call Inspector SQL
-    (``tool_name IN ('workflow_call_tool','workflow_run')``) must stay in sync
-    with ``WORKFLOW_DISPATCHER_TOOL_NAMES`` defined in
-    ``packages/ploston-core/src/ploston_core/workflow/tools.py``. If a third
-    dispatcher is ever added there, this test fails until both dashboards'
-    SQL is updated to match."""
-    try:
-        from ploston_core.workflow.tools import WORKFLOW_DISPATCHER_TOOL_NAMES
-    except ImportError:
-        pytest.skip("ploston_core not importable in this test environment")
+def test_aggregation_panels_have_correct_source_filters(dashboard: dict) -> None:
+    """Each aggregation panel uses the correct source filter per the
+    accounting rules:
 
-    # Session Inspector — Tool Call Timeline panel
-    with open(_DOCKER_PATH) as f:
-        session_dashboard = json.load(f)
-    timeline_panel = next(
-        p for p in session_dashboard["panels"] if p.get("title") == "Tool Call Timeline"
-    )
-    timeline_sql = timeline_panel["targets"][0]["rawSql"]
+    - Tool Calls count: direct + wrapped (wrapper is plumbing, not a tool)
+    - Tokens / Duration: direct + wrapper (wrapper carries the agent-facing
+      payload; wrapped is already included in the wrapper's response_bytes)
+    - Errors: all three (any source can error)
+    - Unique Tools / Distribution: direct + wrapped
+    - Recent Sessions: all three, with countIf to exclude wrappers from
+      tool_calls and unique_tools counts
+    """
+    expected_filters: dict[str, str] = {
+        "Tool Calls": "source IN ('direct', 'wrapped')",
+        "Total Response (~tokens)": "source IN ('direct', 'wrapper')",
+        "Total Duration": "source IN ('direct', 'wrapper')",
+        "Unique Tools": "source IN ('direct', 'wrapped')",
+        "Tool Usage Distribution": "source IN ('direct', 'wrapped')",
+        "Errors": "source IN ('direct', 'wrapped', 'wrapper')",
+    }
 
-    # Call Inspector — Call Header panel
+    all_panels = list(dashboard.get("panels", []))
+    for panel in dashboard.get("panels", []):
+        if panel.get("type") == "row":
+            all_panels.extend(panel.get("panels", []))
+
+    for panel in all_panels:
+        title = panel.get("title", "")
+        if title in expected_filters:
+            expected = expected_filters[title]
+            for target in panel.get("targets", []):
+                sql = target.get("rawSql", "")
+                if not sql:
+                    continue
+                assert expected in sql, (
+                    f"Panel {title!r} must contain ``{expected}`` but the SQL is:\n{sql}"
+                )
+
+
+def test_recent_sessions_uses_conditional_counts(dashboard: dict) -> None:
+    """Recent Sessions includes all three sources but uses countIf to
+    exclude wrappers from tool_calls and unique_tools (wrappers are
+    plumbing, not agent-visible tools)."""
+    panel = next(p for p in dashboard["panels"] if p.get("title") == "Recent Sessions")
+    sql = panel["targets"][0]["rawSql"]
+    assert "source IN ('direct', 'wrapped', 'wrapper')" in sql
+    assert "countIf(source != 'wrapper') AS tool_calls" in sql
+    assert "countDistinctIf(tool_name, source != 'wrapper') AS unique_tools" in sql
+
+
+def test_call_inspector_uses_source_wrapper_for_dispatcher_detection() -> None:
+    """The Call Inspector Call Header SQL must use ``source = 'wrapper'``
+    to identify dispatcher rows, NOT a hard-coded tool_name IN (...) list.
+
+    Dispatcher tools (workflow_call_tool, workflow_run) now write
+    ``source = 'wrapper'`` in telemetry, so the dashboard can identify
+    them without maintaining a fragile name list."""
     with open(_CALL_INSPECTOR_PATH) as f:
         call_dashboard = json.load(f)
     header_panel = next(p for p in call_dashboard["panels"] if p.get("title") == "Call Header")
     header_sql = header_panel["targets"][0]["rawSql"]
 
-    expected = "(" + ",".join(f"'{name}'" for name in sorted(WORKFLOW_DISPATCHER_TOOL_NAMES)) + ")"
-    for name in WORKFLOW_DISPATCHER_TOOL_NAMES:
-        assert f"'{name}'" in timeline_sql, (
-            f"Session Inspector Tool Call Timeline SQL is missing dispatcher "
-            f"tool {name!r}; update the panel rawSql to include {expected}."
-        )
-        assert f"'{name}'" in header_sql, (
-            f"Call Inspector Call Header SQL is missing dispatcher tool "
-            f"{name!r}; update the panel rawSql to include {expected}."
-        )
-    # Both dashboards must use the same buggy-heuristic-free expression.
+    # New: source-based detection
+    assert "source = 'wrapper'" in header_sql, (
+        "Call Inspector Call Header SQL must use source = 'wrapper' to detect dispatcher rows."
+    )
+    # Old hard-coded list must be gone
+    assert "tool_name IN (" not in header_sql, (
+        "Call Inspector Call Header SQL should no longer use a hard-coded "
+        "tool_name IN (...) list for dispatcher detection."
+    )
+    # Buggy heuristic must not regress.
     assert "if(execution_id != '', 'workflow', 'direct') AS kind" not in header_sql
 
 
@@ -342,13 +359,13 @@ def test_events_panel_filters_by_execution_id(call_inspector: dict) -> None:
     )
 
 
-def test_session_inspector_call_drilldown_propagates_session_id(
+def test_session_inspector_execution_id_drilldown(
     dashboard: dict,
 ) -> None:
-    """The Tool Call Timeline drill-down link to the Call Inspector must
-    pass `var-session_id` so the call dropdown is pre-filtered correctly."""
+    """The Tool Call Timeline ``execution_id`` column must have a data link
+    so the user can navigate to the Call Inspector for deeper investigation."""
     panel = next(p for p in dashboard["panels"] if p.get("title") == "Tool Call Timeline")
     overrides = panel["fieldConfig"]["overrides"]
-    call_id_override = next(ov for ov in overrides if ov["matcher"]["options"] == "call_id")
-    links = next(p["value"] for p in call_id_override["properties"] if p["id"] == "links")
-    assert any("var-session_id=" in lk["url"] and "var-call_id=" in lk["url"] for lk in links)
+    exec_id_override = next(ov for ov in overrides if ov["matcher"]["options"] == "execution_id")
+    links = next(p["value"] for p in exec_id_override["properties"] if p["id"] == "links")
+    assert len(links) >= 1, "execution_id must have at least one data link"

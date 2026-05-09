@@ -123,6 +123,7 @@ def start_daemon(
     *,
     host: str,
     port: int,
+    on_ready: Callable[[], None] | None = None,
     **kwargs: Any,
 ) -> None:
     """Fork-detach ``run_func`` as the inspector daemon.
@@ -130,6 +131,10 @@ def start_daemon(
     ``host`` and ``port`` serve double duty: they parameterise the parent-side
     health probe (via the daemon spec) *and* are forwarded to ``run_func`` so
     the daemon-side ``run_inspector_daemon`` can bind the same address.
+
+    ``on_ready`` fires in the parent process after the daemon is confirmed
+    healthy but before the parent exits. Use for side-effects like opening
+    a browser.
 
     Wraps ``run_func`` so the grandchild persists ``INSPECTOR_STATE_FILE`` for
     status display and clears it on exit.
@@ -147,7 +152,7 @@ def start_daemon(
         finally:
             _clear_state()
 
-    _daemon.start_daemon(spec, _run_with_state, host=host, port=port, **kwargs)
+    _daemon.start_daemon(spec, _run_with_state, on_ready=on_ready, host=host, port=port, **kwargs)
 
 
 def stop_daemon(on_stopped: Callable[[], None] | None = None) -> None:

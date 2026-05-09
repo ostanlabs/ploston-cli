@@ -31,4 +31,3 @@ fi
 
 cd "$SCRIPT_DIR"
 exec "$TW" -i "$INPUT" -o "$OUTPUT" --minify $EXTRA_ARGS
-

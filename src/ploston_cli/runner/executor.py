@@ -6,6 +6,7 @@ Handles:
 - Returning execution results
 """
 
+import json
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -231,6 +232,13 @@ class WorkflowExecutor:
 
         logger.info(f"Received tool call request: {tool_name}")
         logger.debug(f"Tool call params: tool={tool_name} args={tool_args}")
+        try:
+            logger.info(
+                f"[trace] runner<-cp tool={tool_name} "
+                f"arguments={json.dumps(tool_args, default=str)}"
+            )
+        except Exception:
+            pass
 
         mcp_manager = self._availability.get_mcp_manager()
         if not mcp_manager:
