@@ -18,6 +18,7 @@ from ..client import PlostClient, PlostClientError
 from ..init import ConfigDetector
 from ..init.detector import ALL_INJECT_TARGETS
 from ..init.injector import SOURCE_LABELS, default_runner_name, run_injection
+from ..init.target_selector import select_targets
 
 # Environment variable to override config base path (for testing)
 ENV_CONFIG_BASE_PATH = "PLOSTON_CONFIG_BASE_PATH"
@@ -29,10 +30,26 @@ ENV_CONFIG_BASE_PATH = "PLOSTON_CONFIG_BASE_PATH"
     "inject_targets",
     multiple=True,
     type=click.Choice(ALL_INJECT_TARGETS),
-    help="Inject into specific config target(s). Repeatable. Default: all detected.",
+    help="Inject into specific config target(s). Repeatable. Default: interactive selection.",
+)
+@click.option(
+    "--non-interactive",
+    is_flag=True,
+    help="Skip interactive target picker; inject into all detected targets.",
+)
+@click.option(
+    "--no-backup-file",
+    is_flag=True,
+    default=False,
+    help="Skip Layer-2 file backup before injection. Use if you manage config via version control.",
 )
 @click.pass_context
-def inject_command(ctx: click.Context, inject_targets: tuple[str, ...]) -> None:
+def inject_command(
+    ctx: click.Context,
+    inject_targets: tuple[str, ...],
+    non_interactive: bool,
+    no_backup_file: bool,
+) -> None:
     """Re-run Ploston config injection without re-importing servers.
 
     Detects available agent configs (Claude Desktop, Cursor, Claude Code) and
@@ -79,7 +96,19 @@ def inject_command(ctx: click.Context, inject_targets: tuple[str, ...]) -> None:
         sys.exit(1)
 
     runner_name = default_runner_name()
-    targets = list(inject_targets) if inject_targets else None
+
+    # Use TargetSelector: for standalone inject, all detected targets are
+    # considered "contributors" (we're injecting the full server set).
+    chosen_targets = select_targets(
+        detected_configs=detected,
+        selected_server_names=imported_servers,
+        non_interactive=non_interactive,
+        inject_targets=list(inject_targets) if inject_targets else None,
+    )
+
+    if not chosen_targets:
+        click.echo("No targets selected. Nothing to inject.")
+        return
 
     click.echo("🔧 Injecting Ploston into agent configurations...")
     results = run_injection(
@@ -87,7 +116,8 @@ def inject_command(ctx: click.Context, inject_targets: tuple[str, ...]) -> None:
         imported_servers=imported_servers,
         cp_url=cp_url,
         runner_name=runner_name,
-        targets=targets,
+        targets=chosen_targets,
+        no_backup_file=no_backup_file,
     )
 
     if not results:

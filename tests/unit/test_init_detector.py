@@ -149,17 +149,15 @@ class TestConfigDetector:
 
     def test_detect_cursor_not_found(self, detector, tmp_path):
         """Test detection when Cursor config doesn't exist."""
-        with patch.object(detector, "get_config_path", return_value=tmp_path / "nonexistent"):
+        with patch.object(detector, "get_config_path", return_value=tmp_path / "nonexistent.json"):
             result = detector.detect_source("cursor")
 
         assert result.source == "cursor"
         assert result.found is False
 
     def test_detect_cursor_found(self, detector, tmp_path):
-        """Test detection when Cursor config exists."""
-        cursor_dir = tmp_path / "cursor_mcp"
-        cursor_dir.mkdir()
-        config_file = cursor_dir / "mcp.json"
+        """Test detection when Cursor config exists (single file, not directory)."""
+        config_file = tmp_path / "mcp.json"
         config_data = {
             "mcpServers": {
                 "sqlite": {
@@ -170,7 +168,7 @@ class TestConfigDetector:
         }
         config_file.write_text(json.dumps(config_data))
 
-        with patch.object(detector, "get_config_path", return_value=cursor_dir):
+        with patch.object(detector, "get_config_path", return_value=config_file):
             result = detector.detect_source("cursor")
 
         assert result.source == "cursor"
@@ -178,31 +176,93 @@ class TestConfigDetector:
         assert result.server_count == 1
         assert "sqlite" in result.servers
 
+    def test_detect_cursor_project_not_found(self, detector, tmp_path):
+        """Test detection when Cursor project config doesn't exist."""
+        with patch.object(
+            detector, "get_config_path", return_value=tmp_path / ".cursor" / "mcp.json"
+        ):
+            result = detector.detect_source("cursor_project")
+
+        assert result.source == "cursor_project"
+        assert result.found is False
+
+    def test_detect_cursor_project_found(self, detector, tmp_path):
+        """Test detection when Cursor project config exists."""
+        cursor_dir = tmp_path / ".cursor"
+        cursor_dir.mkdir()
+        config_file = cursor_dir / "mcp.json"
+        config_data = {
+            "mcpServers": {
+                "project-db": {
+                    "command": "uvx",
+                    "args": ["mcp-server-sqlite", "--db-path", "./data.db"],
+                }
+            }
+        }
+        config_file.write_text(json.dumps(config_data))
+
+        with patch.object(detector, "get_config_path", return_value=config_file):
+            result = detector.detect_source("cursor_project")
+
+        assert result.source == "cursor_project"
+        assert result.found is True
+        assert result.server_count == 1
+        assert "project-db" in result.servers
+
     def test_detect_all(self, detector, tmp_path):
         """Test detecting all sources."""
         # Create Claude config
         claude_file = tmp_path / "claude.json"
         claude_file.write_text(json.dumps({"mcpServers": {"server1": {"command": "cmd1"}}}))
 
-        # Create Cursor config
-        cursor_dir = tmp_path / "cursor"
-        cursor_dir.mkdir()
-        cursor_file = cursor_dir / "mcp.json"
+        # Create Cursor config (single file, not directory)
+        cursor_file = tmp_path / "cursor_mcp.json"
         cursor_file.write_text(json.dumps({"mcpServers": {"server2": {"command": "cmd2"}}}))
 
         def mock_get_config_path(source):
             if source == "claude_desktop":
                 return claude_file
-            return cursor_dir
+            if source == "cursor":
+                return cursor_file
+            return tmp_path / "nonexistent.json"
 
         with patch.object(detector, "get_config_path", side_effect=mock_get_config_path):
             results = detector.detect_all()
 
-        # detect_all now returns results for all 4 targets
-        # (claude_desktop, cursor, claude_code_global, claude_code_project)
-        assert len(results) == 4
+        # detect_all returns results for ALL targets in TARGET_REGISTRY
+        from ploston_cli.init.detector import ALL_INJECT_TARGETS
+
+        assert len(results) == len(ALL_INJECT_TARGETS)
         assert any(r.source == "claude_desktop" and r.found for r in results)
         assert any(r.source == "cursor" and r.found for r in results)
+
+    def test_detect_cursor_global_real_path(self):
+        """Unmocked test: CONFIG_PATHS['cursor'] resolves to ~/.cursor/mcp.json.
+
+        This test exercises the actual CONFIG_PATHS constant end-to-end without
+        mocking get_config_path, ensuring the path template is correct for real
+        Cursor installs. Any regression that changes the path breaks this test
+        immediately in CI.
+        """
+        detector = ConfigDetector()
+        path = detector.get_config_path("cursor")
+        assert path is not None
+        # Must be a single file path, not a directory
+        assert str(path).endswith("mcp.json"), f"Cursor path should be a file, got: {path}"
+        assert ".cursor" in str(path), f"Cursor path should contain .cursor, got: {path}"
+        # Must NOT point to the old broken directory path
+        assert "globalStorage" not in str(path), (
+            f"Cursor path must not use old globalStorage directory: {path}"
+        )
+
+    def test_detect_cursor_project_real_path(self):
+        """Unmocked test: CONFIG_PATHS['cursor_project'] resolves to {cwd}/.cursor/mcp.json."""
+        detector = ConfigDetector()
+        path = detector.get_config_path("cursor_project")
+        assert path is not None
+        assert str(path).endswith(".cursor/mcp.json"), (
+            f"Cursor project path should end with .cursor/mcp.json, got: {path}"
+        )
 
 
 class TestMergeConfigs:

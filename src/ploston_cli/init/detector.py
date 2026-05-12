@@ -1,7 +1,7 @@
-"""Config Detector - Detect MCP configurations from Claude Desktop and Cursor.
+"""Config Detector - Detect MCP configurations from agent config files.
 
 This module provides platform-aware detection of MCP server configurations
-from Claude Desktop and Cursor applications.
+from Claude Desktop, Cursor, Claude Code, and other MCP-capable agents.
 """
 
 from __future__ import annotations
@@ -14,15 +14,31 @@ from typing import Any, Literal
 
 from ploston_core.config.secrets import SecretDetector
 
-SourceType = Literal["claude_desktop", "cursor", "claude_code_global", "claude_code_project"]
-
-# All valid injection targets
-ALL_INJECT_TARGETS: list[SourceType] = [
+SourceType = Literal[
     "claude_desktop",
     "cursor",
+    "cursor_project",
     "claude_code_global",
     "claude_code_project",
+    "windsurf",
+    "gemini_cli_global",
+    "gemini_cli_project",
+    "cline",
+    "vscode_copilot_workspace",
+    "vscode_copilot_user",
+    "visual_studio_user",
 ]
+
+
+def _all_inject_targets() -> list[str]:
+    """Derive ALL_INJECT_TARGETS from TARGET_REGISTRY (single source of truth)."""
+    from .injection_targets.registry import TARGET_REGISTRY
+
+    return list(TARGET_REGISTRY.keys())
+
+
+# All valid injection targets — derived from TARGET_REGISTRY
+ALL_INJECT_TARGETS: list[str] = _all_inject_targets()
 
 
 @dataclass
@@ -79,36 +95,31 @@ class DetectedConfig:
 
 
 class ConfigDetector:
-    """Detect MCP configurations from Claude Desktop and Cursor.
+    """Detect MCP configurations from agent config files.
 
-    Handles platform-specific config paths and directory scanning for Cursor.
+    Handles platform-specific config paths for Claude Desktop, Cursor,
+    Claude Code, and other MCP-capable agents.
     """
 
-    # Config paths per platform (relative to home directory)
-    # Use {home} as placeholder for the home/base directory
-    # {cwd} is substituted with the current working directory (for project-level configs)
-    CONFIG_PATHS: dict[SourceType, dict[str, str]] = {
-        "claude_desktop": {
-            "darwin": "{home}/Library/Application Support/Claude/claude_desktop_config.json",
-            "linux": "{home}/.config/Claude/claude_desktop_config.json",
-            "windows": "{home}/AppData/Roaming/Claude/claude_desktop_config.json",
-        },
-        "cursor": {
-            "darwin": "{home}/Library/Application Support/Cursor/User/globalStorage/cursor.mcp/",
-            "linux": "{home}/.config/Cursor/User/globalStorage/cursor.mcp/",
-            "windows": "{home}/AppData/Roaming/Cursor/User/globalStorage/cursor.mcp/",
-        },
-        "claude_code_global": {
-            "darwin": "{home}/.claude/settings.json",
-            "linux": "{home}/.claude/settings.json",
-            "windows": "{home}/.claude/settings.json",
-        },
-        "claude_code_project": {
-            "darwin": "{cwd}/.mcp.json",
-            "linux": "{cwd}/.mcp.json",
-            "windows": "{cwd}/.mcp.json",
-        },
-    }
+    # Config paths derived from TARGET_REGISTRY (single source of truth).
+    # Populated lazily to avoid import cycles at class definition time.
+    _config_paths_cache: dict[str, dict[str, str]] | None = None
+
+    @classmethod
+    def _get_config_paths(cls) -> dict[str, dict[str, str]]:
+        """Lazily build CONFIG_PATHS from TARGET_REGISTRY."""
+        if cls._config_paths_cache is None:
+            from .injection_targets.registry import TARGET_REGISTRY
+
+            cls._config_paths_cache = {
+                sid: dict(target.config_path_template) for sid, target in TARGET_REGISTRY.items()
+            }
+        return cls._config_paths_cache
+
+    @property
+    def CONFIG_PATHS(self) -> dict[str, dict[str, str]]:  # noqa: N802
+        """Backward-compatible property: config paths keyed by source_id."""
+        return self._get_config_paths()
 
     def __init__(
         self,
@@ -222,12 +233,7 @@ class ConfigDetector:
             )
 
         try:
-            if path.is_dir():
-                # Cursor: scan directory for JSON files
-                servers = self._scan_directory(source, path)
-            else:
-                # Claude Desktop: single file
-                servers = self._parse_config_file(source, path)
+            servers = self._parse_config_file(source, path)
 
             return DetectedConfig(
                 source=source,
@@ -253,26 +259,6 @@ class ConfigDetector:
                 path=path,
                 error=str(e),
             )
-
-    def _scan_directory(self, source: SourceType, directory: Path) -> dict[str, ServerInfo]:
-        """Scan a directory for JSON config files (Cursor).
-
-        Args:
-            source: Source identifier
-            directory: Directory to scan
-
-        Returns:
-            Dict of server name to ServerInfo
-        """
-        servers: dict[str, ServerInfo] = {}
-        for json_file in directory.glob("*.json"):
-            try:
-                file_servers = self._parse_config_file(source, json_file)
-                servers.update(file_servers)
-            except (json.JSONDecodeError, PermissionError):
-                # Skip invalid files
-                continue
-        return servers
 
     def _parse_config_file(self, source: SourceType, path: Path) -> dict[str, ServerInfo]:
         """Parse a single config file.

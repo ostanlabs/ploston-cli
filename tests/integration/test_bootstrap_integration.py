@@ -420,3 +420,78 @@ class TestBootstrapStep8ImportFlow:
         assert 'click.confirm("  Proceed with injection?", default=True)' in source
         # The old prompt text should NOT be present
         assert "Inject Ploston into source config?" not in source
+
+
+class TestBootstrapRestoreFromFile:
+    """§6.1: test_bootstrap_restore_from_file_cli_verb."""
+
+    @pytest.fixture
+    def runner(self):
+        return CliRunner()
+
+    def test_bootstrap_restore_from_file_cli_verb(self, runner, tmp_path):
+        """ploston bootstrap restore-from-file --target restores from backup."""
+        import json
+
+        from ploston_cli.init.backup import make_backup
+
+        config_file = tmp_path / "mcp.json"
+        original = {"mcpServers": {"gh": {"command": "npx"}}}
+        config_file.write_text(json.dumps(original), encoding="utf-8")
+
+        # Create a backup (simulates what inject would do)
+        make_backup(config_file)
+
+        # Modify the config (simulates injection)
+        modified = {"mcpServers": {"gh": {"command": "/usr/local/bin/ploston"}, "ploston": {}}}
+        config_file.write_text(json.dumps(modified), encoding="utf-8")
+
+        # Mock the target registry to point at our tmp file
+        fake_target = MagicMock()
+        fake_target.detect.return_value = config_file
+
+        with patch(
+            "ploston_cli.init.injection_targets.registry.TARGET_REGISTRY",
+            {"claude_desktop": fake_target},
+        ):
+            result = runner.invoke(
+                bootstrap,
+                ["restore-from-file", "--target", "claude_desktop"],
+                input="y\n",
+            )
+
+        assert result.exit_code == 0
+        assert "Restored" in result.output
+
+        # Config should be back to original
+        restored = json.loads(config_file.read_text(encoding="utf-8"))
+        assert restored == original
+
+    def test_bootstrap_restore_from_file_unknown_target(self, runner):
+        """Unknown target ID → exit 1."""
+        result = runner.invoke(
+            bootstrap,
+            ["restore-from-file", "--target", "nonexistent_target_xyz"],
+        )
+        assert result.exit_code == 1
+        assert "Unknown target" in result.output
+
+    def test_bootstrap_restore_from_file_no_backup(self, runner, tmp_path):
+        """No backup found → graceful message."""
+        config_file = tmp_path / "mcp.json"
+        config_file.write_text("{}", encoding="utf-8")
+
+        fake_target = MagicMock()
+        fake_target.detect.return_value = config_file
+
+        with patch(
+            "ploston_cli.init.injection_targets.registry.TARGET_REGISTRY",
+            {"cursor": fake_target},
+        ):
+            result = runner.invoke(
+                bootstrap,
+                ["restore-from-file", "--target", "cursor"],
+            )
+
+        assert result.exit_code == 0
+        assert "No Layer-2 backup found" in result.output

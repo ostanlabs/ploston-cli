@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import click
@@ -27,6 +28,7 @@ from ploston_cli.init.injector import (
     default_runner_name,
     run_injection,
 )
+from ploston_cli.init.target_selector import select_targets
 
 if TYPE_CHECKING:
     from ploston_cli.init.detector import DetectedConfig, ServerInfo
@@ -86,6 +88,12 @@ def _get_default_cp_url() -> str:
     type=click.Choice(ALL_INJECT_TARGETS),
     help="Inject into specific config target(s). Repeatable. Default: interactive selection.",
 )
+@click.option(
+    "--no-backup-file",
+    is_flag=True,
+    default=False,
+    help="Skip Layer-2 file backup before injection. Use if you manage config via version control.",
+)
 def init_command(
     do_import: bool,
     source: str,
@@ -94,6 +102,7 @@ def init_command(
     non_interactive: bool,
     runner_name: str | None,
     inject_targets: tuple[str, ...],
+    no_backup_file: bool,
 ) -> None:
     """Initialize Ploston configuration.
 
@@ -126,6 +135,7 @@ def init_command(
             non_interactive=non_interactive,
             runner_name=runner_name,  # None → default_runner_name() applied at inject time
             inject_targets=list(inject_targets) or None,
+            no_backup_file=no_backup_file,
         )
     )
 
@@ -137,6 +147,7 @@ async def _run_import_flow(
     non_interactive: bool,
     runner_name: str | None,
     inject_targets: list[str] | None = None,
+    no_backup_file: bool = False,
 ) -> None:
     """Execute the full init --import flow."""
     click.echo("\n🚀 Ploston Init - Import MCP Configuration\n")
@@ -185,15 +196,28 @@ async def _run_import_flow(
             click.echo("  Make sure Claude Desktop or Cursor is installed and configured.")
         sys.exit(1)
 
+    # T-1005: Compact grouped detection display
+    home = str(Path.home())
+    total_sources = len(detected)
+    click.echo(f"📂 Detected MCP configurations ({len(found)} of {total_sources} sources):\n")
     for d in found:
         label = SOURCE_LABELS.get(d.source, d.source)
-        click.echo(f"  ✓ Found: {label} ({d.path})")
-        click.echo(f"    {d.server_count} servers configured")
+        path_str = str(d.path).replace(str(home), "~") if d.path else "?"
+        svr_word = "server" if d.server_count == 1 else "servers"
+        click.echo(f"  {label:<24}{path_str}   {d.server_count} {svr_word}")
+    # Show per-source errors (always surfaced even when some sources found)
+    for d in detected:
+        if not d.found and d.error:
+            label = SOURCE_LABELS.get(d.source, d.source)
+            click.echo(f"  ⚠ {label}: {d.error}")
 
     # Merge if multiple sources
     if len(found) > 1:
         servers = merge_configs(found)
-        click.echo(f"\n{len(servers)} unique servers found (merged).\n")
+        total_raw = sum(d.server_count for d in found)
+        deduped = total_raw - len(servers)
+        dedup_note = f" ({deduped} duplicates deduplicated)" if deduped > 0 else ""
+        click.echo(f"\n  {len(servers)} unique servers{dedup_note}\n")
     else:
         servers = found[0].servers
 
@@ -225,6 +249,8 @@ async def _run_import_flow(
         runner_name,
         inject,
         inject_targets=inject_targets,
+        non_interactive=non_interactive,
+        no_backup_file=no_backup_file,
     )
 
 
@@ -321,6 +347,8 @@ async def _complete_import_flow(
     runner_name: str | None,
     inject: bool,
     inject_targets: list[str] | None = None,
+    non_interactive: bool = False,
+    no_backup_file: bool = False,
 ) -> None:
     """Complete the import flow after server selection."""
     from ploston_core.config.secrets import SecretDetector
@@ -377,22 +405,35 @@ async def _complete_import_flow(
         click.echo(f"  ❌ Failed to push configuration: {e.message}", err=True)
         sys.exit(1)
 
-    # Step 6: Optionally inject into source config
+    # Step 6: Optionally inject into source config (with target picker)
+    chosen_targets: list[str] = []
+    results: list[tuple[str, object, str | None]] = []
     if inject:
-        click.echo("\n🔧 Injecting Ploston into source configurations...")
-        results = run_injection(
+        # Use TargetSelector to determine which targets to inject into
+        chosen_targets = select_targets(
             detected_configs=detected_configs,
-            imported_servers=list(selected_servers.keys()),
-            cp_url=cp_url,
-            runner_name=effective_runner_name,
-            targets=inject_targets,
+            selected_server_names=list(selected_servers.keys()),
+            non_interactive=non_interactive,
+            inject_targets=inject_targets,
         )
-        for source_type, path, error in results:
-            label = SOURCE_LABELS.get(source_type, source_type)
-            if error:
-                click.echo(f"  ⚠️  Failed to update {path}: {error}")
-            else:
-                click.echo(f"  ✓ Updated {label} config ({path})")
+        if not chosen_targets:
+            click.echo("\n  No targets selected for injection. Skipping.")
+        else:
+            click.echo("\n🔧 Injecting Ploston into source configurations...")
+            results = run_injection(
+                detected_configs=detected_configs,
+                imported_servers=list(selected_servers.keys()),
+                cp_url=cp_url,
+                runner_name=effective_runner_name,
+                targets=chosen_targets,
+                no_backup_file=no_backup_file,
+            )
+            for source_type, path, error in results:
+                label = SOURCE_LABELS.get(source_type, source_type)
+                if error:
+                    click.echo(f"  ⚠️  Failed to update {path}: {error}")
+                else:
+                    click.echo(f"  ✓ Updated {label} config ({path})")
 
     # Step 7: Auto-start the runner (same as bootstrap does)
     click.echo("\n🚀 Starting local runner...")
@@ -420,32 +461,19 @@ async def _complete_import_flow(
             click.echo("    You can start it manually:")
             click.echo("      ploston runner start --daemon")
 
-    # Step 8: Print summary
-    click.echo("\n" + "=" * 60)
-    click.echo("✅ Import Complete!")
-    click.echo("=" * 60)
-    click.echo()
-    click.echo(f"  Runner name: {effective_runner_name}")
-    click.echo(f"  Servers imported: {len(selected_names)}")
-    click.echo(f"  Secrets stored: {env_file}")
-    click.echo()
+    # Step 8: T-1005 structured summary
+    click.echo("\n🚀 Setup complete\n")
+    click.echo(f"  Imported {len(selected_names)} MCP servers to Ploston")
 
-    if inject:
-        click.echo("✓ Claude Desktop config updated with drop-in bridge entries.")
-        click.echo()
-        click.echo("  Each original MCP server is now proxied through Ploston:")
-        for name in selected_names:
-            click.echo(
-                f"    {name:<16}→  ploston bridge --expose {name} --runner {effective_runner_name}"
-            )
-        click.echo()
-        click.echo("  A new 'ploston' entry exposes your Ploston workflows.")
-        click.echo()
-        click.echo("  Next step:")
-        click.echo("    Restart Claude Desktop to apply config changes.")
-        click.echo()
-        click.echo("  To restore original config:")
-        click.echo("    Swap 'mcpServers' with '_ploston_imported' in your Claude Desktop config.")
-    else:
-        click.echo("Next step:")
-        click.echo("  Restart Claude Desktop to apply config changes.")
+    if inject and chosen_targets:
+        # Collect successfully injected agent names
+        injected_labels = [
+            SOURCE_LABELS.get(src, src) for src, _path, err in results if err is None
+        ]
+        if injected_labels:
+            agents_str = ", ".join(injected_labels)
+            click.echo(f"  Injected Ploston into {len(injected_labels)} agents: {agents_str}")
+            click.echo("  ⚠ Restart these agents to pick up the new config")
+    click.echo()
+    click.echo("  Verify: ploston tools list")
+    click.echo("  Roll back: ploston bootstrap rollback")

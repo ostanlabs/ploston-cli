@@ -102,6 +102,7 @@ def inject_ploston_into_config(
     imported_servers: list[str],
     cp_url: str = "http://localhost:8022",
     runner_name: str | None = None,
+    no_backup_file: bool = False,
 ) -> None:
     """Inject Ploston into a Claude/Cursor config file.
 
@@ -125,6 +126,12 @@ def inject_ploston_into_config(
         runner_name: Runner name for --runner args. None uses default_runner_name().
                      Pass empty string "" to omit --runner entirely (E-18).
     """
+    # Layer-2 backup (before any modification)
+    if not no_backup_file:
+        from .backup import make_backup
+
+        make_backup(config_path)
+
     # Resolve runner name
     # Empty string is the E-18 signal: CP-native servers, no runner needed
     if runner_name is None:
@@ -331,12 +338,122 @@ class SourceConfigInjector:
 # Used by: ploston init --inject, ploston inject, ploston server add --inject
 # ---------------------------------------------------------------------------
 
-SOURCE_LABELS: dict[str, str] = {
-    "claude_desktop": "Claude Desktop",
-    "cursor": "Cursor",
-    "claude_code_global": "Claude Code (global)",
-    "claude_code_project": "Claude Code (project)",
-}
+
+def _build_source_labels() -> dict[str, str]:
+    """Derive SOURCE_LABELS from TARGET_REGISTRY (single source of truth)."""
+    from .injection_targets.registry import TARGET_REGISTRY
+
+    return {sid: t.display_name for sid, t in TARGET_REGISTRY.items()}
+
+
+SOURCE_LABELS: dict[str, str] = _build_source_labels()
+
+
+def inject_via_target(
+    source_id: str,
+    config_path: Path,
+    imported_servers: list[str],
+    cp_url: str = "http://localhost:8022",
+    runner_name: str | None = None,
+    no_backup_file: bool = False,
+) -> None:
+    """Shape-aware injection using TARGET_REGISTRY dispatch.
+
+    Looks up the InjectionTarget for *source_id* and uses its adapter to
+    read/write the config in the correct shape. Falls back to the legacy
+    ``inject_ploston_into_config`` for mcpServers-shape targets (same
+    battle-tested code path).
+
+    Args:
+        source_id: Target identifier (e.g. "cursor", "vscode_copilot_workspace")
+        config_path: Path to the config file
+        imported_servers: Server names to inject bridge entries for
+        cp_url: Control Plane URL
+        runner_name: Runner name for --runner args
+        no_backup_file: If True, skip Layer-2 backup creation.
+    """
+    from .injection_targets.adapters import McpServersAdapter
+    from .injection_targets.registry import TARGET_REGISTRY
+
+    target = TARGET_REGISTRY.get(source_id)
+    if target is None or isinstance(target.adapter, McpServersAdapter):
+        # Use the existing, battle-tested inject path for mcpServers shape
+        inject_ploston_into_config(
+            config_path=config_path,
+            imported_servers=imported_servers,
+            cp_url=cp_url,
+            runner_name=runner_name,
+            no_backup_file=no_backup_file,
+        )
+        return
+
+    # Layer-2 backup (before any modification) for non-mcpServers shapes
+    if not no_backup_file:
+        from .backup import make_backup
+
+        make_backup(config_path)
+
+    # Microsoft-shape (or future adapters): use adapter-based dispatch
+    adapter = target.adapter
+
+    # Resolve runner name
+    if runner_name is None:
+        effective_runner: str | None = default_runner_name()
+    elif runner_name == "":
+        effective_runner = None
+    else:
+        effective_runner = sanitise_runner_name(runner_name)
+
+    data = adapter.read(config_path)
+    servers = adapter.get_servers(data)
+
+    # Build backup section
+    backup = adapter.get_backup_section(data)
+    if not backup:
+        backup = {}
+    backup["_comment"] = (
+        "Original server definitions — managed by Ploston. "
+        "Swap with servers to restore direct access."
+    )
+    for server_name in imported_servers:
+        if server_name in servers:
+            backup_key = server_name
+            if server_name == "ploston":
+                backup_key = "ploston-original"
+                logger.warning(
+                    "Server named 'ploston' found; backed up as 'ploston-original' "
+                    "to avoid collision with the Ploston workflows entry."
+                )
+            if backup_key not in backup:
+                backup[backup_key] = servers.pop(server_name)
+            else:
+                servers.pop(server_name)
+
+    # Generate bridge entries using the target's make_ploston_entry
+    new_servers: dict[str, object] = {}
+    for server_name in imported_servers:
+        if server_name == "ploston":
+            continue
+        new_servers[server_name] = target.make_ploston_entry(
+            cp_url=cp_url,
+            expose=server_name,
+            runner_name=effective_runner,
+        )
+
+    new_servers["ploston-authoring"] = target.make_ploston_entry(
+        cp_url=cp_url,
+        tags=["kind:workflow_mgmt"],
+        runner_name=None,
+    )
+    new_servers["ploston"] = target.make_ploston_entry(
+        cp_url=cp_url,
+        tags=["kind:workflow"],
+        runner_name=None,
+    )
+
+    data = adapter.set_servers(data, {**servers, **new_servers})
+    data = adapter.set_backup_section(data, backup)
+    adapter.write(config_path, data)
 
 
 def run_injection(
@@ -345,8 +462,11 @@ def run_injection(
     cp_url: str,
     runner_name: str | None = None,
     targets: list[str] | None = None,
+    no_backup_file: bool = False,
 ) -> list[tuple[str, Path | None, str | None]]:
     """Shared injection logic for all callers.
+
+    Uses TARGET_REGISTRY dispatch for shape-aware injection.
 
     Args:
         detected_configs: List of DetectedConfig objects from ConfigDetector.detect_all()
@@ -355,6 +475,7 @@ def run_injection(
         runner_name: Runner name for bridge entries
         targets: If given, only inject into these source types.
                  If None, inject into all detected configs.
+        no_backup_file: If True, skip Layer-2 backup creation.
 
     Returns:
         List of (source_type, path, error_or_none) for each attempted injection.
@@ -368,11 +489,13 @@ def run_injection(
         if not detected.found or not detected.path:
             continue
         try:
-            inject_ploston_into_config(
+            inject_via_target(
+                source_id=detected.source,
                 config_path=detected.path,
                 imported_servers=imported_servers,
                 cp_url=cp_url,
                 runner_name=runner_name,
+                no_backup_file=no_backup_file,
             )
             results.append((detected.source, detected.path, None))
         except Exception as e:

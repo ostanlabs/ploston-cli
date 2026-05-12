@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -243,5 +245,217 @@ class TestInitImportWithConfig:
                         )
 
         assert result.exit_code == 0
-        assert "Import Complete" in result.output
-        assert "filesystem" in result.output or "1 servers" in result.output
+        assert "Setup complete" in result.output
+        assert "Imported 1 MCP servers to Ploston" in result.output
+
+
+# ── §6.1 integration tests for TargetSelector wiring & backup flag ──────────
+
+
+@dataclass
+class _FakeDetected:
+    source: str
+    path: Path | None
+    found: bool
+    servers: dict | None = None
+    server_count: int = 0
+
+
+def _make_mock_cp():
+    """Return mock_client for CP connectivity."""
+    mock_result = CPConnectionResult(connected=True, url="http://localhost:8022", version="1.0.0")
+    mock_client = AsyncMock()
+    mock_client.check_cp_connectivity = AsyncMock(return_value=mock_result)
+    mock_client.push_runner_config = AsyncMock(return_value=None)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+    return mock_client
+
+
+class TestTargetSelectorIntegration:
+    """§6.1: TargetSelector wiring in the import flow."""
+
+    @pytest.fixture
+    def runner(self):
+        return CliRunner()
+
+    @pytest.fixture
+    def two_target_setup(self, tmp_path):
+        """Two detected configs with one shared server."""
+        from ploston_cli.init.detector import DetectedConfig, ServerInfo
+
+        claude_cfg = tmp_path / "claude.json"
+        claude_cfg.write_text(
+            json.dumps({"mcpServers": {"github": {"command": "npx", "args": ["@mcp/github"]}}})
+        )
+        cursor_cfg = tmp_path / "cursor.json"
+        cursor_cfg.write_text(
+            json.dumps({"mcpServers": {"github": {"command": "npx", "args": ["@mcp/github"]}}})
+        )
+
+        server = ServerInfo(
+            name="github", source="claude_desktop", command="npx", args=["@mcp/github"]
+        )
+        configs = [
+            DetectedConfig(
+                source="claude_desktop",
+                path=claude_cfg,
+                servers={"github": server},
+                server_count=1,
+            ),
+            DetectedConfig(
+                source="cursor",
+                path=cursor_cfg,
+                servers={"github": server},
+                server_count=1,
+            ),
+        ]
+        return configs, [server]
+
+    def test_run_import_flow_with_inject_invokes_target_selector(
+        self, runner, two_target_setup, tmp_path
+    ):
+        """--inject causes select_targets to be called inside the flow."""
+        configs, servers = two_target_setup
+
+        with patch("ploston_cli.commands.init.PlostClient") as mock_cls:
+            mock_cls.return_value = _make_mock_cp()
+            with patch("ploston_cli.commands.init.ConfigDetector") as det_cls:
+                det = det_cls.return_value
+                det.detect_all.return_value = configs
+                det.build_server_infos.return_value = servers
+                with patch("ploston_cli.commands.init.ServerSelector") as sel_cls:
+                    sel_cls.return_value.select_all.return_value = ["github"]
+                    with patch("ploston_cli.commands.init.select_targets") as mock_st:
+                        mock_st.return_value = ["claude_desktop"]
+                        with patch(
+                            "ploston_cli.commands.init.write_env_file",
+                            return_value=tmp_path / ".env",
+                        ):
+                            with patch("ploston_cli.commands.init.run_injection", return_value=[]):
+                                result = runner.invoke(
+                                    cli, ["init", "--import", "--inject", "--non-interactive"]
+                                )
+
+        assert result.exit_code == 0
+        mock_st.assert_called_once()
+
+    def test_inject_target_flag_bypasses_picker(self, runner, two_target_setup, tmp_path):
+        """--inject-target <id> passes through to select_targets without prompting."""
+        configs, servers = two_target_setup
+
+        with patch("ploston_cli.commands.init.PlostClient") as mock_cls:
+            mock_cls.return_value = _make_mock_cp()
+            with patch("ploston_cli.commands.init.ConfigDetector") as det_cls:
+                det = det_cls.return_value
+                det.detect_all.return_value = configs
+                det.build_server_infos.return_value = servers
+                with patch("ploston_cli.commands.init.ServerSelector") as sel_cls:
+                    sel_cls.return_value.select_all.return_value = ["github"]
+                    with patch("ploston_cli.commands.init.select_targets") as mock_st:
+                        mock_st.return_value = ["cursor"]
+                        with patch(
+                            "ploston_cli.commands.init.write_env_file",
+                            return_value=tmp_path / ".env",
+                        ):
+                            with patch("ploston_cli.commands.init.run_injection", return_value=[]):
+                                result = runner.invoke(
+                                    cli,
+                                    [
+                                        "init",
+                                        "--import",
+                                        "--inject",
+                                        "--inject-target",
+                                        "cursor",
+                                        "--non-interactive",
+                                    ],
+                                )
+
+        assert result.exit_code == 0
+        _, kwargs = mock_st.call_args
+        assert kwargs.get("inject_targets") == ["cursor"]
+
+    def test_non_interactive_inject_uses_contributors_only(
+        self, runner, two_target_setup, tmp_path
+    ):
+        """Non-interactive mode feeds non_interactive=True into select_targets."""
+        configs, servers = two_target_setup
+
+        with patch("ploston_cli.commands.init.PlostClient") as mock_cls:
+            mock_cls.return_value = _make_mock_cp()
+            with patch("ploston_cli.commands.init.ConfigDetector") as det_cls:
+                det = det_cls.return_value
+                det.detect_all.return_value = configs
+                det.build_server_infos.return_value = servers
+                with patch("ploston_cli.commands.init.ServerSelector") as sel_cls:
+                    sel_cls.return_value.select_all.return_value = ["github"]
+                    with patch("ploston_cli.commands.init.select_targets") as mock_st:
+                        mock_st.return_value = ["claude_desktop", "cursor"]
+                        with patch(
+                            "ploston_cli.commands.init.write_env_file",
+                            return_value=tmp_path / ".env",
+                        ):
+                            with patch("ploston_cli.commands.init.run_injection", return_value=[]):
+                                result = runner.invoke(
+                                    cli, ["init", "--import", "--inject", "--non-interactive"]
+                                )
+
+        assert result.exit_code == 0
+        _, kwargs = mock_st.call_args
+        assert kwargs.get("non_interactive") is True
+
+
+class TestNoBackupFileFlag:
+    """§6.1: --no-backup-file flag wiring."""
+
+    @pytest.fixture
+    def runner(self):
+        return CliRunner()
+
+    def test_no_backup_file_flag_skips_layer_2(self, runner, tmp_path):
+        """--no-backup-file threads through to run_injection(no_backup_file=True)."""
+        from ploston_cli.init.detector import DetectedConfig, ServerInfo
+
+        cfg = tmp_path / "claude.json"
+        cfg.write_text(
+            json.dumps({"mcpServers": {"gh": {"command": "npx", "args": ["@mcp/github"]}}})
+        )
+        server = ServerInfo(name="gh", source="claude_desktop", command="npx", args=["@mcp/github"])
+        configs = [
+            DetectedConfig(
+                source="claude_desktop", path=cfg, servers={"gh": server}, server_count=1
+            )
+        ]
+
+        with patch("ploston_cli.commands.init.PlostClient") as mock_cls:
+            mock_cls.return_value = _make_mock_cp()
+            with patch("ploston_cli.commands.init.ConfigDetector") as det_cls:
+                det = det_cls.return_value
+                det.detect_all.return_value = configs
+                det.build_server_infos.return_value = [server]
+                with patch("ploston_cli.commands.init.ServerSelector") as sel_cls:
+                    sel_cls.return_value.select_all.return_value = ["gh"]
+                    with patch(
+                        "ploston_cli.commands.init.select_targets", return_value=["claude_desktop"]
+                    ):
+                        with patch(
+                            "ploston_cli.commands.init.write_env_file",
+                            return_value=tmp_path / ".env",
+                        ):
+                            with patch("ploston_cli.commands.init.run_injection") as mock_ri:
+                                mock_ri.return_value = []
+                                result = runner.invoke(
+                                    cli,
+                                    [
+                                        "init",
+                                        "--import",
+                                        "--inject",
+                                        "--no-backup-file",
+                                        "--non-interactive",
+                                    ],
+                                )
+
+        assert result.exit_code == 0
+        mock_ri.assert_called_once()
+        _, kwargs = mock_ri.call_args
+        assert kwargs.get("no_backup_file") is True

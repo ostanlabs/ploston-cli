@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import click
 
@@ -39,8 +40,9 @@ from ..bootstrap.builder import BuildError, build_from_source
 from ..bootstrap.image_resolver import ImageConfig, ImageResolverError, resolve_images
 from ..bootstrap.workspace import detect_meta_repo_root
 from ..init import ServerSelector
+from ..init.backup import find_latest_backup, restore_from_backup
 from ..init.detector import ConfigDetector
-from ..init.injector import is_already_injected, restore_config_from_imported
+from ..init.injector import SOURCE_LABELS, is_already_injected, restore_config_from_imported
 
 DEFAULT_NETWORK_NAME = "ploston-network"
 
@@ -60,7 +62,7 @@ def _restore_injected_configs() -> None:
         if not is_already_injected(config.path):
             continue
 
-        label = "Claude Desktop" if config.source == "claude_desktop" else "Cursor"
+        label = SOURCE_LABELS.get(config.source, config.source)
         if restore_config_from_imported(config.path):
             click.echo(f"  ✓ Restored {label} config from _ploston_imported")
         else:
@@ -572,7 +574,7 @@ def restart_runner():
 
 @bootstrap.command()
 def rollback():
-    """Restore Claude Desktop and Cursor configs to their pre-injection state.
+    """Restore agent configs to their pre-injection state.
 
     Scans for configs that were modified by ``ploston init --import --inject``
     and restores them from the inline ``_ploston_imported`` section, which
@@ -592,7 +594,7 @@ def rollback():
         if not is_already_injected(config.path):
             continue
 
-        label = "Claude Desktop" if config.source == "claude_desktop" else "Cursor"
+        label = SOURCE_LABELS.get(config.source, config.source)
         if restore_config_from_imported(config.path):
             click.echo(f"  ✓ Restored {label} config from _ploston_imported")
             restored += 1
@@ -603,12 +605,61 @@ def rollback():
             )
 
     if restored:
-        click.echo(f"\n✓ {restored} config(s) restored. Restart Claude Desktop / Cursor to apply.")
+        click.echo(f"\n✓ {restored} config(s) restored. Restart your agent(s) to apply.")
     elif not any(
         config.path and config.path.exists() and is_already_injected(config.path)
         for config in configs
     ):
         click.echo("No injected configs found — nothing to roll back.")
+
+
+@bootstrap.command("restore-from-file")
+@click.option(
+    "--target",
+    "target_id",
+    required=True,
+    help="Target ID to restore (e.g. cursor, claude_desktop, windsurf).",
+)
+def restore_from_file(target_id: str) -> None:
+    """Restore a config file from its Layer-2 file backup.
+
+    Each time Ploston first modifies a config, a timestamped copy is saved
+    next to the original (e.g. ``mcp.json.ploston-backup-2025-06-01T12-00-00Z``).
+    This command replaces the live config with the most recent backup.
+
+    \b
+    Example:
+      ploston bootstrap restore-from-file --target cursor
+    """
+    from ..init.injection_targets.registry import TARGET_REGISTRY
+
+    target = TARGET_REGISTRY.get(target_id)
+    if target is None:
+        click.echo(f"Unknown target: {target_id}", err=True)
+        raise SystemExit(1)
+
+    config_path = target.detect(Path.home(), Path.cwd())
+    if config_path is None or not config_path.exists():
+        click.echo(f"No config file found for {target_id}.", err=True)
+        raise SystemExit(1)
+
+    backup = find_latest_backup(config_path)
+    if backup is None:
+        click.echo(f"No Layer-2 backup found for {config_path}.")
+        return
+
+    label = SOURCE_LABELS.get(target_id, target_id)
+    click.echo(f"Found backup: {backup}")
+    if not click.confirm(f"Restore {label} config from this backup?"):
+        click.echo("Aborted.")
+        return
+
+    if restore_from_backup(config_path):
+        click.echo(f"✓ Restored {label} config from {backup}")
+        click.echo("  Restart your agent to apply.")
+    else:
+        click.echo(f"⚠ Failed to restore {label} config.", err=True)
+        raise SystemExit(1)
 
 
 async def _run_bootstrap(
