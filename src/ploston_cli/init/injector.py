@@ -429,26 +429,33 @@ def inject_via_target(
             else:
                 servers.pop(server_name)
 
-    # Generate bridge entries using the target's make_ploston_entry
+    # Generate bridge entries using the target's make_ploston_entry,
+    # then apply adapter-level decoration (e.g. "type": "stdio" for Microsoft).
+    # S-313 / M-085: decorate_server_entry is the authoritative extension point.
     new_servers: dict[str, object] = {}
     for server_name in imported_servers:
         if server_name == "ploston":
             continue
-        new_servers[server_name] = target.make_ploston_entry(
+        entry = target.make_ploston_entry(
             cp_url=cp_url,
             expose=server_name,
             runner_name=effective_runner,
         )
+        new_servers[server_name] = adapter.decorate_server_entry(entry)
 
-    new_servers["ploston-authoring"] = target.make_ploston_entry(
-        cp_url=cp_url,
-        tags=["kind:workflow_mgmt"],
-        runner_name=None,
+    new_servers["ploston-authoring"] = adapter.decorate_server_entry(
+        target.make_ploston_entry(
+            cp_url=cp_url,
+            tags=["kind:workflow_mgmt"],
+            runner_name=None,
+        )
     )
-    new_servers["ploston"] = target.make_ploston_entry(
-        cp_url=cp_url,
-        tags=["kind:workflow"],
-        runner_name=None,
+    new_servers["ploston"] = adapter.decorate_server_entry(
+        target.make_ploston_entry(
+            cp_url=cp_url,
+            tags=["kind:workflow"],
+            runner_name=None,
+        )
     )
 
     data = adapter.set_servers(data, {**servers, **new_servers})

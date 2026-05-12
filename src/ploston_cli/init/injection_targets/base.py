@@ -51,6 +51,17 @@ class ConfigAdapter(Protocol):
         """Return a new config dict with the backup section removed."""
         ...
 
+    def decorate_server_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
+        """Apply shape-specific decoration to a bridge entry before injection.
+
+        The default is a no-op (returns the entry unchanged). Adapters for
+        shapes that require extra fields (e.g. Microsoft's ``"type": "stdio"``)
+        override this to prepend/append the required keys.
+
+        Added in M-085 / S-313 (DEC-202).
+        """
+        ...
+
 
 # ---------------------------------------------------------------------------
 # InjectionTarget base class

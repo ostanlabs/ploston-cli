@@ -1,92 +1,46 @@
-"""Config shape adapters (T-990, DEC-198).
+"""Config shape adapters (T-990, DEC-198; refactored in S-315, DEC-204).
 
 McpServersAdapter  — canonical {"mcpServers": {...}} JSON.
 MicrosoftServersAdapter — {"servers": {...}, "inputs": [...]} JSON.
+
+Post-S-315: Both are thin CompositeAdapter subclasses composed from
+JsonFormat + the appropriate ConfigShape.  The public API surface
+(class names, attribute names, method signatures) is unchanged.
 """
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Any
+from .composite import CompositeAdapter
+from .formats import JsonFormat
+from .shapes import McpServersShape, MicrosoftServersShape
 
 
-class McpServersAdapter:
+class McpServersAdapter(CompositeAdapter):
     """Adapter for the standard mcpServers JSON shape.
 
     Used by: Claude Desktop, Cursor, Windsurf, Gemini CLI, Cline, Claude Code.
+
+    Public API — importable and stable per DEC-206.
     """
 
     SERVERS_KEY = "mcpServers"
     BACKUP_KEY = "_ploston_imported"
 
-    def read(self, path: Path) -> dict[str, Any]:
-        return json.loads(path.read_text(encoding="utf-8"))
-
-    def write(self, path: Path, data: dict[str, Any]) -> None:
-        path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-
-    def get_servers(self, data: dict[str, Any]) -> dict[str, Any]:
-        return dict(data.get(self.SERVERS_KEY, {}))
-
-    def set_servers(self, data: dict[str, Any], servers: dict[str, Any]) -> dict[str, Any]:
-        out = dict(data)
-        out[self.SERVERS_KEY] = servers
-        return out
-
-    def get_backup_section(self, data: dict[str, Any]) -> dict[str, Any]:
-        return dict(data.get(self.BACKUP_KEY, {}))
-
-    def set_backup_section(self, data: dict[str, Any], backup: dict[str, Any]) -> dict[str, Any]:
-        out = dict(data)
-        out[self.BACKUP_KEY] = backup
-        return out
-
-    def strip_backup_section(self, data: dict[str, Any]) -> dict[str, Any]:
-        out = dict(data)
-        out.pop(self.BACKUP_KEY, None)
-        return out
+    def __init__(self) -> None:
+        super().__init__(format=JsonFormat(), shape=McpServersShape())
 
 
-class MicrosoftServersAdapter:
+class MicrosoftServersAdapter(CompositeAdapter):
     """Adapter for the Microsoft {"servers": {...}, "inputs": [...]} JSON shape.
 
     Used by: VS Code Copilot, Visual Studio 2022/2026.
     The ``inputs`` array is preserved verbatim on round-trip.
+
+    Public API — importable and stable per DEC-206.
     """
 
     SERVERS_KEY = "servers"
     BACKUP_KEY = "_ploston_imported"
 
-    def read(self, path: Path) -> dict[str, Any]:
-        return json.loads(path.read_text(encoding="utf-8"))
-
-    def write(self, path: Path, data: dict[str, Any]) -> None:
-        path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-
-    def get_servers(self, data: dict[str, Any]) -> dict[str, Any]:
-        return dict(data.get(self.SERVERS_KEY, {}))
-
-    def set_servers(self, data: dict[str, Any], servers: dict[str, Any]) -> dict[str, Any]:
-        out = dict(data)
-        out[self.SERVERS_KEY] = servers
-        return out
-
-    def get_backup_section(self, data: dict[str, Any]) -> dict[str, Any]:
-        return dict(data.get(self.BACKUP_KEY, {}))
-
-    def set_backup_section(self, data: dict[str, Any], backup: dict[str, Any]) -> dict[str, Any]:
-        out = dict(data)
-        out[self.BACKUP_KEY] = backup
-        return out
-
-    def strip_backup_section(self, data: dict[str, Any]) -> dict[str, Any]:
-        out = dict(data)
-        out.pop(self.BACKUP_KEY, None)
-        return out
+    def __init__(self) -> None:
+        super().__init__(format=JsonFormat(), shape=MicrosoftServersShape())

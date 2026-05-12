@@ -8,10 +8,11 @@ See: MULTI_AGENT_BOOTSTRAP_EXPANSION_W1_SPEC.md §3.1
 
 from __future__ import annotations
 
-from typing import Any
-
 from .adapters import McpServersAdapter, MicrosoftServersAdapter
 from .base import InjectionTarget
+from .composite import CompositeAdapter
+from .formats import JsonFormat, TomlFormat
+from .shapes import ContextServersShape, McpServersShape
 
 # ---------------------------------------------------------------------------
 # Shared adapter singletons
@@ -19,6 +20,10 @@ from .base import InjectionTarget
 
 _mcp_adapter = McpServersAdapter()
 _ms_adapter = MicrosoftServersAdapter()
+_codex_adapter = CompositeAdapter(
+    format=TomlFormat(), shape=McpServersShape(servers_key="mcp_servers")
+)
+_zed_adapter = CompositeAdapter(format=JsonFormat(), shape=ContextServersShape())
 
 
 # ---------------------------------------------------------------------------
@@ -160,24 +165,6 @@ class _VSCodeCopilotWorkspace(InjectionTarget):
         "windows": "{cwd}/.vscode/mcp.json",
     }
 
-    def make_ploston_entry(
-        self,
-        *,
-        cp_url: str,
-        expose: str | None = None,
-        runner_name: str | None = None,
-        tags: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Microsoft shape requires "type": "stdio"."""
-        entry = super().make_ploston_entry(
-            cp_url=cp_url,
-            expose=expose,
-            runner_name=runner_name,
-            tags=tags,
-        )
-        entry["type"] = "stdio"
-        return entry
-
 
 class _VSCodeCopilotUser(InjectionTarget):
     source_id = "vscode_copilot_user"
@@ -190,24 +177,6 @@ class _VSCodeCopilotUser(InjectionTarget):
         "windows": "{home}/AppData/Roaming/Code/User/mcp.json",
     }
 
-    def make_ploston_entry(
-        self,
-        *,
-        cp_url: str,
-        expose: str | None = None,
-        runner_name: str | None = None,
-        tags: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Microsoft shape requires "type": "stdio"."""
-        entry = super().make_ploston_entry(
-            cp_url=cp_url,
-            expose=expose,
-            runner_name=runner_name,
-            tags=tags,
-        )
-        entry["type"] = "stdio"
-        return entry
-
 
 class _VisualStudioUser(InjectionTarget):
     source_id = "visual_studio_user"
@@ -219,23 +188,63 @@ class _VisualStudioUser(InjectionTarget):
         "windows": "{home}/.mcp.json",
     }
 
-    def make_ploston_entry(
-        self,
-        *,
-        cp_url: str,
-        expose: str | None = None,
-        runner_name: str | None = None,
-        tags: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Microsoft shape requires "type": "stdio"."""
-        entry = super().make_ploston_entry(
-            cp_url=cp_url,
-            expose=expose,
-            runner_name=runner_name,
-            tags=tags,
-        )
-        entry["type"] = "stdio"
-        return entry
+
+# ---------------------------------------------------------------------------
+# Codex CLI targets (S-318, DEC-205)
+# ---------------------------------------------------------------------------
+
+
+class _CodexGlobal(InjectionTarget):
+    source_id = "codex_global"
+    display_name = "Codex CLI (global)"
+    scope = "global"
+    adapter = _codex_adapter
+    config_path_template = {
+        "darwin": "{home}/.codex/config.toml",
+        "linux": "{home}/.codex/config.toml",
+        "windows": "{home}/.codex/config.toml",
+    }
+
+
+class _CodexProject(InjectionTarget):
+    source_id = "codex_project"
+    display_name = "Codex CLI (project)"
+    scope = "project"
+    adapter = _codex_adapter
+    config_path_template = {
+        "darwin": "{cwd}/.codex/config.toml",
+        "linux": "{cwd}/.codex/config.toml",
+        "windows": "{cwd}/.codex/config.toml",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Zed targets (S-319, S-317)
+# ---------------------------------------------------------------------------
+
+
+class _ZedUser(InjectionTarget):
+    source_id = "zed_user"
+    display_name = "Zed (user)"
+    scope = "global"
+    adapter = _zed_adapter
+    config_path_template = {
+        "darwin": "{home}/.config/zed/settings.json",
+        "linux": "{home}/.config/zed/settings.json",
+        "windows": "{home}/AppData/Roaming/Zed/settings.json",
+    }
+
+
+class _ZedProject(InjectionTarget):
+    source_id = "zed_project"
+    display_name = "Zed (project)"
+    scope = "project"
+    adapter = _zed_adapter
+    config_path_template = {
+        "darwin": "{cwd}/.zed/settings.json",
+        "linux": "{cwd}/.zed/settings.json",
+        "windows": "{cwd}/.zed/settings.json",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +267,10 @@ def _build_registry() -> dict[str, InjectionTarget]:
         _VSCodeCopilotWorkspace(),
         _VSCodeCopilotUser(),
         _VisualStudioUser(),
+        _CodexGlobal(),
+        _CodexProject(),
+        _ZedUser(),
+        _ZedProject(),
     ]
     return {t.source_id: t for t in targets}
 
