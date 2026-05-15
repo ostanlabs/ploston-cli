@@ -12,6 +12,7 @@ import pytest
 
 from ploston_cli.init.injector import (
     SourceConfigInjector,
+    _agent_label_from_source_id,
     _is_ploston_bridge_entry,
     default_runner_name,
     inject_ploston_into_config,
@@ -734,3 +735,101 @@ class TestIsPlostBridgeEntry:
 
     def test_non_dict(self):
         assert not _is_ploston_bridge_entry("not a dict")
+
+
+class TestAgentLabelFromSourceId:
+    """Tests for _agent_label_from_source_id mapping."""
+
+    def test_none_returns_none(self):
+        assert _agent_label_from_source_id(None) is None
+
+    def test_empty_returns_none(self):
+        assert _agent_label_from_source_id("") is None
+
+    def test_cursor(self):
+        assert _agent_label_from_source_id("cursor") == "cursor"
+        assert _agent_label_from_source_id("cursor_project") == "cursor"
+
+    def test_claude_desktop(self):
+        assert _agent_label_from_source_id("claude_desktop") == "claude-desktop"
+
+    def test_claude_code(self):
+        assert _agent_label_from_source_id("claude_code_global") == "claude-code"
+        assert _agent_label_from_source_id("claude_code_project") == "claude-code"
+
+    def test_windsurf(self):
+        assert _agent_label_from_source_id("windsurf") == "windsurf"
+
+    def test_copilot(self):
+        assert _agent_label_from_source_id("vscode_copilot_workspace") == "copilot"
+        assert _agent_label_from_source_id("vscode_copilot_user") == "copilot"
+
+    def test_unknown_falls_back_to_source_id(self):
+        assert _agent_label_from_source_id("some_new_agent") == "some_new_agent"
+
+
+class TestBridgeNameInjection:
+    """Verify --bridge-name is emitted in bridge entries when source_id is provided."""
+
+    @patch("ploston_cli.init.injector._resolve_ploston_command", return_value="ploston")
+    def test_bridge_name_in_server_entry(self, _mock_cmd, tmp_path):
+        """Server bridge entries include --bridge-name with agent label."""
+        config = {"mcpServers": {"github": {"command": "node", "args": ["gh.js"]}}}
+        cfg = tmp_path / "config.json"
+        cfg.write_text(json.dumps(config))
+
+        inject_ploston_into_config(
+            cfg,
+            imported_servers=["github"],
+            cp_url="http://localhost:8022",
+            runner_name="test-runner",
+            no_backup_file=True,
+            source_id="cursor",
+        )
+
+        result = json.loads(cfg.read_text())
+        github_args = result["mcpServers"]["github"]["args"]
+        assert "--bridge-name" in github_args
+        idx = github_args.index("--bridge-name")
+        assert github_args[idx + 1] == "github/cursor"
+
+    @patch("ploston_cli.init.injector._resolve_ploston_command", return_value="ploston")
+    def test_bridge_name_in_authoring_entry(self, _mock_cmd, tmp_path):
+        """Authoring bridge includes --bridge-name with agent label."""
+        config = {"mcpServers": {"github": {"command": "node", "args": ["gh.js"]}}}
+        cfg = tmp_path / "config.json"
+        cfg.write_text(json.dumps(config))
+
+        inject_ploston_into_config(
+            cfg,
+            imported_servers=["github"],
+            cp_url="http://localhost:8022",
+            runner_name="test-runner",
+            no_backup_file=True,
+            source_id="claude_code_global",
+        )
+
+        result = json.loads(cfg.read_text())
+        authoring_args = result["mcpServers"]["ploston-authoring"]["args"]
+        assert "--bridge-name" in authoring_args
+        idx = authoring_args.index("--bridge-name")
+        assert authoring_args[idx + 1] == "workflow_mgmt/claude-code"
+
+    @patch("ploston_cli.init.injector._resolve_ploston_command", return_value="ploston")
+    def test_no_bridge_name_without_source_id(self, _mock_cmd, tmp_path):
+        """When source_id is None, no --bridge-name is emitted (backward compat)."""
+        config = {"mcpServers": {"github": {"command": "node", "args": ["gh.js"]}}}
+        cfg = tmp_path / "config.json"
+        cfg.write_text(json.dumps(config))
+
+        inject_ploston_into_config(
+            cfg,
+            imported_servers=["github"],
+            cp_url="http://localhost:8022",
+            runner_name="test-runner",
+            no_backup_file=True,
+        )
+
+        result = json.loads(cfg.read_text())
+        github_args = result["mcpServers"]["github"]["args"]
+        assert "--bridge-name" not in github_args

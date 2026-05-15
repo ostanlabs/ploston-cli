@@ -318,3 +318,91 @@ class TestMergeConfigs:
 
         assert len(merged) == 1
         assert merged["shared"].command == "claude_cmd"
+
+    def test_merge_overlap_different_configs_warns(self):
+        """Test that merging duplicate servers with different configs emits a warning."""
+        server_claude = ServerInfo(
+            name="grafana", source="claude_desktop", command="npx", args=["-y", "grafana-mcp"]
+        )
+        server_cursor = ServerInfo(
+            name="grafana", source="cursor", command="npx", args=["-y", "grafana-mcp", "--extra"]
+        )
+
+        configs = [
+            DetectedConfig(
+                source="claude_desktop",
+                path=Path("/a"),
+                servers={"grafana": server_claude},
+                server_count=1,
+            ),
+            DetectedConfig(
+                source="cursor",
+                path=Path("/b"),
+                servers={"grafana": server_cursor},
+                server_count=1,
+            ),
+        ]
+
+        warnings: list[str] = []
+        merged = merge_configs(configs, warnings=warnings)
+
+        assert len(merged) == 1
+        assert merged["grafana"].command == "npx"  # claude wins
+        assert merged["grafana"].source == "claude_desktop"
+        assert len(warnings) == 1
+        assert "grafana" in warnings[0]
+        assert "different configs" in warnings[0]
+
+    def test_merge_overlap_identical_configs_no_warning(self):
+        """Test that merging duplicate servers with identical configs emits no warning."""
+        server_claude = ServerInfo(
+            name="grafana", source="claude_desktop", command="npx", args=["-y", "grafana-mcp"]
+        )
+        server_cursor = ServerInfo(
+            name="grafana", source="cursor", command="npx", args=["-y", "grafana-mcp"]
+        )
+
+        configs = [
+            DetectedConfig(
+                source="claude_desktop",
+                path=Path("/a"),
+                servers={"grafana": server_claude},
+                server_count=1,
+            ),
+            DetectedConfig(
+                source="cursor",
+                path=Path("/b"),
+                servers={"grafana": server_cursor},
+                server_count=1,
+            ),
+        ]
+
+        warnings: list[str] = []
+        merged = merge_configs(configs, warnings=warnings)
+
+        assert len(merged) == 1
+        assert warnings == []
+
+    def test_merge_no_warnings_when_list_not_provided(self):
+        """Test that merge works without warnings list (backward compat)."""
+        server_claude = ServerInfo(name="x", source="claude_desktop", command="a")
+        server_cursor = ServerInfo(name="x", source="cursor", command="b")
+
+        configs = [
+            DetectedConfig(
+                source="claude_desktop",
+                path=Path("/a"),
+                servers={"x": server_claude},
+                server_count=1,
+            ),
+            DetectedConfig(
+                source="cursor",
+                path=Path("/b"),
+                servers={"x": server_cursor},
+                server_count=1,
+            ),
+        ]
+
+        # Should not raise — warnings=None is the default
+        merged = merge_configs(configs)
+        assert len(merged) == 1

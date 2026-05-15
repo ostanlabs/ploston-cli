@@ -205,6 +205,18 @@ def setup_logging(log_level: str, log_file: str | None) -> None:
     default=None,
     help="Runner name (required when --expose targets a runner-hosted server with ambiguity)",
 )
+@click.option(
+    "--bridge-name",
+    "bridge_name",
+    envvar="PLOSTON_BRIDGE_NAME",
+    default=None,
+    help=(
+        "Human-readable display name for this bridge in Grafana sessions. "
+        "When set, overrides the auto-derived name from --expose/--tags. "
+        "Injected automatically during bootstrap to include the agent identity "
+        "(e.g. 'github/cursor', 'workflow_mgmt/claude-code')."
+    ),
+)
 def bridge_command(
     url: str,
     token: str | None,
@@ -218,6 +230,7 @@ def bridge_command(
     expose: str | None,
     tag_flags: tuple[str, ...],
     runner: str | None,
+    bridge_name: str | None,
 ) -> None:
     """Start MCP bridge to Control Plane.
 
@@ -263,6 +276,7 @@ def bridge_command(
       PLOSTON_EXPOSE    - Inline tool filter (server name or sugar)
       PLOSTON_TAGS      - Comma-separated tag expressions
       PLOSTON_RUNNER    - Runner name for disambiguation
+      PLOSTON_BRIDGE_NAME - Display name for Grafana sessions
       PLOSTON_DEBUG     - Enable debug logging (set to 1)
 
     \b
@@ -284,14 +298,23 @@ def bridge_command(
 
     logger.info(
         f"[bridge] Starting: url={url} expose={expose} tags={tag_flags} "
-        f"runner={runner} tools_filter={tools} log_level={effective_log_level} "
-        f"timeout={timeout}s retry_attempts={retry_attempts}"
+        f"runner={runner} bridge_name={bridge_name} tools_filter={tools} "
+        f"log_level={effective_log_level} timeout={timeout}s retry_attempts={retry_attempts}"
     )
 
     try:
         asyncio.run(
             run_bridge(
-                url, token, timeout, retry_attempts, retry_delay, insecure, tools, expose, runner
+                url,
+                token,
+                timeout,
+                retry_attempts,
+                retry_delay,
+                insecure,
+                tools,
+                expose,
+                runner,
+                bridge_name=bridge_name,
             )
         )
     except KeyboardInterrupt:
@@ -315,6 +338,7 @@ async def run_bridge(
     tools_filter: str = "all",
     expose: str | None = None,
     runner: str | None = None,
+    bridge_name: str | None = None,
 ) -> None:
     """Run the bridge main loop."""
     proxy = BridgeProxy(url=url, token=token, timeout=timeout, insecure=insecure)
@@ -323,11 +347,14 @@ async def run_bridge(
     # Use a friendly form of --expose as the bridge name so session ids stay
     # readable in the Session Inspector (e.g. "workflow_mgmt" rather than the
     # raw "tag:kind:workflow_mgmt" glob synthesized from --tags).
+    # --bridge-name takes precedence when set (agent-qualified display identity
+    # injected during bootstrap, e.g. "github/cursor").
+    effective_bridge_name = bridge_name or _friendly_bridge_name(expose)
     BridgeLifecycle(
         proxy=proxy,
         retry_attempts=retry_attempts,
         retry_delay=retry_delay,
-        bridge_name=_friendly_bridge_name(expose),
+        bridge_name=effective_bridge_name,
     )
     # Propagate the original --expose value so CP can see which filter this
     # bridge uses (kept verbatim — the friendly form is only for display).

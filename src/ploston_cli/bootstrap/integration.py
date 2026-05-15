@@ -233,8 +233,11 @@ class RunnerAutoStart:
                 text=True,
             )
 
-            if result.returncode == 0:
-                return True, result.stdout
+            output = result.stdout.strip()
+            # Use exit code first; also parse output as defense-in-depth
+            # against older CLI versions that always exit 0.
+            if result.returncode == 0 and "not running" not in output.lower():
+                return True, output
             else:
                 return False, "Runner not running"
         except FileNotFoundError:

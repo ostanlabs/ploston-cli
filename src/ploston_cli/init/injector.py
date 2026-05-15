@@ -71,6 +71,7 @@ def _bridge_entry(
     expose: str | None = None,
     runner_name: str | None = None,
     tags: list[str] | None = None,
+    bridge_name: str | None = None,
 ) -> dict:
     """Build a single mcpServers entry for a ploston bridge command.
 
@@ -82,6 +83,10 @@ def _bridge_entry(
         runner_name: Value for --runner flag, or None to omit it
         tags: List of tag expressions forwarded via ``--tags`` flag.
               When provided, ``--expose`` is omitted in favour of ``--tags``.
+        bridge_name: Human-readable bridge display name for Grafana sessions.
+              Emitted as ``--bridge-name`` so the Session Inspector can
+              distinguish bridges from different agents (e.g.
+              ``github/cursor`` vs ``github/claude-code``).
 
     Returns:
         mcpServers entry dict: {command, args}
@@ -94,7 +99,58 @@ def _bridge_entry(
         args += ["--expose", expose]
     if runner_name:
         args += ["--runner", runner_name]
+    if bridge_name:
+        args += ["--bridge-name", bridge_name]
     return {"command": _resolve_ploston_command(), "args": args}
+
+
+def _agent_label_from_source_id(source_id: str | None) -> str | None:
+    """Derive a short, Grafana-friendly agent label from a source_id.
+
+    Used to qualify bridge display names so that sessions from different
+    agents are distinguishable in the Session Inspector.
+
+    Examples::
+
+        "cursor"                  → "cursor"
+        "cursor_project"          → "cursor"
+        "claude_desktop"          → "claude-desktop"
+        "claude_code_global"      → "claude-code"
+        "claude_code_project"     → "claude-code"
+        "vscode_copilot_workspace"→ "copilot"
+        "vscode_copilot_user"     → "copilot"
+        "visual_studio_user"      → "vs"
+        "windsurf"                → "windsurf"
+        "gemini_cli_global"       → "gemini"
+        "gemini_cli_project"      → "gemini"
+        "cline"                   → "cline"
+        "codex_global"            → "codex"
+        "codex_project"           → "codex"
+        "zed_user"                → "zed"
+        "zed_project"             → "zed"
+        None                      → None
+    """
+    if not source_id:
+        return None
+    label_map: dict[str, str] = {
+        "cursor": "cursor",
+        "cursor_project": "cursor",
+        "claude_desktop": "claude-desktop",
+        "claude_code_global": "claude-code",
+        "claude_code_project": "claude-code",
+        "windsurf": "windsurf",
+        "gemini_cli_global": "gemini",
+        "gemini_cli_project": "gemini",
+        "cline": "cline",
+        "vscode_copilot_workspace": "copilot",
+        "vscode_copilot_user": "copilot",
+        "visual_studio_user": "vs",
+        "codex_global": "codex",
+        "codex_project": "codex",
+        "zed_user": "zed",
+        "zed_project": "zed",
+    }
+    return label_map.get(source_id, source_id)
 
 
 def inject_ploston_into_config(
@@ -103,6 +159,7 @@ def inject_ploston_into_config(
     cp_url: str = "http://localhost:8022",
     runner_name: str | None = None,
     no_backup_file: bool = False,
+    source_id: str | None = None,
 ) -> None:
     """Inject Ploston into a Claude/Cursor config file.
 
@@ -125,6 +182,10 @@ def inject_ploston_into_config(
         cp_url: Control Plane URL
         runner_name: Runner name for --runner args. None uses default_runner_name().
                      Pass empty string "" to omit --runner entirely (E-18).
+        source_id: Injection target identifier (e.g. "cursor", "claude_code_global").
+                   When provided, derives a short agent label and emits
+                   ``--bridge-name`` on each bridge entry so Grafana sessions
+                   are agent-qualified (e.g. ``github/cursor``).
     """
     # Layer-2 backup (before any modification)
     if not no_backup_file:
@@ -175,6 +236,13 @@ def inject_ploston_into_config(
                 # Already backed up from a previous import — just remove from active
                 mcp_servers.pop(server_name)
 
+    # Derive agent label for --bridge-name so Grafana sessions show agent identity
+    agent_label = _agent_label_from_source_id(source_id)
+
+    def _make_bridge_name(friendly: str) -> str | None:
+        """Compose ``{friendly}/{agent_label}`` when agent_label is known."""
+        return f"{friendly}/{agent_label}" if agent_label else None
+
     # Generate one bridge entry per selected server (skip 'ploston' — handled below)
     new_servers: dict[str, object] = {}
     for server_name in imported_servers:
@@ -184,6 +252,7 @@ def inject_ploston_into_config(
             cp_url=cp_url,
             expose=server_name,
             runner_name=effective_runner,
+            bridge_name=_make_bridge_name(server_name),
         )
 
     # Append the authoring bridge (workflow management tools)
@@ -191,6 +260,7 @@ def inject_ploston_into_config(
         cp_url=cp_url,
         tags=["kind:workflow_mgmt"],
         runner_name=None,
+        bridge_name=_make_bridge_name("workflow_mgmt"),
     )
 
     # Append the workflows bridge (bare-name workflow execution tools)
@@ -198,6 +268,7 @@ def inject_ploston_into_config(
         cp_url=cp_url,
         tags=["kind:workflow"],
         runner_name=None,
+        bridge_name=_make_bridge_name("workflow"),
     )
 
     # Preserve non-imported servers (user may have servers outside the selection)
@@ -384,6 +455,7 @@ def inject_via_target(
             cp_url=cp_url,
             runner_name=runner_name,
             no_backup_file=no_backup_file,
+            source_id=source_id,
         )
         return
 
@@ -429,6 +501,12 @@ def inject_via_target(
             else:
                 servers.pop(server_name)
 
+    # Derive agent label for --bridge-name so Grafana sessions show agent identity
+    agent_label = _agent_label_from_source_id(source_id)
+
+    def _make_bridge_name(friendly: str) -> str | None:
+        return f"{friendly}/{agent_label}" if agent_label else None
+
     # Generate bridge entries using the target's make_ploston_entry,
     # then apply adapter-level decoration (e.g. "type": "stdio" for Microsoft).
     # S-313 / M-085: decorate_server_entry is the authoritative extension point.
@@ -440,6 +518,7 @@ def inject_via_target(
             cp_url=cp_url,
             expose=server_name,
             runner_name=effective_runner,
+            bridge_name=_make_bridge_name(server_name),
         )
         new_servers[server_name] = adapter.decorate_server_entry(entry)
 
@@ -448,6 +527,7 @@ def inject_via_target(
             cp_url=cp_url,
             tags=["kind:workflow_mgmt"],
             runner_name=None,
+            bridge_name=_make_bridge_name("workflow_mgmt"),
         )
     )
     new_servers["ploston"] = adapter.decorate_server_entry(
@@ -455,6 +535,7 @@ def inject_via_target(
             cp_url=cp_url,
             tags=["kind:workflow"],
             runner_name=None,
+            bridge_name=_make_bridge_name("workflow"),
         )
     )
 

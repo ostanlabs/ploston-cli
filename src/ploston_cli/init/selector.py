@@ -12,6 +12,7 @@ import questionary
 from questionary import Choice, Style
 
 from .detector import ServerInfo
+from .injector import SOURCE_LABELS
 
 # Custom style: avoid full-row color inversion on the highlighted item.
 # Only the pointer (») and selected indicator (●) get colored; the rest
@@ -106,9 +107,10 @@ class ServerSelector:
         Returns:
             Formatted string for display
         """
-        # Server name and command
+        # Server name with source label
+        src_label = SOURCE_LABELS.get(info.source, info.source)
         name_part = f"{info.name:<20s}"
-        cmd_part = info.display_command
+        cmd_part = f"({src_label}) {info.display_command}"
 
         # Environment variable status
         env_status = self._format_env_status(info)

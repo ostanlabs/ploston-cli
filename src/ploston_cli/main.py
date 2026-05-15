@@ -1179,6 +1179,7 @@ def runner_status() -> None:
             click.echo(f"Runner: running (PID {pid}) but health check failed")
     else:
         click.echo("Runner: not running")
+        sys.exit(1)
 
 
 @runner.command("logs")

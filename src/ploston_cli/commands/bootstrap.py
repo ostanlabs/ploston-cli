@@ -52,6 +52,9 @@ def _restore_injected_configs() -> None:
 
     Scans for known config files, checks if Ploston bridge entries are present,
     and restores from the inline ``_ploston_imported`` section automatically.
+    Falls back to the Layer-2 file backup when ``_ploston_imported`` is missing
+    (e.g. configs injected before inline backup was introduced, or configs
+    that lost their ``_ploston_imported`` section).
     """
     detector = ConfigDetector()
     configs = detector.detect_all()
@@ -65,6 +68,9 @@ def _restore_injected_configs() -> None:
         label = SOURCE_LABELS.get(config.source, config.source)
         if restore_config_from_imported(config.path):
             click.echo(f"  ✓ Restored {label} config from _ploston_imported")
+        elif restore_from_backup(config.path):
+            # Layer-1 (_ploston_imported) missing — fall back to Layer-2 file backup
+            click.echo(f"  ✓ Restored {label} config from Layer-2 file backup")
         else:
             click.echo(f"  ⚠ {label} config has Ploston entries but could not be restored.")
 
@@ -598,6 +604,9 @@ def rollback():
         if restore_config_from_imported(config.path):
             click.echo(f"  ✓ Restored {label} config from _ploston_imported")
             restored += 1
+        elif restore_from_backup(config.path):
+            click.echo(f"  ✓ Restored {label} config from Layer-2 file backup")
+            restored += 1
         else:
             click.echo(
                 f"  ⚠ {label} config has Ploston entries but could not be restored.\n"
@@ -1099,7 +1108,12 @@ async def _run_bootstrap(
         if chain_result.configs_found:
             click.echo(f"  Found {chain_result.total_servers} MCP server(s):")
             for name in chain_result.server_names or []:
-                click.echo(f"    - {name}")
+                srv = chain_result.servers.get(name)
+                if srv:
+                    src_label = SOURCE_LABELS.get(srv.source, srv.source)
+                    click.echo(f"    - {name:<28}({src_label})")
+                else:
+                    click.echo(f"    - {name}")
 
             # ── Server selection ──
             selector = ServerSelector()

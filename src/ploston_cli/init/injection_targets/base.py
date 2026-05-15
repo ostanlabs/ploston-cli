@@ -106,6 +106,7 @@ class InjectionTarget:
         expose: str | None = None,
         runner_name: str | None = None,
         tags: list[str] | None = None,
+        bridge_name: str | None = None,
     ) -> dict[str, Any]:
         """Build a single entry for injection into this target's config.
 
@@ -119,6 +120,7 @@ class InjectionTarget:
             expose=expose,
             runner_name=runner_name,
             tags=tags,
+            bridge_name=bridge_name,
         )
 
 

@@ -367,15 +367,29 @@ class ConfigDetector:
         )
 
 
+def _configs_differ(a: ServerInfo, b: ServerInfo) -> bool:
+    """Check if two ServerInfo entries have different process definitions."""
+    return (a.command, a.args, a.env, a.transport, a.url) != (
+        b.command,
+        b.args,
+        b.env,
+        b.transport,
+        b.url,
+    )
+
+
 def merge_configs(
     configs: list[DetectedConfig],
     priority_source: SourceType = "claude_desktop",
+    warnings: list[str] | None = None,
 ) -> dict[str, ServerInfo]:
     """Merge servers from multiple configs, deduplicating by name.
 
     Args:
         configs: List of detected configs
         priority_source: Source that takes priority on duplicates
+        warnings: Optional list to collect warning messages when
+            duplicate server names have different configs across agents.
 
     Returns:
         Dict of server name to ServerInfo (deduplicated)
@@ -392,6 +406,16 @@ def merge_configs(
     for config in configs:
         if config.source == priority_source and config.found:
             for name, server in config.servers.items():
+                if (
+                    warnings is not None
+                    and name in merged
+                    and _configs_differ(merged[name], server)
+                ):
+                    warnings.append(
+                        f"Server '{name}' found in both {server.source} and "
+                        f"{merged[name].source} with different configs. "
+                        f"Using {server.source} version (priority source)."
+                    )
                 merged[name] = server
 
     return merged

@@ -19,6 +19,7 @@ from ploston_cli.init import (
     ConfigDetector,
     ServerSelector,
     generate_runner_token,
+    load_env_file,
     merge_configs,
     write_env_file,
 )
@@ -213,11 +214,16 @@ async def _run_import_flow(
 
     # Merge if multiple sources
     if len(found) > 1:
-        servers = merge_configs(found)
+        merge_warnings: list[str] = []
+        servers = merge_configs(found, warnings=merge_warnings)
         total_raw = sum(d.server_count for d in found)
         deduped = total_raw - len(servers)
         dedup_note = f" ({deduped} duplicates deduplicated)" if deduped > 0 else ""
         click.echo(f"\n  {len(servers)} unique servers{dedup_note}\n")
+        for warn in merge_warnings:
+            click.echo(f"  ⚠️  {warn}")
+        if merge_warnings:
+            click.echo()
     else:
         servers = found[0].servers
 
@@ -366,7 +372,9 @@ async def _complete_import_flow(
                 env_vars[var_name] = value
                 click.echo(f"  ✓ {var_name} (from {name})")
 
-    runner_token = generate_runner_token()
+    # Preserve existing runner token when re-importing (avoids CP token mismatch)
+    existing_env = load_env_file()
+    runner_token = existing_env.get("PLOSTON_RUNNER_TOKEN") or generate_runner_token()
     env_file = write_env_file(runner_token, env_vars)
     click.echo(f"\n✓ Secrets written to {env_file}")
 
