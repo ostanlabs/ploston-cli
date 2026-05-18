@@ -20,6 +20,7 @@ from .paths import (
     TOKENS_DIR,
     ensure_dirs,
 )
+from .proctitle import set_process_title
 
 __all__ = [
     # Paths
@@ -38,4 +39,6 @@ __all__ = [
     "auth_headers",
     # Logging
     "configure_logging",
+    # Process title
+    "set_process_title",
 ]

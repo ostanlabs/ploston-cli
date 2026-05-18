@@ -36,6 +36,11 @@ async def _serve(
     retry_delay: float,
     on_ready: Callable[[InspectorProxy], Awaitable[None]] | None = None,
 ) -> None:
+    # Set a descriptive process title
+    from ..shared.proctitle import set_process_title
+
+    set_process_title("inspector")
+
     proxy = InspectorProxy(url=url, token=token, timeout=timeout, insecure=insecure)
     for attempt in range(retry_attempts):
         try:

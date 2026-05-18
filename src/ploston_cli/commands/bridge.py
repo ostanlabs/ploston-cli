@@ -294,6 +294,12 @@ def bridge_command(
     # Setup logging (to file, not stdout)
     setup_logging(log_level, log_file)
 
+    # Set a descriptive process title so bridges are identifiable in ps/Activity Monitor
+    from ..shared.proctitle import set_process_title
+
+    _title_detail = bridge_name or expose or "default"
+    set_process_title("bridge", _title_detail)
+
     effective_log_level = "debug" if DEBUG_MODE else log_level
 
     logger.info(

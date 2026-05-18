@@ -48,6 +48,11 @@ def run_runner(cp: str, token: str, name: str) -> None:
     """
     import asyncio
 
+    # Set a descriptive process title so the runner is identifiable in ps/Activity Monitor
+    from ..shared.proctitle import set_process_title
+
+    set_process_title("runner", name)
+
     # Load secrets (GITHUB_PERSONAL_ACCESS_TOKEN, etc.) so ConfigReceiver
     # can resolve ${VAR} references in MCP server env configs.
     _load_ploston_env()
