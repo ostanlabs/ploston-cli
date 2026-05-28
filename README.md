@@ -38,20 +38,26 @@ ploston version
 ## Quick Start
 
 ```bash
-# Configure server URL (one-time setup)
-ploston config set server http://localhost:8080
+# 1. Deploy the Control Plane locally
+ploston bootstrap --edge
 
-# Or use environment variable
-export PLOSTON_SERVER=http://localhost:8080
+# 2. Inject Ploston into your agent's MCP config
+ploston inject
 
-# List available workflows
+# 3. Restart your agent — Ploston MCP servers appear automatically
+
+# 4. List available workflows
 ploston workflows list
 
-# Run a workflow
+# 5. Run a workflow
 ploston run my-workflow -i key=value
+```
 
-# Validate a workflow file (local validation)
-ploston validate workflow.yaml
+For manual server configuration (without bootstrap):
+
+```bash
+ploston config set server http://localhost:8022
+# or: export PLOSTON_SERVER=http://localhost:8022
 ```
 
 ## Server Connection
@@ -80,6 +86,120 @@ ploston config show --local
 | `-v, --verbose` | Increase verbosity (can be repeated) |
 | `-q, --quiet` | Suppress output |
 | `--json` | Output as JSON |
+
+
+### `ploston bootstrap`
+
+Deploy the Ploston Control Plane locally via Docker Compose (default) or Kubernetes.
+
+```bash
+# Deploy with latest tested dev images
+ploston bootstrap --edge
+
+# Include full observability stack (Grafana, ClickHouse, OTEL Collector)
+ploston bootstrap --edge --with-observability
+
+# Deploy to Kubernetes
+ploston bootstrap --target k8s --namespace ploston
+
+# Build from local source
+ploston bootstrap --build-from-source
+```
+
+| Option | Description |
+|--------|-------------|
+| `--target [docker\|k8s]` | Deployment target (default: docker) |
+| `--edge` | Use latest tested dev images |
+| `--image-tag TEXT` | Specific Docker image tag |
+| `--build-from-source` | Build images from local source |
+| `--port INTEGER` | Control Plane port |
+| `--with-observability` | Include Prometheus + Grafana + ClickHouse + OTEL Collector |
+| `--with-native-tools` | Include native-tools MCP server |
+| `--no-import` | Skip auto-detection and import of existing MCP configs |
+| `-y, --non-interactive` | Accept all defaults |
+| `--namespace TEXT` | K8s namespace |
+| `--domain TEXT` | Base domain for K8s ingress |
+
+Subcommands: `down`, `logs`, `restart`, `restart-runner`, `rollback`, `status`, `restore-from-file`.
+
+### `ploston inject`
+
+Re-run Ploston config injection into agent configs without re-importing servers.
+
+```bash
+# Inject into all detected agents
+ploston inject
+
+# Inject into a specific agent only
+ploston inject --inject-target cursor
+
+# Non-interactive (inject all detected targets)
+ploston inject --non-interactive
+```
+
+Supported targets: Claude Desktop, Cursor, Claude Code, Windsurf, Gemini CLI, Cline, VS Code Copilot, Codex, Zed.
+
+### `ploston inspector`
+
+Start/stop the local Session Inspector web UI for MCP discoverability.
+
+```bash
+# Start inspector daemon (or open browser if already running)
+ploston inspector
+
+# Explicit start/stop/status
+ploston inspector start
+ploston inspector stop
+ploston inspector status
+
+# Tail logs
+ploston inspector logs -f
+```
+
+### `ploston executions`
+
+Inspect workflow execution history.
+
+```bash
+# List recent executions
+ploston executions list
+
+# Show execution details with step trace
+ploston executions show <execution-id>
+```
+
+### `ploston init`
+
+Initialize Ploston configuration and optionally import existing MCP configs.
+
+```bash
+# Auto-detect and import from Claude Desktop / Cursor
+ploston init --import
+
+# Import from a specific source
+ploston init --import --source claude
+
+# Import and inject Ploston bridge entries into source config
+ploston init --import --inject
+
+# Non-interactive mode
+ploston init --import --non-interactive
+```
+
+### `ploston server`
+
+Manage MCP servers registered on the Control Plane.
+
+```bash
+# List configured MCP servers
+ploston server list
+
+# Add an MCP server
+ploston server add <name>
+
+# Remove an MCP server
+ploston server remove <name>
+```
 
 ### `ploston run`
 
