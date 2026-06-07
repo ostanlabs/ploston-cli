@@ -560,6 +560,11 @@ make test-e2e-docker-compose
 - **JSON mode**: Machine-readable output for scripting
 - **Local validation**: Validate workflow YAML without server connection
 
+## Architecture decisions
+
+The design decisions behind Ploston are recorded as ADRs:
+https://docs.ploston.ai/adr/
+
 ## License
 
 Apache-2.0
