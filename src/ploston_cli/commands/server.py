@@ -385,10 +385,14 @@ def server_remove(ctx: click.Context, name: str, force: bool) -> None:
             try:
                 existing = await client._request("GET", f"/api/v1/config/runners/{runner_name}")
             except PlostClientError:
-                raise PlostClientError(404, f"Runner '{runner_name}' not found")
+                raise PlostClientError(
+                    f"Runner '{runner_name}' not found", status_code=404
+                ) from None
             existing_servers = existing.get("mcp_servers", {})
             if name not in existing_servers:
-                raise PlostClientError(404, f"Server '{name}' not found on runner '{runner_name}'")
+                raise PlostClientError(
+                    f"Server '{name}' not found on runner '{runner_name}'", status_code=404
+                )
             del existing_servers[name]
             token = existing.get("token", "auto")
             await client.push_runner_config(
