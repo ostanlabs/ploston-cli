@@ -6,12 +6,48 @@ No Docker Compose or K8s backend is needed.
 
 import asyncio
 import json
+import socket
 import subprocess
 import threading
-from collections.abc import Generator
+import time
+from collections.abc import Callable, Generator
 
 import pytest
 from websockets.asyncio.server import serve as ws_serve
+
+
+def wait_until(
+    predicate: Callable[[], object],
+    *,
+    timeout: float = 10.0,
+    interval: float = 0.05,
+    message: str | None = None,
+):
+    """Poll ``predicate`` until it returns a truthy value or ``timeout`` elapses.
+
+    Returns the truthy value from ``predicate`` so callers can use the result
+    directly. Raises ``AssertionError`` with a clear message on timeout.
+
+    Use this for *readiness* waits (process up, connection established, a
+    status flag flipped, a port listening) instead of a fixed ``time.sleep``.
+    Polling returns as soon as the condition holds, so it is faster than the
+    worst-case fixed sleep while still bounding total wait time.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        result = predicate()
+        if result:
+            return result
+        if time.monotonic() >= deadline:
+            raise AssertionError(message or f"Condition not met within {timeout}s: {predicate!r}")
+        time.sleep(interval)
+
+
+def _port_is_listening(host: str, port: int) -> bool:
+    """Return True if a TCP connection to ``host:port`` succeeds."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.25)
+        return sock.connect_ex((host, port)) == 0
 
 
 class MockControlPlane:
@@ -71,10 +107,13 @@ class MockControlPlane:
 
         self._thread = threading.Thread(target=run_server, daemon=True)
         self._thread.start()
-        # Give server time to start
-        import time
-
-        time.sleep(0.5)
+        # Wait until the server is actually accepting connections rather than
+        # guessing with a fixed sleep.
+        wait_until(
+            lambda: _port_is_listening(self.host, self.port),
+            timeout=10.0,
+            message=f"Mock CP did not start listening on {self.host}:{self.port}",
+        )
 
     def stop(self):
         """Stop the mock CP server."""

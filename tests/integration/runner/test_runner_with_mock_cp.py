@@ -14,6 +14,8 @@ import time
 
 import pytest
 
+from .conftest import wait_until
+
 
 @pytest.mark.integration
 class TestRunnerConnectionWithMockCP:
@@ -23,15 +25,12 @@ class TestRunnerConnectionWithMockCP:
         """Test runner establishes WebSocket connection to CP."""
         start_runner(token="test_token", name="connect-test")
 
-        # Wait for connection
-        connected = False
-        for _ in range(10):
-            if len(mock_cp.connections) > 0:
-                connected = True
-                break
-            time.sleep(0.5)
-
-        assert connected, "Runner did not connect to mock CP"
+        # Wait for connection (poll the real condition instead of fixed sleeps)
+        wait_until(
+            lambda: len(mock_cp.connections) > 0,
+            timeout=5.0,
+            message="Runner did not connect to mock CP",
+        )
 
     def test_runner_receives_config_push(self, mock_cp, start_runner):
         """Test runner receives and processes config from CP."""
@@ -50,14 +49,16 @@ class TestRunnerConnectionWithMockCP:
 
         proc = start_runner(token="test_token", name="config-test")
 
-        # Wait for connection
-        for _ in range(10):
-            if len(mock_cp.connections) > 0:
-                break
-            time.sleep(0.5)
+        # Wait for connection (config is pushed on connect)
+        wait_until(
+            lambda: len(mock_cp.connections) > 0,
+            timeout=5.0,
+            message="Runner did not connect to mock CP",
+        )
 
-        # Config is sent on connection - runner should process it
-        # This test verifies the runner doesn't crash on config receipt
+        # Config is sent on connection - runner should process it.
+        # Genuine elapsed-time soak: give the runner a moment to process the
+        # config push, then verify it is still alive (didn't crash).
         time.sleep(1)
         assert proc.poll() is None, "Runner crashed after receiving config"
 
@@ -82,13 +83,16 @@ class TestRunnerToolDiscoveryWithMockCP:
 
         start_runner(token="test_token", name="tools-test")
 
-        # Wait for tool report
-        tool_reports = []
-        for _ in range(20):
+        # Wait for a tool report. Reports are optional (may be empty if the MCP
+        # backend isn't available), so a timeout here is not a failure -- we
+        # just stop waiting as soon as one arrives.
+        try:
+            tool_reports = wait_until(
+                mock_cp.get_tool_reports,
+                timeout=10.0,
+            )
+        except AssertionError:
             tool_reports = mock_cp.get_tool_reports()
-            if tool_reports:
-                break
-            time.sleep(0.5)
 
         # Runner should report tools (may be empty if MCP not available)
         assert len(tool_reports) >= 0  # At minimum, runner should attempt to report
@@ -114,22 +118,22 @@ class TestRunnerToolExecutionWithMockCP:
 
         start_runner(token="test_token", name="exec-test")
 
-        # Wait for connection
-        for _ in range(10):
-            if len(mock_cp.connections) > 0:
-                break
-            time.sleep(0.5)
+        # Wait for connection before queueing a tool call.
+        wait_until(
+            lambda: len(mock_cp.connections) > 0,
+            timeout=5.0,
+            message="Runner did not connect to mock CP",
+        )
 
         # Queue a tool call
         mock_cp.queue_tool_call(tool_name="read_file", arguments={"path": "/tmp/test.txt"})
 
-        # Wait for result
-        results = []
-        for _ in range(20):
-            results = mock_cp.get_tool_results()
-            if results:
-                break
-            time.sleep(0.5)
+        # Wait for a result. A result is optional (depends on the filesystem MCP
+        # being available), so a timeout here is not a failure.
+        try:
+            wait_until(mock_cp.get_tool_results, timeout=10.0)
+        except AssertionError:
+            pass
 
         # Note: This may fail if filesystem MCP isn't available
         # The test validates the flow, not the specific result
