@@ -396,3 +396,85 @@ class TestAssetManager:
             assert dashboards_dir.exists()
             json_files = list(dashboards_dir.glob("*.json"))
             assert len(json_files) >= 1, "Expected at least one dashboard JSON file"
+
+
+class TestComposeRunnerTLSProxy:
+    """Tests for opt-in runner mTLS reverse-proxy (CR-2, compose).
+
+    When ``runner_tls="proxy"`` the compose generator adds a Caddy reverse
+    proxy service guarded by the ``secure-runners`` profile that terminates
+    mTLS on a dedicated port, verifies client certs against the EmbeddedCA,
+    and forwards the verified CN to ploston:8022 as X-Runner-Client-CN.
+    The Caddyfile is a bundled, templated asset. Default = no proxy service.
+    """
+
+    def _load(self, tmpdir, **kwargs):
+        config = ComposeConfig(output_dir=Path(tmpdir), runner_tls="proxy", **kwargs)
+        compose_file = ComposeGenerator().generate(config)
+        return yaml.safe_load(compose_file.read_text())
+
+    def test_runner_tls_default_value(self):
+        """runner_tls defaults to plaintext (opt-in, DEC-118)."""
+        assert ComposeConfig().runner_tls == "plaintext"
+
+    def test_no_proxy_service_by_default(self):
+        """Default (plaintext) compose adds NO reverse-proxy service."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = ComposeConfig(output_dir=Path(tmpdir))
+            content = yaml.safe_load(ComposeGenerator().generate(config).read_text())
+            assert "runner-proxy" not in content["services"]
+            # No Caddyfile asset should be emitted either.
+            assert not (Path(tmpdir) / "Caddyfile.runner").exists()
+
+    def test_proxy_service_added_when_proxy(self):
+        """proxy mode adds a runner-proxy (Caddy) service."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            content = self._load(tmpdir)
+            assert "runner-proxy" in content["services"]
+            assert "caddy" in content["services"]["runner-proxy"]["image"]
+
+    def test_proxy_service_behind_profile(self):
+        """The proxy service is guarded by the secure-runners profile so it is
+        not started by a plain `docker compose up`."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            content = self._load(tmpdir)
+            assert content["services"]["runner-proxy"]["profiles"] == ["secure-runners"]
+
+    def test_proxy_service_exposes_tls_port_and_mounts(self):
+        """Proxy exposes a dedicated mTLS port and mounts the Caddyfile + certs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            content = self._load(tmpdir, runner_tls_port=8443)
+            svc = content["services"]["runner-proxy"]
+            assert any("8443" in str(p) for p in svc["ports"])
+            volumes = " ".join(svc["volumes"])
+            assert "Caddyfile.runner" in volumes
+            assert "ca.crt" in volumes
+            assert "depends_on" in svc and "ploston" in svc["depends_on"]
+
+    def test_caddyfile_asset_emitted(self):
+        """A templated Caddyfile is written next to the compose file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._load(tmpdir)
+            caddyfile = Path(tmpdir) / "Caddyfile.runner"
+            assert caddyfile.exists()
+
+    def test_caddyfile_requires_client_cert_and_forwards_cn(self):
+        """The Caddyfile requires+verifies client certs against the CA and sets
+        the X-Runner-Client-CN header from the verified client cert subject CN,
+        reverse-proxying to ploston:8022."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._load(tmpdir)
+            text = (Path(tmpdir) / "Caddyfile.runner").read_text()
+            assert "require_and_verify" in text
+            assert "trusted_ca_cert_file" in text
+            assert "X-Runner-Client-CN" in text
+            assert "client.subject_cn" in text
+            assert "ploston:8022" in text
+
+    def test_proxy_not_present_when_plaintext_explicit(self):
+        """Explicit plaintext keeps current behavior (no TLS artifacts)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = ComposeConfig(output_dir=Path(tmpdir), runner_tls="plaintext")
+            content = yaml.safe_load(ComposeGenerator().generate(config).read_text())
+            assert "runner-proxy" not in content["services"]
+            assert not (Path(tmpdir) / "Caddyfile.runner").exists()

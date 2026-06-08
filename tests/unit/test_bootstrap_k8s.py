@@ -763,3 +763,97 @@ class TestK8sHealthCheck:
             assert argv[0] == "kubectl"
             assert argv[1:5] == ["-n", "ploston", "get", "pods"]
             assert "jsonpath=" in argv[-1]
+
+
+class TestK8sRunnerTLSProxy:
+    """Tests for opt-in runner mTLS proxy-mode artifacts (CR-2).
+
+    When ``runner_tls="proxy"`` the generator must emit an Ingress for the
+    runner WebSocket path carrying nginx-ingress mTLS annotations plus a
+    Secret holding the EmbeddedCA CA cert used for client-cert verification.
+    TLS/mTLS is terminated UPSTREAM at the ingress; the CP itself stays
+    plaintext (DEC-118). The verified client-cert CN is forwarded to the CP
+    as the ``X-Runner-Client-CN`` header. Default (plaintext) emits nothing.
+    """
+
+    def _runner_config(self, tmpdir, **kwargs):
+        return K8sConfig(
+            output_dir=Path(tmpdir),
+            runner_tls="proxy",
+            runner_tls_host="runner.ploston.example.com",
+            **kwargs,
+        )
+
+    def test_no_runner_tls_by_default(self):
+        """Default config (plaintext) emits NO runner mTLS artifacts."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = K8sConfig(output_dir=Path(tmpdir))
+            assert config.runner_tls == "plaintext"
+            manifest_dir = K8sManifestGenerator().generate(config)
+            assert not (manifest_dir / "runner-ingress.yaml").exists()
+            assert not (manifest_dir / "runner-ca-secret.yaml").exists()
+
+    def test_runner_tls_default_value(self):
+        """runner_tls defaults to plaintext (opt-in)."""
+        assert K8sConfig().runner_tls == "plaintext"
+
+    def test_runner_ingress_and_secret_emitted_when_proxy(self):
+        """proxy mode emits both the runner ingress and the CA secret files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manifest_dir = K8sManifestGenerator().generate(self._runner_config(tmpdir))
+            assert (manifest_dir / "runner-ingress.yaml").exists()
+            assert (manifest_dir / "runner-ca-secret.yaml").exists()
+
+    def test_runner_ingress_has_mtls_annotations(self):
+        """The runner ingress carries nginx-ingress mTLS verify annotations."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manifest_dir = K8sManifestGenerator().generate(
+                self._runner_config(tmpdir, namespace="ploston")
+            )
+            docs = list(yaml.safe_load_all((manifest_dir / "runner-ingress.yaml").read_text()))
+            ingress = next(d for d in docs if d["kind"] == "Ingress")
+            ann = ingress["metadata"]["annotations"]
+            assert ann["nginx.ingress.kubernetes.io/auth-tls-verify-client"] == "on"
+            assert ann["nginx.ingress.kubernetes.io/auth-tls-secret"] == "ploston/ploston-runner-ca"
+            assert (
+                ann["nginx.ingress.kubernetes.io/auth-tls-pass-certificate-to-upstream"] == "true"
+            )
+
+    def test_runner_ingress_forwards_cn_header(self):
+        """A configuration-snippet forwards the verified client-cert CN to the
+        upstream as the X-Runner-Client-CN header."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manifest_dir = K8sManifestGenerator().generate(self._runner_config(tmpdir))
+            docs = list(yaml.safe_load_all((manifest_dir / "runner-ingress.yaml").read_text()))
+            ingress = next(d for d in docs if d["kind"] == "Ingress")
+            snippet = ingress["metadata"]["annotations"][
+                "nginx.ingress.kubernetes.io/configuration-snippet"
+            ]
+            assert "X-Runner-Client-CN" in snippet
+            # nginx exposes the verified client-cert CN via $ssl_client_s_dn_cn
+            assert "ssl_client_s_dn_cn" in snippet
+
+    def test_runner_ingress_routes_to_ploston_service(self):
+        """The runner ingress routes the runner WS host to the ploston Service."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manifest_dir = K8sManifestGenerator().generate(self._runner_config(tmpdir, port=8022))
+            docs = list(yaml.safe_load_all((manifest_dir / "runner-ingress.yaml").read_text()))
+            ingress = next(d for d in docs if d["kind"] == "Ingress")
+            rule = ingress["spec"]["rules"][0]
+            assert rule["host"] == "runner.ploston.example.com"
+            backend = rule["http"]["paths"][0]["backend"]["service"]
+            assert backend["name"] == "ploston"
+            assert backend["port"]["number"] == 8022
+
+    def test_runner_ca_secret_shape(self):
+        """The CA secret holds a ca.crt key (filled from the CP's EmbeddedCA
+        /runner/ca.crt) and matches the auth-tls-secret name/namespace."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manifest_dir = K8sManifestGenerator().generate(
+                self._runner_config(tmpdir, namespace="ploston")
+            )
+            docs = list(yaml.safe_load_all((manifest_dir / "runner-ca-secret.yaml").read_text()))
+            secret = next(d for d in docs if d["kind"] == "Secret")
+            assert secret["metadata"]["name"] == "ploston-runner-ca"
+            assert secret["metadata"]["namespace"] == "ploston"
+            assert "ca.crt" in secret["data"]

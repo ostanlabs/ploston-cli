@@ -45,6 +45,22 @@ class ComposeConfig:
     # Full image references (override registry/name/tag if set)
     ploston_image_full: str | None = None
     native_tools_image_full: str | None = None
+    # Runner mTLS mode (CR-2, "proxy mode"). Opt-in; default is plaintext
+    # (localhost dev, DEC-118). When set to "proxy", a Caddy reverse-proxy
+    # service guarded by the ``secure-runners`` compose profile terminates
+    # mTLS for the runner WebSocket channel on a dedicated port, verifies
+    # runner client certs against the EmbeddedCA, and forwards the verified
+    # client-cert CN to the plaintext CP (ploston:8022) as X-Runner-Client-CN.
+    runner_tls: str = "plaintext"  # "plaintext" | "proxy"
+    # Dedicated host port the runner-proxy listens on for mTLS connections.
+    runner_tls_port: int = 8443
+    # Caddy image for the runner reverse proxy.
+    runner_proxy_image: str = "caddy:2-alpine"
+
+
+# Caddyfile template asset (CR-2 runner mTLS proxy mode).
+_RUNNER_CADDYFILE_ASSET = "ploston_cli.bootstrap.assets.docker"
+_RUNNER_CADDYFILE_NAME = "Caddyfile.runner.template"
 
 
 class ComposeGenerator:
@@ -69,7 +85,24 @@ class ComposeGenerator:
         rendered = yaml.dump(compose_data, default_flow_style=False, sort_keys=False)
         atomic_write_text(compose_file, rendered)
 
+        # Emit the runner mTLS Caddyfile asset only in proxy mode (opt-in).
+        caddyfile = config.output_dir / "Caddyfile.runner"
+        if config.runner_tls == "proxy":
+            atomic_write_text(caddyfile, self._render_runner_caddyfile(config))
+        elif caddyfile.exists():
+            # Default (plaintext): remove any stale TLS asset.
+            caddyfile.unlink()
+
         return compose_file
+
+    def _render_runner_caddyfile(self, config: ComposeConfig) -> str:
+        """Render the bundled Caddyfile template with config values."""
+        template = (
+            resources.files(_RUNNER_CADDYFILE_ASSET)
+            .joinpath(_RUNNER_CADDYFILE_NAME)
+            .read_text(encoding="utf-8")
+        )
+        return template.replace("__RUNNER_TLS_PORT__", str(config.runner_tls_port))
 
     def _build_compose_dict(self, config: ComposeConfig) -> dict[str, Any]:
         """Build the docker-compose structure."""
@@ -178,6 +211,35 @@ class ComposeGenerator:
                 },
             }
         )
+
+        # Runner mTLS reverse proxy (CR-2, "proxy mode"). Opt-in: only added
+        # when runner_tls="proxy". Guarded by the `secure-runners` compose
+        # profile so a plain `docker compose up` does NOT start it; bring it up
+        # with `docker compose --profile secure-runners up`. Caddy terminates
+        # mTLS on a dedicated port, verifies runner client certs against the
+        # EmbeddedCA, and forwards the verified CN to ploston:8022 as the
+        # X-Runner-Client-CN header (the CP stays plaintext, DEC-118). The
+        # server cert/key + CA bundle come from the CP's EmbeddedCA (the CA is
+        # the same one served at GET /runner/ca.crt); mount them under
+        # ./data/runner-certs/ before starting the profile.
+        if config.runner_tls == "proxy":
+            services["runner-proxy"] = {
+                "image": config.runner_proxy_image,
+                "container_name": "ploston-runner-proxy",
+                "profiles": ["secure-runners"],
+                "command": ["caddy", "run", "--config", "/etc/caddy/Caddyfile"],
+                "ports": [f"{config.runner_tls_port}:{config.runner_tls_port}"],
+                "volumes": [
+                    "./Caddyfile.runner:/etc/caddy/Caddyfile:ro",
+                    "./data/runner-certs/server.crt:/etc/caddy/certs/server.crt:ro",
+                    "./data/runner-certs/server.key:/etc/caddy/certs/server.key:ro",
+                    "./data/runner-certs/ca.crt:/etc/caddy/certs/ca.crt:ro",
+                ],
+                "depends_on": {
+                    "ploston": {"condition": "service_healthy"},
+                },
+                "restart": "unless-stopped",
+            }
 
         # Build network configuration
         if config.network_external:

@@ -1,0 +1,40 @@
+# Runner mTLS reverse proxy (CR-2, "proxy mode").
+#
+# Caddy terminates mTLS for the runner WebSocket channel on a dedicated port,
+# verifies the runner's client certificate against the EmbeddedCA, and
+# reverse-proxies plaintext to the Control Plane (ploston:8022). The verified
+# client-cert subject CN (== the runner name issued by the EmbeddedCA) is
+# forwarded to the plaintext CP as the X-Runner-Client-CN header. The CP
+# itself never does TLS (DEC-118).
+#
+# Templated placeholders are filled by the bootstrap generator:
+#   __RUNNER_TLS_PORT__ -> dedicated mTLS listen port (e.g. 8443)
+#
+# Mounted into the proxy container (see docker-compose.yaml):
+#   /etc/caddy/Caddyfile        this file
+#   /etc/caddy/certs/server.crt EmbeddedCA-issued server cert
+#   /etc/caddy/certs/server.key server private key
+#   /etc/caddy/certs/ca.crt     EmbeddedCA CA cert (verifies client certs)
+#
+# The server cert + key and CA come from the CP's EmbeddedCA. The CA is the
+# same bundle served at GET /runner/ca.crt.
+
+{
+	# Disable the admin API and automatic HTTPS; we manage certs explicitly.
+	admin off
+	auto_https off
+}
+
+:__RUNNER_TLS_PORT__ {
+	tls /etc/caddy/certs/server.crt /etc/caddy/certs/server.key {
+		client_auth {
+			mode require_and_verify
+			trusted_ca_cert_file /etc/caddy/certs/ca.crt
+		}
+	}
+
+	# Forward the verified client-cert subject CN to the plaintext CP.
+	reverse_proxy ploston:8022 {
+		header_up X-Runner-Client-CN {http.request.tls.client.subject_cn}
+	}
+}

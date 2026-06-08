@@ -66,6 +66,15 @@ class K8sConfig:
     # to the OTEL Collector. Host names match the in-cluster Service
     # names in the bundled K8s observability assets.
     with_observability: bool = False
+    # Runner mTLS mode (CR-2, "proxy mode"). Opt-in; default is plaintext
+    # (localhost dev, DEC-118) so generators add NO TLS by default. When set
+    # to "proxy", mTLS for the runner WebSocket channel is terminated UPSTREAM
+    # at the nginx ingress: it verifies runner client certs against the
+    # EmbeddedCA CA and forwards the verified client-cert CN to the (plaintext)
+    # CP as the ``X-Runner-Client-CN`` header. The CP itself never does TLS.
+    runner_tls: str = "plaintext"  # "plaintext" | "proxy"
+    # Host for the runner WebSocket ingress when runner_tls="proxy".
+    runner_tls_host: str = "runner.ploston.local"
 
 
 class K8sManifestGenerator:
@@ -134,6 +143,20 @@ class K8sManifestGenerator:
                 output_dir / "ingress.yaml",
                 self._build_ingress(config),
             )
+
+        # Generate runner mTLS proxy-mode artifacts (CR-2). Opt-in only:
+        # when runner_tls="proxy" emit a dedicated nginx-ingress with mTLS
+        # client-cert verification + a Secret holding the EmbeddedCA CA cert.
+        # Default (plaintext) emits nothing and removes any stale files.
+        runner_ingress_path = output_dir / "runner-ingress.yaml"
+        runner_ca_path = output_dir / "runner-ca-secret.yaml"
+        if config.runner_tls == "proxy":
+            self._write_manifest(runner_ca_path, self._build_runner_ca_secret(config))
+            self._write_manifest(runner_ingress_path, self._build_runner_ingress(config))
+        else:
+            for stale in (runner_ingress_path, runner_ca_path):
+                if stale.exists():
+                    stale.unlink()
 
         return output_dir
 
@@ -536,6 +559,103 @@ class K8sManifestGenerator:
             "spec": spec,
         }
 
+        return [ingress]
+
+    # --- Runner mTLS proxy mode (CR-2) -------------------------------------
+
+    def _runner_ca_secret_name(self) -> str:
+        """Name of the Secret holding the EmbeddedCA CA cert for client verify."""
+        return "ploston-runner-ca"
+
+    def _build_runner_ca_secret(self, config: K8sConfig) -> list[dict[str, Any]]:
+        """Build the Secret holding the EmbeddedCA CA cert (``ca.crt``).
+
+        nginx-ingress' ``auth-tls-secret`` annotation references this Secret to
+        verify runner client certs. The ``ca.crt`` value is a placeholder that
+        the bootstrap fills from the Control Plane's EmbeddedCA, exposed at
+        ``GET /runner/ca.crt`` (CN of issued runner certs = the runner name).
+        Replace ``__PLOSTON_RUNNER_CA_CRT__`` with the PEM CA bundle before
+        applying (e.g. ``kubectl create secret generic ploston-runner-ca \\
+        --from-file=ca.crt=<(curl -s http://<cp>/runner/ca.crt)``).
+        """
+        secret = {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {
+                "name": self._runner_ca_secret_name(),
+                "namespace": config.namespace,
+                "labels": self._labels(config, "runner-ca"),
+            },
+            "type": "Opaque",
+            # stringData so the placeholder is human-editable; the CA PEM is
+            # sourced from the CP EmbeddedCA at /runner/ca.crt.
+            "stringData": {
+                "ca.crt": "__PLOSTON_RUNNER_CA_CRT__",
+            },
+            # Mirror the key under data so consumers reading either field find
+            # it; kept as a documented placeholder, replaced by bootstrap.
+            "data": {
+                "ca.crt": "X19QTE9TVE9OX1JVTk5FUl9DQV9DUlRfXw==",  # base64 placeholder
+            },
+        }
+        return [secret]
+
+    def _build_runner_ingress(self, config: K8sConfig) -> list[dict[str, Any]]:
+        """Build the runner WebSocket Ingress with nginx mTLS annotations.
+
+        mTLS is terminated at the ingress (proxy mode): nginx verifies the
+        runner's client cert against the EmbeddedCA Secret, passes the cert to
+        the upstream, and a configuration-snippet forwards the verified
+        client-cert CN to the plaintext CP as ``X-Runner-Client-CN``.
+        """
+        ca_ref = f"{config.namespace}/{self._runner_ca_secret_name()}"
+        annotations = {
+            "nginx.ingress.kubernetes.io/auth-tls-verify-client": "on",
+            "nginx.ingress.kubernetes.io/auth-tls-secret": ca_ref,
+            "nginx.ingress.kubernetes.io/auth-tls-pass-certificate-to-upstream": "true",
+            "nginx.ingress.kubernetes.io/auth-tls-verify-depth": "1",
+            # WebSocket upgrade headers + forward the verified client-cert CN
+            # to the upstream CP. nginx exposes the subject CN as
+            # $ssl_client_s_dn_cn after a successful verify.
+            "nginx.ingress.kubernetes.io/configuration-snippet": (
+                "proxy_set_header X-Runner-Client-CN $ssl_client_s_dn_cn;\n"
+                "proxy_set_header Upgrade $http_upgrade;\n"
+                'proxy_set_header Connection "upgrade";\n'
+            ),
+        }
+
+        ingress = {
+            "apiVersion": "networking.k8s.io/v1",
+            "kind": "Ingress",
+            "metadata": {
+                "name": "ploston-runner",
+                "namespace": config.namespace,
+                "labels": self._labels(config, "runner-ingress"),
+                "annotations": annotations,
+            },
+            "spec": {
+                "ingressClassName": config.ingress_class_name or "nginx",
+                "rules": [
+                    {
+                        "host": config.runner_tls_host,
+                        "http": {
+                            "paths": [
+                                {
+                                    "path": "/",
+                                    "pathType": "Prefix",
+                                    "backend": {
+                                        "service": {
+                                            "name": "ploston",
+                                            "port": {"number": config.port},
+                                        }
+                                    },
+                                }
+                            ]
+                        },
+                    }
+                ],
+            },
+        }
         return [ingress]
 
 
