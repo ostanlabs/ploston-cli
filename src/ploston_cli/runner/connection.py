@@ -11,9 +11,11 @@ Handles:
 import asyncio
 import json
 import logging
+import ssl
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import urlparse
 
 import websockets
 from websockets.asyncio.client import ClientConnection
@@ -71,6 +73,9 @@ class RunnerConnection:
         self._receive_task: asyncio.Task[None] | None = None
         self._on_disconnect = on_disconnect
         self._on_reconnect = on_reconnect
+        # CR-4: the receive loop only SIGNALS a drop; run() owns reconnection.
+        self._disconnected_event: asyncio.Event = asyncio.Event()
+        self._reconnects_completed = 0
 
         # Message handlers
         self._handlers: dict[str, MessageHandler] = {}
@@ -118,6 +123,42 @@ class RunnerConnection:
         self._request_id += 1
         return self._request_id
 
+    @staticmethod
+    def _is_localhost(host: str | None) -> bool:
+        """True for loopback hosts (plaintext dev allowed, DEC-118)."""
+        return host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+    def _build_connect_kwargs(self) -> dict[str, Any]:
+        """Build kwargs for websockets.connect, wiring mTLS when appropriate.
+
+        CR-2:
+        - ws:// (any host)            → plaintext, no ssl.
+        - wss:// to localhost         → plaintext dev (ssl=None), DEC-118.
+        - wss:// to a remote host     → TLS. Uses the configured ssl_context
+          (CA + client cert for mutual TLS) when present, else a default
+          verifying client context.
+        """
+        url = self._config.control_plane_url
+        parsed = urlparse(url)
+        kwargs: dict[str, Any] = {
+            "additional_headers": {"Authorization": f"Bearer {self._config.auth_token}"},
+        }
+
+        if parsed.scheme != "wss":
+            return kwargs  # plaintext ws://
+
+        if self._is_localhost(parsed.hostname):
+            # localhost dev: keep plaintext semantics.
+            kwargs["ssl"] = None
+            return kwargs
+
+        # Remote wss: require TLS.
+        ssl_context = getattr(self._config, "ssl_context", None)
+        if ssl_context is None:
+            ssl_context = ssl.create_default_context()
+        kwargs["ssl"] = ssl_context
+        return kwargs
+
     async def connect(self) -> None:
         """Establish connection to Control Plane.
 
@@ -140,7 +181,7 @@ class RunnerConnection:
             logger.info(f"Connecting to Control Plane at {self._config.control_plane_url}")
             self._ws = await websockets.connect(
                 self._config.control_plane_url,
-                additional_headers={"Authorization": f"Bearer {self._config.auth_token}"},
+                **self._build_connect_kwargs(),
             )
 
             # Start receive loop BEFORE authentication so we can receive the auth response
@@ -300,12 +341,29 @@ class RunnerConnection:
 
             except websockets.ConnectionClosed:
                 logger.warning("Connection closed by server")
-                await self._handle_disconnect()
+                # CR-4: do NOT reconnect inline. Signal the drop and let run()
+                # own the reconnect loop, then exit this (old) receive task so
+                # run() can re-await the new one.
+                self._signal_disconnect()
                 break
             except json.JSONDecodeError as e:
                 logger.error(f"Invalid JSON received: {e}")
             except Exception as e:
                 logger.error(f"Error in receive loop: {e}")
+                self._signal_disconnect()
+                break
+
+    def _signal_disconnect(self) -> None:
+        """Mark the connection as dropped and wake run()'s reconnect loop.
+
+        Only transitions to RECONNECTING when we are still meant to run and are
+        not already reconnecting (idempotent across concurrent drops).
+        """
+        if not self._should_run:
+            return
+        if self._status != RunnerConnectionStatus.RECONNECTING:
+            self._status = RunnerConnectionStatus.RECONNECTING
+        self._disconnected_event.set()
 
     async def _handle_message(self, message: dict[str, Any]) -> None:
         """Route incoming message to appropriate handler."""
@@ -369,16 +427,21 @@ class RunnerConnection:
                 logger.error(f"Heartbeat error: {e}")
 
     async def _handle_disconnect(self) -> None:
-        """Handle unexpected disconnection.
+        """Reconnect after a dropped connection (CR-4).
 
-        Attempts to reconnect with exponential backoff. If all attempts
-        are exhausted, signals the runner to exit and calls the
-        on_disconnect callback.
+        Owned by run() in the live path. Cleans up the stale connection, then
+        retries with exponential backoff. On success the status is CONNECTED and
+        a fresh receive task has been started (which run() will re-await). If all
+        attempts are exhausted, _should_run is cleared and on_disconnect fires.
+
+        This method is idempotent w.r.t. the disconnect signal and clears the
+        disconnected_event when it begins handling a drop.
         """
         if not self._should_run:
             return
 
         self._status = RunnerConnectionStatus.RECONNECTING
+        self._disconnected_event.clear()
         logger.warning("Connection to Control Plane lost. Attempting to reconnect...")
 
         # Cancel heartbeat during reconnection (no websocket to send on)
@@ -420,7 +483,7 @@ class RunnerConnection:
                 # Attempt to establish a fresh connection
                 self._ws = await websockets.connect(
                     self._config.control_plane_url,
-                    additional_headers={"Authorization": f"Bearer {self._config.auth_token}"},
+                    **self._build_connect_kwargs(),
                 )
 
                 # Start receive loop before auth
@@ -431,6 +494,7 @@ class RunnerConnection:
 
                 self._status = RunnerConnectionStatus.CONNECTED
                 self._reconnect_delay = self._config.reconnect_delay  # Reset delay
+                self._reconnects_completed += 1
 
                 # Restart heartbeat
                 self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
@@ -483,21 +547,51 @@ class RunnerConnection:
     async def run(self) -> None:
         """Run the connection (connect and maintain).
 
-        Connects to the CP and waits for the receive loop. If the connection
-        drops, _handle_disconnect will attempt to reconnect. This method
-        only returns when reconnection is exhausted or disconnect is requested.
+        CR-4: run() OWNS the reconnect loop. It awaits the current receive task;
+        when that task ends it inspects WHY:
+
+        - If the runner is shutting down (_should_run False) → return.
+        - If the receive loop signalled a drop (disconnected_event set / status
+          RECONNECTING) → run the reconnect (_handle_disconnect), which on
+          success starts a FRESH receive task; loop back and await it. This is
+          what keeps the daemon alive across consecutive drops — the old buggy
+          code let the receive loop reconnect inline and then break.
+        - Otherwise (receive task ended unexpectedly without a signal) → treat as
+          a drop too, to be safe.
+
+        Returns only when reconnection is exhausted or disconnect is requested.
         """
         await self.connect()
 
-        # Wait for receive task; it may be replaced during reconnection
         while self._should_run:
-            if self._receive_task:
+            if self._receive_task is None:
+                break
+
+            # Wait for the current receive task to finish (drop / cancel / exit).
+            try:
                 await self._receive_task
-                # If we're reconnecting, _handle_disconnect will set a new
-                # receive_task. Loop back to await it.
-                if self._status == RunnerConnectionStatus.RECONNECTING:
-                    # Wait for reconnection to complete
-                    while self._should_run and self._status == RunnerConnectionStatus.RECONNECTING:
-                        await asyncio.sleep(0.1)
-                    continue
-            break
+            except asyncio.CancelledError:
+                break
+
+            if not self._should_run:
+                break
+
+            # The receive task ended. If it signalled a drop, own the reconnect.
+            dropped = (
+                self._disconnected_event.is_set()
+                or self._status == RunnerConnectionStatus.RECONNECTING
+            )
+            if not dropped:
+                # Receive task exited without signalling a drop and we're still
+                # meant to run — nothing left to await.
+                break
+
+            await self._handle_disconnect()
+
+            if not self._should_run:
+                break
+            if self._status != RunnerConnectionStatus.CONNECTED:
+                # Reconnect failed/exhausted — _handle_disconnect cleared run.
+                break
+            # Reconnect succeeded: _handle_disconnect started a new receive task.
+            # Loop back to await it.

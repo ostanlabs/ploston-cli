@@ -12,7 +12,6 @@ from .connection import RunnerConnection
 from .daemon import get_pid, is_running, start_daemon, stop_daemon
 from .executor import WorkflowExecutor
 from .health_server import HealthServer, HealthStatus
-from .heartbeat import HeartbeatManager, HeartbeatTimeoutError
 from .proxy import ProxyToolInvoker, ToolProxy
 from .types import (
     JSONRPCErrorCode,
@@ -46,8 +45,6 @@ __all__ = [
     "AvailabilityReporter",
     "ConfigReceiver",
     "WorkflowExecutor",
-    "HeartbeatManager",
-    "HeartbeatTimeoutError",
     "ToolProxy",
     "ProxyToolInvoker",
     # Health server

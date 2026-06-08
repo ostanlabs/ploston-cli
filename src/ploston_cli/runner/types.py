@@ -126,6 +126,11 @@ class RunnerConfig:
     max_reconnect_attempts: int = 10
     heartbeat_interval: float = 30.0
     health_check_interval: float = 30.0
+    # CR-2: optional mTLS client context. When connecting to a non-localhost CP
+    # over wss://, this context (built from the downloaded CA + the runner's
+    # client cert) is passed to websockets.connect. None means default TLS for
+    # remote wss and plaintext for localhost (DEC-118).
+    ssl_context: Any = None
 
 
 @dataclass
