@@ -704,6 +704,13 @@ class TestKubectlDeployer:
                 success, msg = deployer.apply(manifest_dir)
 
                 assert success is True
+                # Verify the kubectl argv is constructed as `kubectl apply -f <file>`
+                # for the single manifest in the directory.
+                mock_run.assert_called_once()
+                argv = mock_run.call_args.args[0]
+                assert argv[0] == "kubectl"
+                assert argv[1:3] == ["apply", "-f"]
+                assert argv[3].endswith("test.yaml")
 
     def test_apply_failure(self):
         """Test failed manifest application."""
@@ -729,6 +736,10 @@ class TestKubectlDeployer:
             success, msg = deployer.delete_namespace("test-ns")
 
             assert success is True
+            # Verify argv is `kubectl delete namespace test-ns`.
+            argv = mock_run.call_args.args[0]
+            assert argv[0] == "kubectl"
+            assert argv[1:] == ["delete", "namespace", "test-ns"]
 
 
 class TestK8sHealthCheck:
@@ -747,3 +758,8 @@ class TestK8sHealthCheck:
             assert len(pods) == 2
             assert pods[0]["name"] == "ploston-abc123"
             assert pods[0]["phase"] == "Running"
+            # Verify argv targets the right namespace and queries pods.
+            argv = mock_run.call_args.args[0]
+            assert argv[0] == "kubectl"
+            assert argv[1:5] == ["-n", "ploston", "get", "pods"]
+            assert "jsonpath=" in argv[-1]

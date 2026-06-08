@@ -156,6 +156,18 @@ class TestBuildFromSource:
         assert ploston_img == f"{RELEASE_PLOSTON}:{LOCAL_TAG}"
         assert native_img == f"{RELEASE_NATIVE_TOOLS}:{LOCAL_TAG}"
         assert mock_run.call_count == 2
+        # Both invocations must be `docker build ... -t <image:tag>` for the
+        # respective images, not just any subprocess call.
+        cmds = [call.args[0] for call in mock_run.call_args_list]
+        for cmd in cmds:
+            assert cmd[0] == "docker"
+            assert cmd[1] == "build"
+            assert "-t" in cmd
+        built_tags = {cmd[cmd.index("-t") + 1] for cmd in cmds}
+        assert built_tags == {
+            f"{RELEASE_PLOSTON}:{LOCAL_TAG}",
+            f"{RELEASE_NATIVE_TOOLS}:{LOCAL_TAG}",
+        }
 
     @patch("ploston_cli.bootstrap.builder.subprocess.run")
     def test_build_failure_raises(self, mock_run, tmp_path: Path):
