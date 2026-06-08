@@ -42,6 +42,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.0.0",
+    "pytest-timeout>=2.0.0",
     "ruff>=0.2.0",
     "mypy>=1.8.0",
     # Test server dependencies
@@ -78,6 +79,8 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "--strict-markers --strict-config"
+timeout = 60
 filterwarnings = [
     # CPython 3.12 bug: _UnixReadPipeTransport.__del__ references _closing
     # which doesn't exist.  Triggered during async test teardown.
@@ -96,4 +99,5 @@ markers = [
     "cli_unit: marks tests as CLI unit tests",
     "scenario: marks tests as scenario-based tests (user journey validation)",
     "docker: marks tests requiring Docker Compose environment (Layer 2)",
+    "integration: marks tests that require external services or processes",
 ]

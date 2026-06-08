@@ -7,6 +7,7 @@ These tests verify CLI behavior without requiring server connection.
 
 import json
 import subprocess
+import sys
 
 import httpx
 import pytest
@@ -40,7 +41,7 @@ class TestCLIWorkflowsCommand:
     def test_cli_030_workflows_list(self):
         """CLI-030: List workflows command works."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "workflows", "list"],
+            [sys.executable, "-m", "ploston_cli", "workflows", "list"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -52,7 +53,7 @@ class TestCLIWorkflowsCommand:
     def test_cli_031_workflows_list_json(self):
         """CLI-031: List workflows with JSON output."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "--json", "workflows", "list"],
+            [sys.executable, "-m", "ploston_cli", "--json", "workflows", "list"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -71,7 +72,14 @@ class TestCLIWorkflowsCommand:
     def test_cli_032_workflows_show_nonexistent(self):
         """CLI-032: Show nonexistent workflow."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "workflows", "show", "nonexistent_workflow_12345"],
+            [
+                sys.executable,
+                "-m",
+                "ploston_cli",
+                "workflows",
+                "show",
+                "nonexistent_workflow_12345",
+            ],
             capture_output=True,
             text=True,
             timeout=30,
@@ -91,7 +99,7 @@ class TestCLIToolsCommand:
     def test_cli_040_tools_list(self):
         """CLI-040: List tools command works."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "tools", "list"],
+            [sys.executable, "-m", "ploston_cli", "tools", "list"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -103,7 +111,7 @@ class TestCLIToolsCommand:
     def test_cli_041_tools_list_json(self):
         """CLI-041: List tools with JSON output."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "--json", "tools", "list"],
+            [sys.executable, "-m", "ploston_cli", "--json", "tools", "list"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -122,7 +130,7 @@ class TestCLIToolsCommand:
     def test_cli_042_tools_show_python_exec(self):
         """CLI-042: Show python_exec tool details."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "tools", "show", "python_exec"],
+            [sys.executable, "-m", "ploston_cli", "tools", "show", "python_exec"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -134,7 +142,7 @@ class TestCLIToolsCommand:
     def test_cli_043_tools_show_nonexistent(self):
         """CLI-043: Show nonexistent tool."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "tools", "show", "nonexistent_tool_12345"],
+            [sys.executable, "-m", "ploston_cli", "tools", "show", "nonexistent_tool_12345"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -149,7 +157,7 @@ class TestCLIToolsCommand:
     def test_cli_044_tools_list_filter_source(self):
         """CLI-044: List tools filtered by source."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "tools", "list", "--source", "mcp"],
+            [sys.executable, "-m", "ploston_cli", "tools", "list", "--source", "mcp"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -161,7 +169,7 @@ class TestCLIToolsCommand:
     def test_cli_045_tools_list_filter_status(self):
         """CLI-045: List tools filtered by status."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "tools", "list", "--status", "available"],
+            [sys.executable, "-m", "ploston_cli", "tools", "list", "--status", "available"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -196,7 +204,7 @@ class TestCLIRunCommand:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "run", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "run", str(workflow_file)],
             capture_output=True,
             text=True,
             timeout=60,
@@ -208,7 +216,7 @@ class TestCLIRunCommand:
     def test_cli_051_run_nonexistent_workflow(self):
         """CLI-051: Run nonexistent workflow file."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "run", "/nonexistent/workflow.yaml"],
+            [sys.executable, "-m", "ploston_cli", "run", "/nonexistent/workflow.yaml"],
             capture_output=True,
             text=True,
             timeout=30,

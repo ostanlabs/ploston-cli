@@ -5,6 +5,7 @@ Tests complete user workflows from CLI perspective.
 
 import json
 import subprocess
+import sys
 
 import pytest
 import yaml
@@ -25,7 +26,7 @@ class TestNewUserJourney:
     def test_e2e_001_version_command(self):
         """E2E-001: User checks CLI version."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "version"], capture_output=True, text=True
+            [sys.executable, "-m", "ploston_cli", "version"], capture_output=True, text=True
         )
 
         assert result.returncode == 0
@@ -34,7 +35,7 @@ class TestNewUserJourney:
     def test_e2e_002_help_command(self):
         """E2E-002: User explores available commands."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "--help"], capture_output=True, text=True
+            [sys.executable, "-m", "ploston_cli", "--help"], capture_output=True, text=True
         )
 
         assert result.returncode == 0
@@ -58,7 +59,7 @@ class TestNewUserJourney:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -79,7 +80,7 @@ class TestNewUserJourney:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -94,7 +95,7 @@ class TestNewUserJourney:
     def test_e2e_005_config_show(self):
         """E2E-005: User views configuration."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "config", "show"], capture_output=True, text=True
+            [sys.executable, "-m", "ploston_cli", "config", "show"], capture_output=True, text=True
         )
 
         # Should succeed or show helpful message
@@ -104,7 +105,7 @@ class TestNewUserJourney:
         """E2E-006: User tries to list workflows without server."""
         result = subprocess.run(
             [
-                "python",
+                sys.executable,
                 "-m",
                 "ploston_cli",
                 "workflows",
@@ -132,7 +133,7 @@ class TestNewUserJourney:
         """
         result = subprocess.run(
             [
-                "python",
+                sys.executable,
                 "-m",
                 "ploston_cli",
                 "tools",
@@ -185,7 +186,7 @@ class TestDeveloperJourney:
 
         # Validate
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -223,7 +224,7 @@ result = {
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -244,7 +245,7 @@ result = {
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -255,7 +256,9 @@ result = {
     def test_e2e_013_json_output_format(self):
         """E2E-013: Developer uses JSON output format."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "--json", "version"], capture_output=True, text=True
+            [sys.executable, "-m", "ploston_cli", "--json", "version"],
+            capture_output=True,
+            text=True,
         )
 
         assert result.returncode == 0
@@ -270,7 +273,7 @@ result = {
     def test_e2e_014_verbose_mode(self):
         """E2E-014: Developer uses verbose mode."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "-v", "version"], capture_output=True, text=True
+            [sys.executable, "-m", "ploston_cli", "-v", "version"], capture_output=True, text=True
         )
 
         assert result.returncode == 0
@@ -278,7 +281,7 @@ result = {
     def test_e2e_015_quiet_mode(self):
         """E2E-015: Developer uses quiet mode."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "-q", "version"], capture_output=True, text=True
+            [sys.executable, "-m", "ploston_cli", "-q", "version"], capture_output=True, text=True
         )
 
         assert result.returncode == 0
@@ -324,7 +327,7 @@ else:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -354,7 +357,7 @@ result = [i * i for i in range(count)]
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -385,7 +388,7 @@ except ZeroDivisionError:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -433,7 +436,7 @@ result = {
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -469,7 +472,7 @@ result = {
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -506,7 +509,7 @@ result = {
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )

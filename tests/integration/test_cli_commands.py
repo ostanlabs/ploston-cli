@@ -5,6 +5,7 @@ Tests actual CLI invocations via subprocess.
 
 import json
 import subprocess
+import sys
 
 import pytest
 import yaml
@@ -17,7 +18,7 @@ class TestCLIBasicCommands:
     def test_cli_001_version(self):
         """CLI-001: Version command works."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "version"], capture_output=True, text=True
+            [sys.executable, "-m", "ploston_cli", "version"], capture_output=True, text=True
         )
 
         assert result.returncode == 0
@@ -39,7 +40,7 @@ class TestCLIBasicCommands:
     def test_cli_002_help(self):
         """CLI-002: Help command works."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "--help"], capture_output=True, text=True
+            [sys.executable, "-m", "ploston_cli", "--help"], capture_output=True, text=True
         )
 
         assert result.returncode == 0
@@ -51,7 +52,7 @@ class TestCLIBasicCommands:
 
         for cmd in subcommands:
             result = subprocess.run(
-                ["python", "-m", "ploston_cli", cmd, "--help"], capture_output=True, text=True
+                [sys.executable, "-m", "ploston_cli", cmd, "--help"], capture_output=True, text=True
             )
 
             assert result.returncode == 0, f"Help for {cmd} failed"
@@ -59,7 +60,7 @@ class TestCLIBasicCommands:
     def test_cli_004_unknown_command(self):
         """CLI-004: Unknown command shows error."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "nonexistent"], capture_output=True, text=True
+            [sys.executable, "-m", "ploston_cli", "nonexistent"], capture_output=True, text=True
         )
 
         # Should fail with error
@@ -89,7 +90,7 @@ class TestCLIValidateCommand:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -105,7 +106,7 @@ class TestCLIValidateCommand:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -128,7 +129,7 @@ class TestCLIValidateCommand:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "--json", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "--json", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -145,7 +146,7 @@ class TestCLIValidateCommand:
     def test_cli_013_validate_nonexistent_file(self):
         """CLI-013: Validate nonexistent file."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", "/nonexistent/file.yaml"],
+            [sys.executable, "-m", "ploston_cli", "validate", "/nonexistent/file.yaml"],
             capture_output=True,
             text=True,
         )
@@ -160,7 +161,7 @@ class TestCLIConfigCommand:
     def test_cli_020_config_show(self):
         """CLI-020: Config show command works."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "config", "show"], capture_output=True, text=True
+            [sys.executable, "-m", "ploston_cli", "config", "show"], capture_output=True, text=True
         )
 
         # Should succeed or show helpful message
@@ -169,7 +170,7 @@ class TestCLIConfigCommand:
     def test_cli_021_config_show_section(self):
         """CLI-021: Config show specific section."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "config", "show", "--section", "server"],
+            [sys.executable, "-m", "ploston_cli", "config", "show", "--section", "server"],
             capture_output=True,
             text=True,
         )
@@ -179,7 +180,7 @@ class TestCLIConfigCommand:
     def test_cli_022_config_show_local(self):
         """CLI-022: Config show local CLI config."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "config", "show", "--local"],
+            [sys.executable, "-m", "ploston_cli", "config", "show", "--local"],
             capture_output=True,
             text=True,
         )

@@ -4,6 +4,7 @@ Tests error handling and recovery scenarios.
 """
 
 import subprocess
+import sys
 
 import pytest
 import yaml
@@ -34,7 +35,7 @@ class TestValidationErrors:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -56,7 +57,7 @@ class TestValidationErrors:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -75,7 +76,7 @@ class TestValidationErrors:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -92,7 +93,7 @@ class TestValidationErrors:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -117,7 +118,7 @@ class TestValidationErrors:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -145,7 +146,7 @@ class TestValidationErrors:
             yaml.dump(workflow, f)
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
@@ -168,7 +169,7 @@ class TestFileErrors:
     def test_err_010_nonexistent_file(self):
         """ERR-010: Validate non-existent file."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", "/nonexistent/path/workflow.yaml"],
+            [sys.executable, "-m", "ploston_cli", "validate", "/nonexistent/path/workflow.yaml"],
             capture_output=True,
             text=True,
         )
@@ -188,7 +189,7 @@ class TestFileErrors:
             f.write("name: test\n  invalid: indentation\n    broken: yaml")
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(invalid_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(invalid_file)],
             capture_output=True,
             text=True,
         )
@@ -202,7 +203,7 @@ class TestFileErrors:
         empty_file.touch()
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(empty_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(empty_file)],
             capture_output=True,
             text=True,
         )
@@ -217,7 +218,7 @@ class TestFileErrors:
             f.write('{"name": "test"}')
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(json_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(json_file)],
             capture_output=True,
             text=True,
         )
@@ -232,7 +233,7 @@ class TestFileErrors:
             f.write(b"\x00\x01\x02\x03\x04\x05")
 
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(binary_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(binary_file)],
             capture_output=True,
             text=True,
         )
@@ -249,7 +250,15 @@ class TestConnectionErrors:
     def test_err_020_invalid_server_url(self):
         """ERR-020: Connect to invalid server URL."""
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "workflows", "list", "--server", "not-a-valid-url"],
+            [
+                sys.executable,
+                "-m",
+                "ploston_cli",
+                "workflows",
+                "list",
+                "--server",
+                "not-a-valid-url",
+            ],
             capture_output=True,
             text=True,
             timeout=10,
@@ -262,7 +271,7 @@ class TestConnectionErrors:
         """ERR-021: Connect to server that refuses connection."""
         result = subprocess.run(
             [
-                "python",
+                sys.executable,
                 "-m",
                 "ploston_cli",
                 "workflows",
@@ -287,7 +296,7 @@ class TestConnectionErrors:
         # Use a non-routable IP to trigger timeout
         result = subprocess.run(
             [
-                "python",
+                sys.executable,
                 "-m",
                 "ploston_cli",
                 "workflows",
@@ -336,7 +345,7 @@ class TestInputErrors:
         # Try to run without providing required input
         result = subprocess.run(
             [
-                "python",
+                sys.executable,
                 "-m",
                 "ploston_cli",
                 "run",
@@ -368,7 +377,7 @@ class TestInputErrors:
 
         # Validate should pass
         result = subprocess.run(
-            ["python", "-m", "ploston_cli", "validate", str(workflow_file)],
+            [sys.executable, "-m", "ploston_cli", "validate", str(workflow_file)],
             capture_output=True,
             text=True,
         )
