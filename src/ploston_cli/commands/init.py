@@ -416,6 +416,7 @@ async def _complete_import_flow(
     # Step 6: Optionally inject into source config (with target picker)
     chosen_targets: list[str] = []
     results: list[tuple[str, object, str | None]] = []
+    injection_failed = False
     if inject:
         # Use TargetSelector to determine which targets to inject into
         chosen_targets = select_targets(
@@ -439,7 +440,8 @@ async def _complete_import_flow(
             for source_type, path, error in results:
                 label = SOURCE_LABELS.get(source_type, source_type)
                 if error:
-                    click.echo(f"  ⚠️  Failed to update {path}: {error}")
+                    injection_failed = True
+                    click.echo(f"  ⚠️  Failed to update {path}: {error}", err=True)
                 else:
                     click.echo(f"  ✓ Updated {label} config ({path})")
 
@@ -485,3 +487,17 @@ async def _complete_import_flow(
     click.echo()
     click.echo("  Verify: ploston tools list")
     click.echo("  Roll back: ploston bootstrap rollback")
+
+    # Surface partial injection failure with a non-zero exit code so callers
+    # (scripts, CI) don't treat a half-applied injection as success. The
+    # summary above still shows which targets succeeded.
+    if injection_failed:
+        failed_targets = [
+            SOURCE_LABELS.get(src, src) for src, _path, err in results if err is not None
+        ]
+        click.echo(
+            f"\n❌ Injection failed for {len(failed_targets)} target(s): "
+            f"{', '.join(failed_targets)}",
+            err=True,
+        )
+        sys.exit(1)

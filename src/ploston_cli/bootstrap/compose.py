@@ -13,6 +13,8 @@ from typing import Any
 
 import yaml
 
+from ..shared.atomic import atomic_write_text
+
 # Default paths
 PLOSTON_DIR = Path.home() / ".ploston"
 
@@ -63,9 +65,9 @@ class ComposeGenerator:
         # Build compose structure
         compose_data = self._build_compose_dict(config)
 
-        # Write to file with proper YAML formatting
-        with open(compose_file, "w") as f:
-            yaml.dump(compose_data, f, default_flow_style=False, sort_keys=False)
+        # Write to file with proper YAML formatting (atomic: temp + os.replace)
+        rendered = yaml.dump(compose_data, default_flow_style=False, sort_keys=False)
+        atomic_write_text(compose_file, rendered)
 
         return compose_file
 
@@ -250,8 +252,8 @@ class VolumeManager:
             "mcp_servers": {},
         }
 
-        with open(config_file, "w") as f:
-            yaml.dump(seed_config, f, default_flow_style=False, sort_keys=False)
+        rendered = yaml.dump(seed_config, default_flow_style=False, sort_keys=False)
+        atomic_write_text(config_file, rendered)
 
         return config_file
 

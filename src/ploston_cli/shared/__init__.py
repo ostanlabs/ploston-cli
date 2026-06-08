@@ -6,6 +6,7 @@ This module provides shared functionality used across all CLI modes:
 - CLI (management commands)
 """
 
+from .atomic import atomic_write_bytes, atomic_write_text
 from .auth import auth_headers, get_token
 from .logging import configure_logging
 from .paths import (
@@ -41,4 +42,7 @@ __all__ = [
     "configure_logging",
     # Process title
     "set_process_title",
+    # Atomic writes
+    "atomic_write_text",
+    "atomic_write_bytes",
 ]

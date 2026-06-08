@@ -7,6 +7,11 @@ import subprocess
 from dataclasses import dataclass, field
 from enum import Enum
 
+# Bounded timeout (seconds) for non-`up` docker calls so a hung/unresponsive
+# docker daemon can't wedge the bootstrap CLI indefinitely. `up` is excluded
+# because pulling/starting the stack can legitimately take much longer.
+_DOCKER_CALL_TIMEOUT_S = 30
+
 
 class NetworkConflictAction(Enum):
     """User's choice for handling network conflict."""
@@ -54,6 +59,7 @@ class NetworkManager:
                 ["docker", "network", "inspect", self.network_name],
                 capture_output=True,
                 text=True,
+                timeout=_DOCKER_CALL_TIMEOUT_S,
             )
 
             if result.returncode != 0:
@@ -133,12 +139,14 @@ class NetworkManager:
                                 container,
                             ],
                             capture_output=True,
+                            timeout=_DOCKER_CALL_TIMEOUT_S,
                         )
 
             result = subprocess.run(
                 ["docker", "network", "rm", self.network_name],
                 capture_output=True,
                 text=True,
+                timeout=_DOCKER_CALL_TIMEOUT_S,
             )
 
             if result.returncode != 0:
@@ -170,10 +178,16 @@ class NetworkManager:
         for i in range(2, 100):
             candidate = f"{base_name}-network-{i}"
             # Check if this network exists
-            result = subprocess.run(
-                ["docker", "network", "inspect", candidate],
-                capture_output=True,
-            )
+            try:
+                result = subprocess.run(
+                    ["docker", "network", "inspect", candidate],
+                    capture_output=True,
+                    timeout=_DOCKER_CALL_TIMEOUT_S,
+                )
+            except subprocess.TimeoutExpired:
+                # Treat a hung probe as "can't confirm it's free" — keep trying
+                # the next candidate rather than blocking forever.
+                continue
             if result.returncode != 0:
                 return candidate
         return f"{base_name}-network-new"

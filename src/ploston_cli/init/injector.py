@@ -17,6 +17,8 @@ import shutil
 import socket
 from pathlib import Path
 
+from ..shared.atomic import atomic_write_text
+
 logger = logging.getLogger(__name__)
 
 _RUNNER_NAME_RE = re.compile(r"[^a-z0-9-]")
@@ -275,8 +277,9 @@ def inject_ploston_into_config(
     config["mcpServers"] = {**mcp_servers, **new_servers}
     config["_ploston_imported"] = imported_section
 
-    # Write updated config
-    config_path.write_text(
+    # Write updated config (atomic: temp file + os.replace)
+    atomic_write_text(
+        config_path,
         json.dumps(config, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
@@ -325,7 +328,8 @@ def restore_config_from_imported(config_path: Path) -> bool:
     config["mcpServers"] = mcp_servers
     del config["_ploston_imported"]
 
-    config_path.write_text(
+    atomic_write_text(
+        config_path,
         json.dumps(config, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
