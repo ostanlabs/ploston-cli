@@ -16,7 +16,9 @@ import uuid
 from datetime import datetime
 from queue import Full, Queue
 from time import monotonic as _monotonic
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Awaitable, Callable, Optional
+
+from .errors import BRIDGE_CONNECTION_ERROR
 
 if TYPE_CHECKING:
     from .proxy import BridgeProxy
@@ -366,16 +368,77 @@ class BridgeLifecycle:
             logger.warning("Request queue full, rejecting request")
             return False
 
-    async def on_reconnect_success(self) -> None:
-        """Handle successful reconnection."""
-        logger.info("Reconnection successful, draining queue...")
+    async def on_reconnect_success(
+        self,
+        response_sink: Optional[Callable[[dict], Awaitable[None]]] = None,
+    ) -> None:
+        """Handle successful reconnection by failing queued requests fast.
+
+        CONTRACT (H-10, fail-fast — see DEC entry):
+            Every request queued during the reconnect window MUST receive a
+            *definitive* response delivered back to the client; no request may
+            be left without a response.  The previous implementation replayed
+            each queued request via ``proxy.send_request(...)`` but DISCARDED
+            the JSON-RPC result, so the MCP client that issued the request
+            during reconnect never received its response and hung forever.
+
+            RECONNECTION_SPEC §5 marks bridge request-retry "out of scope" and
+            the runner-side contract is to FAIL pending requests.  We therefore
+            do NOT replay queued requests.  Instead, for each queued *request*
+            (one that carries an ``id``) we synthesize a well-formed JSON-RPC
+            error response keyed by that ``id`` and hand it to ``response_sink``
+            (the stdio writer).  The client receives a clear, retryable error
+            (``BRIDGE_CONNECTION_ERROR``) and can re-issue the call itself,
+            rather than blocking indefinitely.
+
+            JSON-RPC notifications (no ``id``) get no response, per spec.
+
+        Args:
+            response_sink: Async callable that delivers a JSON-RPC response
+                dict back to the client (e.g. writes it to stdout).  When
+                omitted, the queue is still drained but no responses are
+                emitted (used by tests / contexts without a writer wired in).
+        """
+        logger.info("Reconnection successful, failing queued requests (fail-fast)...")
         self._is_reconnecting = False
 
-        # Drain queued requests
+        # Fail-fast: drain the queue and return a definitive error response for
+        # every queued request so no client is left hanging.
         while not self._request_queue.empty():
             try:
                 request = self._request_queue.get_nowait()
-                await self.proxy.send_request(request)
-                logger.debug(f"Drained request {request.get('id')}")
+            except Exception as e:  # pragma: no cover - queue race, defensive
+                logger.error(f"Failed to dequeue request during reconnect drain: {e}")
+                continue
+
+            # Notifications (no "id") must not receive a response.
+            if "id" not in request:
+                logger.debug("Discarding queued notification (no response owed)")
+                continue
+
+            request_id = request.get("id")
+            error_response = {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {
+                    "code": BRIDGE_CONNECTION_ERROR,
+                    "message": (
+                        "Bridge reconnected to the Control Plane; this request was "
+                        "queued during the reconnect window and was not executed. "
+                        "Please retry."
+                    ),
+                },
+            }
+
+            if response_sink is None:
+                logger.warning(
+                    f"No response_sink wired; queued request {request_id} "
+                    f"failed without delivering a response to the client"
+                )
+                continue
+
+            try:
+                await response_sink(error_response)
+                logger.debug(f"Failed-fast queued request {request_id} with reconnect error")
             except Exception as e:
-                logger.error(f"Failed to drain request: {e}")
+                logger.error(f"Failed to deliver reconnect error for request {request_id}: {e}")
