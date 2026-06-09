@@ -110,6 +110,18 @@ def inject_command(
         click.echo("No targets selected. Nothing to inject.")
         return
 
+    # FB-1 guard #2: never run injection with an empty server set against
+    # configs that already have servers — an empty list could otherwise
+    # collapse the config. The CP returning no non-bridge servers is the
+    # known trigger for the Claude Desktop wipe.
+    if not imported_servers:
+        click.echo(
+            "⚠️  No MCP servers reported by the Control Plane — skipping injection "
+            "to avoid overwriting your existing agent configuration.\n"
+            "    (Import servers first with: ploston init --import)"
+        )
+        return
+
     click.echo("🔧 Injecting Ploston into agent configurations...")
     results = run_injection(
         detected_configs=detected,

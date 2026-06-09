@@ -31,11 +31,20 @@ class TestMakeBackup:
         assert result.exists()
         assert result.read_text(encoding="utf-8") == '{"mcpServers":{}}'
 
-    def test_idempotent_second_call_returns_none(self, config_file):
+    def test_second_call_creates_fresh_rotating_backup(self, config_file):
+        """FB-1: backups rotate on every touch and never clobber the prior one.
+
+        Previously make_backup short-circuited and returned None on the second
+        call (single, frozen backup). That froze the rollback target at
+        first-touch — the root cause of FB-1 defect B — so a second call now
+        creates a fresh, distinctly-named known-good backup instead.
+        """
         first = make_backup(config_file)
         assert first is not None
         second = make_backup(config_file)
-        assert second is None  # already exists
+        assert second is not None
+        assert second != first  # distinct, non-clobbering backup
+        assert first.exists() and second.exists()
 
     def test_preserves_permissions(self, config_file):
         os.chmod(config_file, 0o600)

@@ -189,11 +189,18 @@ def inject_ploston_into_config(
                    ``--bridge-name`` on each bridge entry so Grafana sessions
                    are agent-qualified (e.g. ``github/cursor``).
     """
-    # Layer-2 backup (before any modification)
+    # Layer-2 backup (before any modification). Always taken first so the
+    # pre-modification state is recoverable even if the steps below abort.
     if not no_backup_file:
         from .backup import make_backup
 
         make_backup(config_path)
+    else:
+        logger.warning(
+            "Layer-2 file backup SKIPPED for %s (no_backup_file=True). "
+            "Rollback will rely solely on the inline _ploston_imported section.",
+            config_path,
+        )
 
     # Resolve runner name
     # Empty string is the E-18 signal: CP-native servers, no runner needed
@@ -204,9 +211,51 @@ def inject_ploston_into_config(
     else:
         effective_runner = sanitise_runner_name(runner_name)
 
-    # Load config
-    config = json.loads(config_path.read_text(encoding="utf-8"))
+    # FB-1 Defect-A guard #3: PROTECT THE READ. A malformed config must never
+    # be overwritten — abort the target instead (the backup is already taken).
+    try:
+        raw = config_path.read_text(encoding="utf-8")
+        config = json.loads(raw)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        logger.error(
+            "Refusing to inject into unreadable/malformed config %s: %s. File left untouched.",
+            config_path,
+            exc,
+        )
+        raise
+    if not isinstance(config, dict):
+        raise ValueError(f"Refusing to inject: {config_path} is not a JSON object. Left untouched.")
     mcp_servers = config.get("mcpServers", {})
+    if not isinstance(mcp_servers, dict):
+        raise ValueError(
+            f"Refusing to inject: 'mcpServers' in {config_path} is not an object. Left untouched."
+        )
+
+    # FB-1 Defect-A guard #2: EMPTY-LIST NO-OP. An empty server list must never
+    # be allowed to collapse a config that already has user/bridge servers.
+    existing_imported = config.get("_ploston_imported", {}) or {}
+    has_existing_servers = bool(mcp_servers) or any(
+        not k.startswith("_") for k in existing_imported
+    )
+    if not imported_servers and has_existing_servers:
+        logger.warning(
+            "No servers to inject for %s and the config already has servers; "
+            "skipping injection (no-op) to avoid collapsing the config.",
+            config_path,
+        )
+        return
+
+    # Capture the pre-existing USER servers for the merge invariant (guard #1).
+    # User servers = (live mcpServers minus recognized ploston bridge entries)
+    #                UNION the originals already stashed in _ploston_imported.
+    pre_user_servers: set[str] = {
+        name for name, entry in mcp_servers.items() if not _is_ploston_bridge_entry(entry)
+    }
+    for key in existing_imported:
+        if key.startswith("_"):
+            continue
+        # Undo the E-16 rename when accounting for the user-facing name.
+        pre_user_servers.add("ploston" if key == "ploston-original" else key)
 
     # Build _ploston_imported backup section from selected servers.
     # Merge into any existing _ploston_imported so that incremental imports
@@ -274,7 +323,29 @@ def inject_ploston_into_config(
     )
 
     # Preserve non-imported servers (user may have servers outside the selection)
-    config["mcpServers"] = {**mcp_servers, **new_servers}
+    merged_servers = {**mcp_servers, **new_servers}
+
+    # FB-1 Defect-A guard #1: MERGE INVARIANT. The user-server set that remains
+    # recoverable after this write (live non-bridge servers UNION the originals
+    # in _ploston_imported) must be a SUPERSET of what existed before. If not,
+    # we'd be silently shrinking the config — refuse to write.
+    post_user_servers: set[str] = {
+        name for name, entry in merged_servers.items() if not _is_ploston_bridge_entry(entry)
+    }
+    for key in imported_section:
+        if key.startswith("_"):
+            continue
+        post_user_servers.add("ploston" if key == "ploston-original" else key)
+
+    missing = pre_user_servers - post_user_servers
+    if missing:
+        raise ValueError(
+            "Refusing to write a shrinking config for "
+            f"{config_path}: user servers would be lost: {sorted(missing)}. "
+            "File left untouched."
+        )
+
+    config["mcpServers"] = merged_servers
     config["_ploston_imported"] = imported_section
 
     # Write updated config (atomic: temp file + os.replace)
@@ -310,12 +381,28 @@ def restore_config_from_imported(config_path: Path) -> bool:
     if not imported or not isinstance(imported, dict):
         return False
 
+    # FB-1 guard #6: VERIFY-BEFORE-DESTROY. Take a fresh pre-restore backup so
+    # the current (injected) state is never lost mid-restore. The backup helper
+    # tags injected configs so this never becomes a canonical restore point.
+    from .backup import make_backup
+
+    make_backup(config_path)
+
     mcp_servers = config.get("mcpServers", {})
+    if not isinstance(mcp_servers, dict):
+        mcp_servers = {}
 
     # Remove Ploston bridge entries (they all point to `ploston bridge ...`)
     bridge_keys = [name for name, entry in mcp_servers.items() if _is_ploston_bridge_entry(entry)]
     for key in bridge_keys:
         del mcp_servers[key]
+
+    # The user-facing server names we expect to recover from _ploston_imported.
+    expected: set[str] = {
+        ("ploston" if key == "ploston-original" else key)
+        for key in imported
+        if not key.startswith("_")
+    }
 
     # Restore original server definitions from _ploston_imported
     for key, value in imported.items():
@@ -324,6 +411,19 @@ def restore_config_from_imported(config_path: Path) -> bool:
         # Undo the E-16 rename: 'ploston-original' → 'ploston'
         restore_key = "ploston" if key == "ploston-original" else key
         mcp_servers[restore_key] = value
+
+    # Verify the rebuilt config actually contains every expected server BEFORE
+    # we destroy the inline backup. If anything is missing, abort without
+    # deleting _ploston_imported (rollback remains possible).
+    rebuilt = set(mcp_servers)
+    if not expected.issubset(rebuilt):
+        logger.error(
+            "Aborting restore for %s: rebuilt config is missing %s; "
+            "keeping _ploston_imported so rollback is still possible.",
+            config_path,
+            sorted(expected - rebuilt),
+        )
+        return False
 
     config["mcpServers"] = mcp_servers
     del config["_ploston_imported"]
@@ -468,6 +568,11 @@ def inject_via_target(
         from .backup import make_backup
 
         make_backup(config_path)
+    else:
+        logger.warning(
+            "Layer-2 file backup SKIPPED for %s (no_backup_file=True).",
+            config_path,
+        )
 
     # Microsoft-shape (or future adapters): use adapter-based dispatch
     adapter = target.adapter
@@ -480,8 +585,40 @@ def inject_via_target(
     else:
         effective_runner = sanitise_runner_name(runner_name)
 
-    data = adapter.read(config_path)
+    # FB-1 guard #3: PROTECT THE READ — abort (do not overwrite) on a
+    # malformed/unreadable config. Backup already taken above.
+    try:
+        data = adapter.read(config_path)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        logger.error(
+            "Refusing to inject into unreadable/malformed config %s: %s. File left untouched.",
+            config_path,
+            exc,
+        )
+        raise
     servers = adapter.get_servers(data)
+
+    # FB-1 guard #2: EMPTY-LIST NO-OP for adapter shapes too.
+    existing_backup_section = adapter.get_backup_section(data) or {}
+    has_existing_servers = bool(servers) or any(
+        not k.startswith("_") for k in existing_backup_section
+    )
+    if not imported_servers and has_existing_servers:
+        logger.warning(
+            "No servers to inject for %s and the config already has servers; "
+            "skipping injection (no-op) to avoid collapsing the config.",
+            config_path,
+        )
+        return
+
+    # Capture pre-existing user servers for the merge invariant (guard #1).
+    pre_user_servers: set[str] = {
+        name for name, entry in servers.items() if not _is_ploston_bridge_entry(entry)
+    }
+    for key in existing_backup_section:
+        if key.startswith("_"):
+            continue
+        pre_user_servers.add("ploston" if key == "ploston-original" else key)
 
     # Build backup section
     backup = adapter.get_backup_section(data)
@@ -543,7 +680,25 @@ def inject_via_target(
         )
     )
 
-    data = adapter.set_servers(data, {**servers, **new_servers})
+    merged_servers = {**servers, **new_servers}
+
+    # FB-1 guard #1: MERGE INVARIANT for adapter shapes.
+    post_user_servers: set[str] = {
+        name for name, entry in merged_servers.items() if not _is_ploston_bridge_entry(entry)
+    }
+    for key in backup:
+        if key.startswith("_"):
+            continue
+        post_user_servers.add("ploston" if key == "ploston-original" else key)
+    missing = pre_user_servers - post_user_servers
+    if missing:
+        raise ValueError(
+            "Refusing to write a shrinking config for "
+            f"{config_path}: user servers would be lost: {sorted(missing)}. "
+            "File left untouched."
+        )
+
+    data = adapter.set_servers(data, merged_servers)
     data = adapter.set_backup_section(data, backup)
     adapter.write(config_path, data)
 

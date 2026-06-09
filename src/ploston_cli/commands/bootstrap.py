@@ -69,10 +69,17 @@ def _restore_injected_configs() -> None:
         if restore_config_from_imported(config.path):
             click.echo(f"  ✓ Restored {label} config from _ploston_imported")
         elif restore_from_backup(config.path):
-            # Layer-1 (_ploston_imported) missing — fall back to Layer-2 file backup
+            # Layer-1 (_ploston_imported) missing or unverifiable — fall back to
+            # the most-recent known-good Layer-2 file backup.
             click.echo(f"  ✓ Restored {label} config from Layer-2 file backup")
         else:
-            click.echo(f"  ⚠ {label} config has Ploston entries but could not be restored.")
+            backup = find_latest_backup(config.path)
+            click.echo(
+                f"  ⚠ {label} config has Ploston entries but could NOT be restored automatically."
+            )
+            if backup is not None:
+                click.echo(f"    A known-good backup exists at: {backup}")
+            click.echo(f"    Inspect/restore manually: {config.path}")
 
 
 def _prompt_preserve_telemetry() -> bool:
