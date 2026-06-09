@@ -460,15 +460,23 @@ class TestComposeRunnerTLSProxy:
 
     def test_caddyfile_requires_client_cert_and_forwards_cn(self):
         """The Caddyfile requires+verifies client certs against the CA and sets
-        the X-Runner-Client-CN header from the verified client cert subject CN,
-        reverse-proxying to ploston:8022."""
+        the X-Runner-Client-CN header from the verified client cert subject DN,
+        reverse-proxying to ploston:8022.
+
+        Uses the resolvable ``{http.request.tls.client.subject}`` placeholder —
+        a ``subject_cn`` placeholder does NOT exist in Caddy and would pass
+        through literally, making the CP reject every runner (V-1 / DEC-200).
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             self._load(tmpdir)
             text = (Path(tmpdir) / "Caddyfile.runner").read_text()
             assert "require_and_verify" in text
             assert "trusted_ca_cert_file" in text
             assert "X-Runner-Client-CN" in text
-            assert "client.subject_cn" in text
+            assert "{http.request.tls.client.subject}" in text
+            # The non-existent placeholder must never be USED again (a comment
+            # may still reference it to explain why).
+            assert "{http.request.tls.client.subject_cn}" not in text
             assert "ploston:8022" in text
 
     def test_proxy_not_present_when_plaintext_explicit(self):

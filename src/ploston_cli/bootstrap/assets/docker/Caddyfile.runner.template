@@ -3,9 +3,14 @@
 # Caddy terminates mTLS for the runner WebSocket channel on a dedicated port,
 # verifies the runner's client certificate against the EmbeddedCA, and
 # reverse-proxies plaintext to the Control Plane (ploston:8022). The verified
-# client-cert subject CN (== the runner name issued by the EmbeddedCA) is
-# forwarded to the plaintext CP as the X-Runner-Client-CN header. The CP
-# itself never does TLS (DEC-118).
+# client-cert subject DN (which contains CN=runner-<name>, issued by the
+# EmbeddedCA) is forwarded to the plaintext CP as the X-Runner-Client-CN
+# header; the CP extracts the CN from it. The CP itself never does TLS
+# (DEC-118).
+#
+# NOTE: Caddy has no CN-only client-cert placeholder, so we forward the whole
+# subject via {http.request.tls.client.subject} (a "subject_cn" placeholder
+# does NOT exist and silently passes through literally — see DEC-200 / V-1).
 #
 # Templated placeholders are filled by the bootstrap generator:
 #   __RUNNER_TLS_PORT__ -> dedicated mTLS listen port (e.g. 8443)
@@ -33,8 +38,9 @@
 		}
 	}
 
-	# Forward the verified client-cert subject CN to the plaintext CP.
+	# Forward the verified client-cert subject DN to the plaintext CP, which
+	# extracts the CN (CN=runner-<name>). Caddy has no CN-only placeholder.
 	reverse_proxy ploston:8022 {
-		header_up X-Runner-Client-CN {http.request.tls.client.subject_cn}
+		header_up X-Runner-Client-CN {http.request.tls.client.subject}
 	}
 }
