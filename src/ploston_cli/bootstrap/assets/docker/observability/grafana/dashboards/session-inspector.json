@@ -529,6 +529,43 @@
       ]
     },
     {
+      "id": 17,
+      "title": "Selected Tool Output",
+      "description": "Full untruncated result for the session's tool calls, rendered in a logs panel so newlines display as visible line breaks (Grafana 11 table panels collapse \\n; line-break support landed in 12.2 behind the tableNextGen flag — out of reach here). Mirrors the Call Inspector 'Result' panel. The SQL pretty-prints JSON server-side: every {/[ opens a new line and every key:value pair is on its own line. Indentation is flat (depth-aware indent isn't possible in re2 — no lookahead), so nested levels share the same 2-space indent; readability is still vastly better than a single-line blob. Non-JSON strings keep their original newlines.",
+      "type": "logs",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "clickhouse"
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "options": {
+        "showTime": false,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": false,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "clickhouse"
+          },
+          "refId": "A",
+          "format": 2,
+          "rawSql": "SELECT started_at AS timestamp, replaceRegexpAll(replaceRegexpAll(replaceRegexpAll(result, '([{\\\\[])', '\\1\\n  '), '([}\\\\]])', '\\n\\1'), ',', ',\\n  ') AS body FROM ploston.tool_calls WHERE session_id = '$session_id' AND $__timeFilter(started_at) ORDER BY started_at DESC"
+        }
+      ]
+    },
+    {
       "id": 5,
       "title": "Tool Usage Distribution",
       "type": "piechart",
@@ -588,7 +625,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 45
       },
       "panels": [
         {
@@ -659,7 +696,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 46
       },
       "options": {
         "showHeader": true,
